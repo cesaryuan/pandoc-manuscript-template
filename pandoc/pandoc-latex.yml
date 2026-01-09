@@ -1,0 +1,25 @@
+# Pandoc LaTeX output configuration
+# Usage: pandoc --defaults pandoc-latex.yml
+
+verbosity: INFO
+input-files:
+  - manuscript.md
+
+# Output location - modify this path for your project
+output-file: output/latex/manuscript.tex
+
+data-dir: pandoc/
+
+standalone: true
+cite-method: natbib
+number-sections: true
+
+# Filters are applied in order
+filters:
+  - pandoc-crossref  # Must come before citeproc for cross-references
+  - emf_to_pdf.py    # Converts EMF images to PDF for LaTeX
+  - resource_move.py # Copies resources to output directory
+  - table_convert.py # Converts tables to LaTeX format
+
+# Template customization (uncomment to use custom template)
+# template: pandoc/default.tex

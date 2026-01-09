@@ -1,0 +1,3 @@
+[submodule "pandoc/manuscript-template"]
+	path = pandoc/manuscript-template
+	url = https://github.com/cesaryuan/manuscript-template

@@ -1,0 +1,35 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Markdown files
+*.md text eol=lf
+
+# LaTeX files
+*.tex text eol=lf
+*.bib text eol=lf
+*.cls text eol=lf
+*.sty text eol=lf
+
+# YAML files
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Python files
+*.py text eol=lf
+
+# Makefile
+Makefile text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+
+# Image files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.emf binary
+
+# Document files
+*.docx binary
+*.doc binary

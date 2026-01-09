@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(test:*)",
+      "Bash(make:*)",
+      "Bash(tree:*)",
+      "Bash(git mv:*)",
+      "Bash(git add:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}

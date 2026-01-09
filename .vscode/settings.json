@@ -1,0 +1,5 @@
+{
+    "editor.wordWrap": "on",
+    "gitlens.codeLens.enabled": false,
+    "gitlens.currentLine.enabled": false
+}

@@ -15,7 +15,12 @@ LATEX_DIR = $(OUTPUT_DIR)/latex
 
 # Input files
 MANUSCRIPT = manuscript.md
-IMAGE_FILES = $(wildcard examples/images/*.pdf examples/images/*.png examples/images/*.jpg)
+# Note: Image files with spaces are handled by Pandoc directly
+# We don't list them as Make dependencies to avoid escaping issues
+
+# DOCX post-processing (Windows only)
+# Set to false to disable post-processing
+ENABLE_DOCX_POSTPROCESS = true
 
 # ============================================================================
 # PLATFORM DETECTION - Detect OS and set commands accordingly
@@ -49,14 +54,19 @@ all: docx
 help:
 ifeq ($(OS),Windows_NT)
 	@Write-Host "Pandoc Manuscript Template - Available targets:"
-	@Write-Host "  make docx      - Generate DOCX file"
+	@Write-Host "  make docx      - Generate DOCX file (with VBA post-processing on Windows)"
 	@Write-Host "  make latex     - Generate LaTeX file only"
 	@Write-Host "  make pdf       - Generate LaTeX and compile to PDF"
 	@Write-Host "  make clean     - Remove all generated files"
 	@Write-Host ""
 	@Write-Host "Configuration:"
 	@Write-Host "  PROJECT_NAME = $(PROJECT_NAME)"
+	@Write-Host "  DOCX Post-Processing = $(ENABLE_DOCX_POSTPROCESS)"
 	@Write-Host "  Output: $(OUTPUT_DIR)/"
+	@Write-Host ""
+	@Write-Host "Post-Processing:"
+	@Write-Host "  To disable: Set ENABLE_DOCX_POSTPROCESS = false in Makefile"
+	@Write-Host "  To customize: Edit scripts\postprocess-docx.ps1"
 else
 	@echo "Pandoc Manuscript Template - Available targets:"
 	@echo "  make docx      - Generate DOCX file"
@@ -67,24 +77,30 @@ else
 	@echo "Configuration:"
 	@echo "  PROJECT_NAME = $(PROJECT_NAME)"
 	@echo "  Output: $(OUTPUT_DIR)/"
+	@echo ""
+	@echo "Note: VBA post-processing only available on Windows"
 endif
 
 # Generate DOCX file
-docx: $(DOCX_DIR)/$(PROJECT_NAME).docx
-
-$(DOCX_DIR)/$(PROJECT_NAME).docx: $(MANUSCRIPT) $(IMAGE_FILES)
+docx:
 ifeq ($(OS),Windows_NT)
 	@if (!(Test-Path '$(subst /,\,$(DOCX_DIR))')) { New-Item -ItemType Directory -Path '$(subst /,\,$(DOCX_DIR))' -Force | Out-Null }
 	@pandoc --defaults pandoc/pandoc-docx.yml
+ifeq ($(ENABLE_DOCX_POSTPROCESS),true)
+	@Write-Host "Running post-processing..." -ForegroundColor Cyan
+	@powershell.exe -ExecutionPolicy Bypass -File scripts\postprocess-docx.ps1 -DocxPath "$(subst /,\,$(DOCX_DIR))\$(PROJECT_NAME).docx"
+	@if ($$LASTEXITCODE -ne 0) { exit $$LASTEXITCODE }
+endif
 else
 	@mkdir -p $(DOCX_DIR)
 	pandoc --defaults pandoc/pandoc-docx.yml
+	@echo "Note: Post-processing only available on Windows"
 endif
 
 # Generate LaTeX file
 latex: $(LATEX_DIR)/$(PROJECT_NAME).tex
 
-$(LATEX_DIR)/$(PROJECT_NAME).tex: $(MANUSCRIPT) $(IMAGE_FILES)
+$(LATEX_DIR)/$(PROJECT_NAME).tex: $(MANUSCRIPT)
 ifeq ($(OS),Windows_NT)
 	@if (!(Test-Path '$(subst /,\,$(LATEX_DIR))')) { New-Item -ItemType Directory -Path '$(subst /,\,$(LATEX_DIR))' -Force | Out-Null }
 	@pandoc --defaults pandoc/pandoc-latex.yml

@@ -119,6 +119,42 @@ This section describes the methodology employed in the research.
 
 : Experimental setup configuration {#tbl:setup}
 
+The table above demonstrates basic table formatting. For DOCX output, you can use advanced formatting features by adding metadata to table captions or using cell merge markers (see examples in @tbl:advanced-formatting and @tbl:merged-cells).
+
+## Advanced Table Formatting (DOCX Only)
+
+When generating DOCX output with `make docx`, you can use special features for enhanced table formatting.
+
+### Table Metadata
+
+Add metadata to control table properties. The metadata is automatically removed from the final caption:
+
+| **Property**     | **Value**          | **Description**                    |
+|------------------|--------------------|------------------------------------|
+| Cell margins     | 0.10 cm            | Padding inside cells               |
+| Cell spacing     | 0 pt               | Space between cells                |
+| Autofit          | Window             | Table width adjustment             |
+| Alignment        | Center             | Table position on page             |
+
+: Table formatting properties. |cell_margin=0.10cm cell_spacing=0pt autofit=window alignment=center| {#tbl:advanced-formatting}
+
+The caption above includes metadata `|cell_margin=0.10cm cell_spacing=0pt autofit=window alignment=center|` which will be applied to the table and then removed in the final DOCX.
+
+### Cell Merging
+
+Use special markers to merge cells: `!<!` merges left, `!^!` merges up:
+
+| **Category** | **Subcategory** | **Value** | **Notes**        |
+|:------------:|:---------------:|:---------:|:----------------:|
+| Group A      | Item 1          | 10        | First item       |
+| !^!          | Item 2          | 20        | Second item      |
+| Group B      | Item 3          | 30        | Third item       |
+| !^!          | Item 4          | 40        | !<!              |
+
+: Example of merged cells using markers. {#tbl:merged-cells}
+
+In @tbl:merged-cells, "Group A" spans two rows, "Group B" spans two rows, and the last row has a merged cell spanning two columns.
+
 ## Mathematical Formulation
 
 The proposed approach can be expressed mathematically. Consider a function $f(x)$ defined as:

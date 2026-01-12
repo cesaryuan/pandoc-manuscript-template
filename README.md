@@ -155,6 +155,72 @@ Use standard Pandoc citation syntax:
 - Narrative citation: `@smith2023 showed that...`
 - With page numbers: `[@smith2023, p. 42]`
 
+### Advanced Table Formatting (DOCX Post-Processing)
+
+When generating DOCX output with `make docx`, three PowerShell scripts automatically enhance table formatting:
+
+#### 1. Table Metadata (process-table-metadata.ps1)
+
+Add metadata to table captions to control table properties. The metadata is automatically removed from the final caption.
+
+**Syntax**: Add `|key=value key2=value2|` at the end of the table caption.
+
+**Available metadata keys**:
+- `cell_margin=0.10cm` - Set all cell margins (supports cm, mm, in, pt)
+- `cell_margin_top=0.10cm`, `cell_margin_bottom=0.10cm`, `cell_margin_left=0.10cm`, `cell_margin_right=0.10cm` - Individual margins
+- `cell_spacing=0pt` - Spacing between cells
+- `row_height=0.5cm` - Set row height for all rows
+- `alignment=center` - Table alignment (left, center, right)
+- `autofit=window` - Autofit behavior (fixed, content, window)
+
+**Example**:
+```markdown
+| **Method** | **Accuracy (%)** |
+|:----------:|:----------------:|
+| Baseline   | 78.3             |
+| Proposed   | 92.4             |
+
+: Performance comparison. |cell_margin=0.10cm autofit=window alignment=center| {#tbl:results}
+```
+
+The metadata `|cell_margin=0.10cm autofit=window alignment=center|` will be applied to the table and then removed from the caption in the final DOCX.
+
+#### 2. Cell Merging (merge-table-cells.ps1)
+
+Use special markers to merge table cells in the generated DOCX:
+
+- `!<!` - Merge with the cell to the left
+- `!^!` - Merge with the cell above
+
+**Example**:
+```markdown
+| **Category** | **Subcategory** | **Value** |
+|:------------:|:---------------:|:---------:|
+| Group A      | Item 1          | 10        |
+| !^!          | Item 2          | 20        |
+| Group B      | Item 3          | 30        |
+
+: Table with merged cells. {#tbl:merged}
+```
+
+In this example, "Group A" will span two rows (merging with the cell below containing `!^!`).
+
+**Important notes**:
+- Markers are processed and removed during DOCX generation
+- Left merges (`!<!`) are processed first, then up merges (`!^!`)
+- The marker cell must be empty except for the marker itself
+
+#### 3. Auto-fit Tables (autofit-tables.ps1)
+
+All tables are automatically fitted to window width and centered. This can be overridden using the `autofit` metadata key.
+
+**Post-processing scripts location**: `scripts/`
+- `process-table-metadata.ps1` - Applies metadata from captions
+- `merge-table-cells.ps1` - Merges cells based on markers
+- `autofit-tables.ps1` - Auto-fits tables to window
+
+These scripts run automatically when `ENABLE_DOCX_POSTPROCESS = true` in the Makefile (Windows only, requires Microsoft Word).
+
 ## File Organization
 
 ```

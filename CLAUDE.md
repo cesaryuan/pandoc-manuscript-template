@@ -34,17 +34,19 @@ Create tables using pipe syntax with a caption below. Reference tables in text: 
 - Use **bold** only for highlighting best results in comparison tables
 - Avoid excessive formatting (colors, merged cells) - keep tables simple
 - Use `**bold**` for column headers if needed: `| **Header 1** | **Header 2** |`
+- Use :-- for left alignment, :--: for center alignment (default), and --: for right alignment
+- For advanced typesetting requirements, refer to `### Advanced Table Formatting (DOCX Post-Processing)` in README.md.
 
 Example:
 ```markdown
 | **Method**  | **Accuracy (%)** | **F1-Score (%)** |
-|-------------|------------------|------------------|
+|:-----------:|:----------------:|:----------------:|
 | Baseline    | 78.3             | 77.8             |
 | **Proposed**| **92.4**         | **92.4**         |
 
 : Performance comparison. Best results in **bold**. {#tbl:results}
 
-As shown in @tbl:results, the proposed method achieves superior performance.
+As shown in @tbl:results, ...
 ```
 
 ### Equations
@@ -268,6 +270,14 @@ Advise removing subsections and reorganizing into coherent narrative paragraphs.
 ### Scenario 6: User overuses bold text
 
 Identify unnecessary bold formatting and suggest removing it, keeping only table emphasis and required formatting.
+
+### Scenario 7: User needs advanced table formatting
+
+Help them use the post-processing features:
+1. For custom cell margins or spacing: Add metadata to the table caption (e.g., `|cell_margin=0.10cm|`)
+2. For merged cells: Use `!<!` for left merge or `!^!` for up merge
+3. Remind them these features only work with DOCX output (`make docx`) on Windows with Word installed
+4. Show examples from `manuscript.example.md` if available
 
 ## Important Reminders
 

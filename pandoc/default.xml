@@ -58,6 +58,14 @@ $endif$
 $for(include-before)$
     $include-before$
 $endfor$
+
+<!-- Page break -->
+<w:p>
+  <w:r>
+    <w:br w:type="page"/>
+  </w:r>
+</w:p>
+
 $if(toc)$
     $toc$
 $endif$

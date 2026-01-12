@@ -1,7 +1,7 @@
 # Pandoc DOCX output configuration
 # Usage: pandoc --defaults pandoc.yml
 
-verbosity: INFO
+verbosity: WARNING
 input-files:
   - manuscript.md
 

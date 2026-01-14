@@ -1,8 +1,24 @@
+---
+version: 1.1.0
+last_updated: 2026-01-14
+---
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when helping users write academic papers using this Pandoc manuscript template.
 
-## Overview
+## Table of Contents
+
+- [Quick Start](#quick-start) - Fast reference for common tasks
+- [Assistance Priority Guide](#assistance-priority-guide) - What to fix first
+- [Critical Don'ts](#critical-donts---what-not-to-do) - Non-negotiable rules
+- [Pandoc Markdown Syntax Guide](#pandoc-markdown-syntax-guide) - Syntax reference
+- [Academic Writing Style Guidelines](#academic-writing-style-guidelines) - Style rules
+- [Common Assistance Scenarios](#common-assistance-scenarios) - Task-based help
+
+## Quick Start
+
+### Overview
 
 This template helps academic writers create manuscripts in Pandoc Markdown format and convert them to DOCX (for journal submission) or LaTeX/PDF (for archival).
 
@@ -11,33 +27,73 @@ This template helps academic writers create manuscripts in Pandoc Markdown forma
 - The `manuscript.example.md` file provides a complete template with proper structure, syntax examples, and writing style
 - When helping users start a new paper, reference the structure and conventions in `manuscript.example.md`
 
+### Quick Reference Card
+
+**Common Syntax:**
+- **Figures**: `![caption](path){#fig:label}` → reference: `@fig:label`
+- **Tables**: Caption with `: Description {#tbl:label}` → reference: `@tbl:label`
+- **Citations**: `[@key]` (parenthetical), `@key` (narrative), `[@key1; @key2]` (multiple)
+- **Equations**: `$$ math $$ {#eq:label}` → reference: `@eq:label`; inline: `$ math $`
+- **Sections**: `# Title {#sec:label}` → reference: `@sec:label`
+
+**Writing Rules:**
+- ❌ Subsections in Introduction
+- ❌ Bold as pseudo-headings
+- ❌ Short bullet lists
+- ❌ Separate "Related Work" section
+- ✅ Narrative paragraphs (3-7 sentences)
+- ✅ Unified Introduction with Related Work integrated
+- ✅ Lead with narrative, end with figure reference
+
+## Assistance Priority Guide
+
+When helping users, follow this priority order:
+
+### Priority 1: Critical Structure Issues
+Address these first as they affect the entire document structure:
+1. **Separate Introduction and Related Work sections** → Merge into unified Introduction
+2. **Subsections within Introduction** → Remove and reorganize into narrative
+3. **Excessive ### (level 3) headings** → Convert to narrative paragraphs
+
+### Priority 2: Major Flow Issues
+Fix these after structure is correct:
+4. **Pseudo-headings** (bold text used as headers like "**Data Collection**: ...") → Convert to narrative
+5. **List-heavy writing** (short bullet lists instead of paragraphs) → Transform to narrative
+6. **Repetitive figure patterns** (every paragraph starts with "@fig:label shows...") → Integrate naturally
+
+### Priority 3: Minor Formatting
+Polish these after structure and flow are fixed:
+7. **Bold text overuse** → Remove unnecessary bold formatting
+8. **Cross-reference syntax errors** → Fix `@fig:`, `@tbl:`, `@eq:`, `@sec:` usage
+9. **Citation formatting** → Ensure proper `[@key]` or `@key` syntax
+
+## Critical Don'ts - What NOT to Do
+
+🚫 **NEVER do these - they are non-negotiable violations of academic writing standards:**
+
+1. **Add subsections (##) under Introduction** - Introduction must be a coherent narrative without section headings
+2. **Use bold text as paragraph headers** - No "**Data Collection**: ..." patterns
+3. **Replace narrative with short bullet lists** - Use flowing paragraphs instead
+4. **Start paragraphs with "@fig:label shows..."** - Lead with narrative, reference at end
+5. **Create separate "Related Work" section** - Merge into unified Introduction in engineering papers
+6. **Use excessive ### (level 3) headings** - Convert to narrative within ## sections
+7. **Add single-sentence paragraphs** - Combine into coherent units (except for transitions)
+8. **Use bold for emphasis in body text** - Reserve bold only for table results and contribution statements
+
 ## Pandoc Markdown Syntax Guide
-
-### Figures
-
-Insert figures with captions and labels for cross-referencing:
-
-Reference figures in text: `@fig:label` or `see @fig:label`
-
-Example:
-```markdown
-![Comparison of model performance across different datasets.](images/results.png){#fig:performance}
-
-As shown in @fig:performance, the proposed method outperforms baseline approaches.
-```
 
 ### Tables
 
-Create tables using pipe syntax with a caption below. Reference tables in text: `@tbl:label`
+Create tables using pipe syntax with a caption below.
 
 **Important table conventions:**
 - Use **bold** only for highlighting best results in comparison tables
 - Avoid excessive formatting (colors, merged cells) - keep tables simple
 - Use `**bold**` for column headers if needed: `| **Header 1** | **Header 2** |`
-- Use :-- for left alignment, :--: for center alignment (default), and --: for right alignment
-- For advanced typesetting requirements, refer to `### Advanced Table Formatting (DOCX Post-Processing)` in README.md.
+- Use `:--` for left alignment, `:--:` for center alignment (default), and `--:` for right alignment
+- For advanced typesetting requirements, refer to `### Advanced Table Formatting (DOCX Post-Processing)` in README.md
 
-Example:
+**Syntax:**
 ```markdown
 | **Method**  | **Accuracy (%)** | **F1-Score (%)** |
 |:-----------:|:----------------:|:----------------:|
@@ -49,67 +105,11 @@ Example:
 As shown in @tbl:results, ...
 ```
 
-### Equations
+### Bibliography
 
-Inline equations use single dollar signs: `$E = mc^2$`. Display equations use double dollar signs with labels. Reference equations in text: `@eq:label`.
-
-Example:
-```markdown
-The optimization objective is defined as:
-
-$$
-\mathcal{L}() = \frac{1}{N}
-$$ {#eq:loss}
-
-where $\ell(\cdot)$ is the loss function. We minimize @eq:loss using gradient descent.
-```
-
-### Citations and References
-
-**Bibliography file**: Specify in the YAML header of `manuscript.md`:
+**Bibliography file** - Specify in the YAML header of `manuscript.md`:
 ```yaml
 bibliography: path/to/references.bib
-```
-
-**Citation syntax**:
-```markdown
-[@key]                    # Parenthetical: (Author, 2023)
-@key                      # Narrative: Author (2023)
-[@key1; @key2]            # Multiple: (Author1, 2023; Author2, 2024)
-[@key, p. 42]             # With page: (Author, 2023, p. 42)
-[@key1; @key2; @key3]     # Three or more
-```
-
-Examples:
-```markdown
-Previous research has shown promising results [@smith2023].
-According to @johnson2024, the method achieves high accuracy.
-Multiple studies [@chen2022; @garcia2023; @williams2024] have explored this topic.
-For detailed analysis, see @miller2023 [p. 237].
-```
-
-**BibTeX format**: Create a `.bib` file with entries like:
-```bibtex
-@article{smith2023,
-  author = {Smith, John and Doe, Jane},
-  title = {A Novel Approach to Machine Learning},
-  journal = {Journal of AI Research},
-  year = {2023},
-  volume = {15},
-  pages = {123--145}
-}
-```
-
-### Section Cross-References
-
-Label sections and reference them:
-
-```markdown
-# Introduction {#sec:introduction}
-# Methods {#sec:methods}
-# Results {#sec:results}
-
-Reference: @sec:methods describes the methodology.
 ```
 
 ## Academic Writing Style Guidelines
@@ -118,7 +118,7 @@ Reference: @sec:methods describes the methodology.
 
 **DO NOT** divide Introduction into subsections. The introduction should be a coherent narrative without section headings.
 
-**Good example**:
+**Good example:**
 ```markdown
 # Introduction {#sec:introduction}
 
@@ -147,9 +147,9 @@ The main contributions are threefold. First, ... Second, ... Third, ...
 [content]
 ```
 
-### 2. Minimal Use of Bold Text
+### 2. Bold Text Usage - Complete Guide
 
-Use **bold** sparingly in academic writing:
+Use **bold** sparingly in academic writing. This is the definitive guide for all bold text usage.
 
 ✅ **Appropriate uses:**
 - Highlighting best results in tables: `| **Proposed** | **92.4** |`
@@ -158,7 +158,10 @@ Use **bold** sparingly in academic writing:
 ❌ **Avoid:**
 - Bolding list item labels: ~~`**Data preprocessing**: Clean data`~~
 - Emphasizing concepts in text: ~~`The **main advantage** is...`~~
-- Section-like headers within paragraphs
+- Section-like headers within paragraphs (pseudo-headings): ~~`**Data Collection**: We collected...`~~
+- Any use of bold as a substitute for proper section headings
+
+**Note:** Other guidelines reference this section for bold text rules.
 
 ### 3. Avoid Bullet Lists, Prefer Narrative
 
@@ -182,13 +185,13 @@ The procedure includes:
 - Evaluation
 ```
 
-**Exception**: Bullet lists are acceptable when listing specific technical details or enumerated items where narrative would be awkward.
+**Exception:** Bullet lists are acceptable when listing specific technical details or enumerated items where narrative would be awkward.
 
 ### 4. Numbered Lists Should Have Substantial Content
 
 When using numbered lists, each item should be a complete sentence or paragraph, not a short phrase.
 
-**Good example**:
+**Good example:**
 ```markdown
 This study has three main limitations. (1) The results are based on a specific
 dataset, and generalization to other domains requires further validation.
@@ -197,7 +200,7 @@ which may limit applicability in resource-constrained environments. (3) Performa
 may vary with different hyperparameter configurations.
 ```
 
-Or as a narrative paragraph:
+**Or as a narrative paragraph:**
 ```markdown
 This study has several limitations that should be acknowledged. The results are
 based on a specific dataset, and generalization to other domains requires further
@@ -223,18 +226,189 @@ By optimizing @eq:loss, we achieve...
 See @sec:discussion for detailed analysis.
 ```
 
-## How to Generate Output
+**Important:** Always check cross-reference syntax: `@fig:label`, `@tbl:label`, `@eq:label`, `@sec:label`
 
-Users can generate DOCX and PDF outputs using these commands:
+### 7. Avoid Pseudo-Headings and Excessive Subsections
 
-```bash
-make docx          # Creates output/docx/manuscript.docx
-make pdf           # Creates output/manuscript.pdf
+**CRITICAL RULE:** Never use bold text as pseudo-headings within paragraphs. Sections should flow as coherent narrative paragraphs, not as fragmented lists with bold labels. See [Guideline #2](#2-bold-text-usage---complete-guide) for complete bold text rules.
+
+❌ **Bad example** (pseudo-headings):
+```markdown
+## Methods
+
+### Data Processing
+
+**Data Collection**: We collected data from multiple sources...
+
+**Data Cleaning**: The data was preprocessed by removing outliers...
+
+**Feature Extraction**: Features were extracted using the following approach...
 ```
+
+✅ **Good example** (narrative flow):
+```markdown
+## Methods
+
+Data was collected from multiple sources including sensor networks and historical records. The raw data underwent preprocessing to remove outliers and handle missing values through interpolation. Subsequently, feature extraction was performed using principal component analysis, which identified the most discriminative characteristics for classification.
+```
+
+**Guidelines for subsection hierarchy:**
+
+- **Level 1 (`#`)**: Main sections (Introduction, Methods, Results, etc.)
+  - **No subsections** for: Introduction, Conclusion
+  - **Subsections allowed** for: Methods, Results, Discussion
+
+- **Level 2 (`##`)**: Major subsections within Methods/Results/Discussion
+  - Should represent logically distinct components
+  - **Avoid excessive fragmentation** - aim for 3-5 substantial subsections maximum
+  - Each subsection should be substantial (multiple paragraphs)
+
+- **Level 3 (`###`)**: Generally **AVOID** unless absolutely necessary
+  - If you find yourself needing level 3 headings, **reconsider the structure**
+  - Instead, use narrative transitions between topics within level 2 sections
+  - If level 3 is truly needed, immediately convert content to flowing paragraphs
+
+**Refactoring strategy when encountering excessive subsections:**
+
+1. **Identify the main concepts** under each level 2 heading
+2. **Merge related sub-topics** into coherent narrative paragraphs
+3. **Use transitional phrases** to connect concepts:
+   - "First, ... Second, ... Third, ..."
+   - "To address this, ..."
+   - "Subsequently, ..."
+   - "Building upon this, ..."
+4. **Eliminate bold pseudo-headings** entirely
+5. **Preserve technical content** while improving flow
+
+**Example transformation:**
+
+Before (over-structured):
+```markdown
+## Methodology
+
+### Data Collection
+We collected data from sensors.
+
+### Data Preprocessing
+**Outlier Removal**: Outliers were removed using IQR method.
+**Normalization**: Data was normalized to [0,1] range.
+
+### Feature Engineering
+**Feature Selection**: We selected top 10 features.
+**Feature Transformation**: Features were transformed using PCA.
+```
+
+After (narrative):
+```markdown
+## Methodology
+
+Data collection was performed using calibrated sensors deployed at strategic locations. The collected data underwent preprocessing to ensure quality and consistency. Outliers were identified and removed using the interquartile range method, and the remaining values were normalized to the [0,1] range for uniform scaling.
+
+Feature engineering involved two complementary steps. First, feature selection identified the ten most discriminative variables using mutual information criterion. Second, principal component analysis transformed the selected features into an orthogonal representation, reducing dimensionality while preserving variance.
+```
+
+### 8. Paragraph Length and Coherence
+
+Each paragraph should:
+- Focus on **one main idea** or closely related concepts
+- Contain **3-7 sentences** typically
+- Start with a **topic sentence** establishing the main point
+- Use **transitions** to connect with preceding/following paragraphs
+- **Avoid single-sentence paragraphs** except for transitions or emphasis
+
+Combine short, fragmented paragraphs into coherent units. Break overly long paragraphs (>10 sentences) into logical subdivisions.
+
+### 9. Integrating Introduction and Related Work
+
+In engineering and technical papers, Introduction and Related Work are typically **merged into a single unified Introduction section** rather than separated.
+
+**Structure of unified Introduction:**
+1. Problem statement and motivation (1-2 paragraphs)
+2. Traditional approaches and their limitations (1 paragraph)
+3. Deep learning/modern approaches with literature review (2-4 paragraphs)
+   - Organize by approach type (CNNs, RNNs, GANs, Diffusion models, etc.)
+   - Cite relevant work naturally within narrative flow
+   - Highlight advances and remaining limitations
+4. Research gaps and motivation (1 paragraph)
+5. Contributions and paper organization (1 paragraph)
+
+**Good example structure:**
+```markdown
+# Introduction {#sec:introduction}
+
+[Problem and motivation...]
+
+Traditional methods include... but fail to...
+
+Deep learning has emerged as... [@cite1; @cite2]. Specifically, CNNs have been applied to... [@cite3], while RNNs demonstrate... [@cite4]. More recently, diffusion models... [@cite5; @cite6].
+
+Despite these advances, existing methods lack...
+
+This study addresses... The key contributions are threefold...
+
+The remainder of this paper is organized as follows: @sec:methods...
+```
+
+**Avoid:**
+- Separate "# Related Work" section (use unified Introduction instead)
+- Subsections within Introduction (## Background, ## Prior Work, etc.)
+- Exhaustive literature review without connecting to motivation
+
+### 10. Natural Figure Integration
+
+Avoid monotonous figure presentation patterns. Integrate figures naturally into narrative flow rather than starting paragraphs with figure references.
+
+❌ **Bad pattern** (monotonous):
+```markdown
+![Caption](image.png){#fig:label}
+
+@fig:label presents the results showing...
+
+![Another caption](image2.png){#fig:label2}
+
+@fig:label2 shows the performance across...
+
+![Yet another](image3.png){#fig:label3}
+
+@fig:label3 illustrates the architecture of...
+```
+
+✅ **Good pattern** (natural integration):
+```markdown
+The experimental results demonstrate superior performance across all
+scenarios, with the proposed method achieving 95% accuracy. Detailed
+comparisons across different datasets are shown in @fig:results.
+
+![Performance comparison across datasets](results.png){#fig:results}
+
+The network architecture consists of three main components: an encoder
+for feature extraction, a transformer for sequence modeling, and a
+decoder for reconstruction, as illustrated in @fig:architecture.
+
+![Network architecture diagram](arch.png){#fig:architecture}
+```
+
+**Guidelines:**
+- **Lead with narrative**, end with figure reference: "...descriptive text, as shown in @fig:label."
+- **Place figure after** the paragraph that describes/references it
+- **Vary sentence structures** - don't always use "as shown in" or "illustrated in"
+  - "...is depicted in @fig:label"
+  - "...are presented in @fig:results"
+  - "(@fig:comparison)"
+  - "...demonstrated in @fig:analysis"
+- **Integrate figure content** into the narrative before referencing
+- **Avoid** starting paragraphs with "@fig:label presents/shows/illustrates..."
 
 ## Common Assistance Scenarios
 
-### Scenario 1: User wants to start a new manuscript from scratch
+Scenarios are organized by priority (see [Assistance Priority Guide](#assistance-priority-guide)).
+
+### High Priority Scenarios
+
+
+### On-Demand Scenarios
+
+#### Scenario 7: User wants to start a new manuscript from scratch
 
 Help them:
 1. Suggest copying `manuscript.example.md` as a starting point: `cp manuscript.example.md manuscript.md`
@@ -242,42 +416,6 @@ Help them:
 3. Guide them to replace placeholder content with their own research
 4. Ensure they update the YAML header with their title, authors, and bibliography path
 
-### Scenario 2: User wants to add a figure
-
-Help them:
-1. Choose an appropriate label (e.g., `{#fig:results}`)
-2. Write a descriptive caption
-3. Add cross-references in the text where the figure is discussed
-
-### Scenario 3: User wants to add citations
-
-Help them:
-1. Ensure the `.bib` file is specified in YAML header
-2. Use appropriate citation syntax (parenthetical vs. narrative)
-3. Group related citations together: `[@key1; @key2; @key3]`
-
-### Scenario 4: User's writing is too listy
-
-Transform bullet lists into narrative paragraphs following academic writing conventions:
-- Use transition words: "First,", "Second,", "Additionally,", "Finally,"
-- Make complete sentences with proper context
-- Connect ideas logically
-
-### Scenario 5: User's Introduction has subsections
-
-Advise removing subsections and reorganizing into coherent narrative paragraphs.
-
-### Scenario 6: User overuses bold text
-
-Identify unnecessary bold formatting and suggest removing it, keeping only table emphasis and required formatting.
-
-### Scenario 7: User needs advanced table formatting
-
-Help them use the post-processing features:
-1. For custom cell margins or spacing: Add metadata to the table caption (e.g., `|cell_margin=0.10cm|`)
-2. For merged cells: Use `!<!` for left merge or `!^!` for up merge
-3. Remind them these features only work with DOCX output (`make docx`) on Windows with Word installed
-4. Show examples from `manuscript.example.md` if available
 
 ## Important Reminders
 
@@ -286,3 +424,4 @@ Help them use the post-processing features:
 - Citation keys must match entries in the `.bib` file exactly
 - Academic writing prioritizes clarity and formal tone over stylistic flourishes
 - When in doubt, follow conventions of the user's target journal or field
+- Always preserve technical content while improving structure and flow

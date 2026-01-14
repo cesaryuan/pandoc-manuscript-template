@@ -6,7 +6,8 @@
       "Bash(tree:*)",
       "Bash(git mv:*)",
       "Bash(git add:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(dir scripts:*)"
     ]
   }
 }

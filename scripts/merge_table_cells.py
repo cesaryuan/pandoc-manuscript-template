@@ -113,7 +113,18 @@ def merge_table_cells(doc: DocumentObject) -> tuple[int, int]:
                         # Merge with left cell
                         try:
                             left_cell = row.cells[col_idx - 1]
-                            left_cell.merge(cell)
+                            merged_cell = left_cell.merge(cell)
+
+                            # Remove empty paragraphs from merged cell
+                            paragraphs_to_remove = []
+                            for paragraph in merged_cell.paragraphs:
+                                if not paragraph.text.strip():
+                                    paragraphs_to_remove.append(paragraph)
+
+                            for paragraph in paragraphs_to_remove:
+                                p_element = paragraph._element
+                                p_element.getparent().remove(p_element)
+
                             left_merge_count += 1
                         except Exception as e:
                             print_warning(f"Failed to merge left at row {row_idx + 1}, cell {col_idx + 1}: {e}")
@@ -143,7 +154,18 @@ def merge_table_cells(doc: DocumentObject) -> tuple[int, int]:
                         # Merge with cell above
                         try:
                             above_cell = table.rows[row_idx - 1].cells[col_idx]
-                            above_cell.merge(cell)
+                            merged_cell = above_cell.merge(cell)
+
+                            # Remove empty paragraphs from merged cell
+                            paragraphs_to_remove = []
+                            for paragraph in merged_cell.paragraphs:
+                                if not paragraph.text.strip():
+                                    paragraphs_to_remove.append(paragraph)
+
+                            for paragraph in paragraphs_to_remove:
+                                p_element = paragraph._element
+                                p_element.getparent().remove(p_element)
+
                             up_merge_count += 1
                         except Exception as e:
                             print_warning(f"Failed to merge up at row {row_idx + 1}, cell {col_idx + 1}: {e}")

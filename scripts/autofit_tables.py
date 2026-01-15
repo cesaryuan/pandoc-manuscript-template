@@ -68,6 +68,7 @@ def set_table_autofit_window(table: Table):
     Args:
         table: The table to modify
     """
+    table.autofit = True
     tbl = table._element
     tblPr = tbl.tblPr
 

@@ -7,7 +7,9 @@
       "Bash(git mv:*)",
       "Bash(git add:*)",
       "Bash(ls:*)",
-      "Bash(dir scripts:*)"
+      "Bash(dir scripts:*)",
+      "Bash(uv --version:*)",
+      "Bash(dir:*)"
     ]
   }
 }

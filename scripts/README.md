@@ -1,196 +1,350 @@
-# DOCX Post-Processing with PowerShell
+# DOCX Post-Processing Scripts
 
-This directory contains a PowerShell script for post-processing generated DOCX files using the Word COM API.
+This directory contains Python scripts for post-processing generated DOCX files. These scripts are cross-platform and do not require Microsoft Word.
 
 ## Files
 
-- `postprocess-docx.ps1` - PowerShell script that formats DOCX files directly (no VBA needed)
+- `postprocess_docx.py` - Main orchestrator script
+- `merge_table_cells.py` - Merge table cells based on markers
+- `process_table_metadata.py` - Apply table metadata from captions
+- `autofit_tables.py` - Auto-fit tables to window width
+
+## Quick Start
+
+**Prerequisites:**
+```bash
+# Install uv (if not already installed)
+# Windows:
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# macOS/Linux:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Usage:**
+```bash
+# Process a DOCX file (UV automatically handles dependencies)
+uv run scripts/postprocess_docx.py output/docx/manuscript.docx
+
+# Or run individual scripts
+uv run scripts/merge_table_cells.py output/docx/manuscript.docx
+uv run scripts/process_table_metadata.py output/docx/manuscript.docx
+uv run scripts/autofit_tables.py output/docx/manuscript.docx
+```
 
 ## How It Works
 
-When you run `make docx`, the build process:
+The Python scripts use the `python-docx` library to manipulate DOCX files directly:
 
-1. Generates DOCX file using Pandoc
-2. Automatically runs `postprocess-docx.ps1` (Windows only, if enabled)
-3. The PowerShell script:
-   - Opens the generated DOCX in Word (invisible mode)
-   - Formats tables with consistent styles
-   - Updates all fields and cross-references
-   - Sets up page properties (A4, margins, etc.)
-   - Saves and closes the document
+1. **No Microsoft Word required** - Works on Windows, macOS, and Linux
+2. **Direct XML manipulation** - Modifies the DOCX internal structure
+3. **Processing steps:**
+   - Merges table cells based on markers (`!<!` for left, `!^!` for up)
+   - Applies table metadata from captions (margins, alignment, row height, etc.)
+   - Auto-fits tables to window width (100%)
+   - Centers tables on page
 
-**No VBA required, no security settings to change!**
+**Limitations:**
+- Cannot update fields/cross-references (must be done manually in Word)
+- Limited table style support compared to Word COM API
+
+**Advantages:**
+- ✅ Cross-platform (Windows, macOS, Linux)
+- ✅ No Microsoft Word installation needed
+- ✅ Faster execution (no Word startup overhead)
+- ✅ Can run on servers and CI/CD pipelines
+- ✅ Open source dependencies
 
 ## Configuration
 
-Edit the top of `Makefile` to enable/disable:
+Edit the top of `Makefile` to enable/disable post-processing:
 
 ```makefile
-# DOCX post-processing (Windows only)
+# DOCX post-processing
 ENABLE_DOCX_POSTPROCESS = true    # Set to false to disable
 ```
 
-## Current Post-Processing Operations
+## Features and Syntax
 
-The script currently performs these operations (see lines 40-108 in `postprocess-docx.ps1`):
+### Installation
 
-### 1. Format All Tables
-- Applies "Grid Table 4 - Accent 1" style
-- Auto-fits to window width
-- Centers tables on page
-- Bolds the header row
+**Option 1: UV (Recommended)**
+```bash
+# Install uv package manager
+# Windows:
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-### 2. Update Fields
-- Updates all fields (cross-references, page numbers, etc.)
-- Updates table of contents if present
+# macOS/Linux:
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-### 3. Setup Page Properties
-- Paper size: A4
-- Orientation: Portrait
-- Margins: 2.5 cm on all sides
-
-### 4. Optional Operations (Commented Out)
-You can uncomment these in the script if needed:
-- Remove all comments
-- Accept all tracked changes
-
-## Customizing Post-Processing
-
-Edit `scripts\postprocess-docx.ps1` and modify the "FORMATTING OPERATIONS" section (lines 40-108).
-
-### Common Customizations
-
-**Change table style:**
-```powershell
-$table.Style = "Light Grid - Accent 1"  # Or any Word table style name
+# No additional installation needed - UV handles dependencies automatically
 ```
 
-**Different margins:**
-```powershell
-$marginCm = 3.0  # 3 cm margins
+**Option 2: Traditional pip**
+```bash
+# Install dependencies manually
+pip install python-docx>=1.1.0
 ```
 
-**Remove comments automatically:**
-```powershell
-# Uncomment lines 114-122
-if ($doc.Comments.Count -gt 0) {
-    $commentCount = $doc.Comments.Count
-    while ($doc.Comments.Count -gt 0) {
-        $doc.Comments.Item(1).Delete()
-    }
-    Write-Success "Removed $commentCount comment(s)"
-}
+### Features and Syntax
+
+#### 1. Merge Table Cells
+
+**Markers:**
+- `!<!` - Merge cell with the one to its left
+- `!^!` - Merge cell with the one above
+
+**Example Markdown:**
+```markdown
+| Header 1 | Header 2 | Header 3 |
+|----------|----------|----------|
+| A        | !<!      | C        |
+| D        | E        | F        |
+| !^!      | !^!      | G        |
+
+: Table with merged cells
 ```
 
-**Accept all tracked changes:**
-```powershell
-# Uncomment lines 124-131
-if ($doc.Revisions.Count -gt 0) {
-    $revisionCount = $doc.Revisions.Count
-    $doc.TrackRevisions = $false
-    $doc.Revisions.AcceptAll()
-    Write-Success "Accepted $revisionCount revision(s)"
-}
+**Result:**
+- Row 1: Cells "Header 1" and "Header 2" are merged
+- Row 3: Cells in columns 1 and 2 are merged with row 2
+
+**Usage:**
+```bash
+uv run scripts/merge_table_cells.py output/docx/manuscript.docx
 ```
 
-## Advanced Customizations
+#### 2. Process Table Metadata
 
-The script uses the Word COM API (Word.Application object model). You can do anything Word can do:
+**Metadata Format:** `|key=value key2=value2|` at the end of table caption
 
-### Add custom formatting
-```powershell
-# Example: Set specific font for headings
-foreach ($para in $doc.Paragraphs) {
-    if ($para.Style -eq "Heading 1") {
-        $para.Range.Font.Name = "Arial"
-        $para.Range.Font.Size = 16
-    }
-}
+**Supported Metadata Keys:**
+
+| Key | Values | Example | Description |
+|-----|--------|---------|-------------|
+| `cell_margin` | `0.1cm`, `5pt`, `0.5in` | `cell_margin=0.1cm` | Set all cell margins |
+| `cell_margin_top` | Same as above | `cell_margin_top=0.2cm` | Set top margin only |
+| `cell_margin_bottom` | Same as above | `cell_margin_bottom=0.2cm` | Set bottom margin only |
+| `cell_margin_left` | Same as above | `cell_margin_left=0.15cm` | Set left margin only |
+| `cell_margin_right` | Same as above | `cell_margin_right=0.15cm` | Set right margin only |
+| `row_height` | `1cm`, `20pt`, `0.5in` | `row_height=0.8cm` | Set row height for all rows |
+| `alignment` | `left`, `center`, `right` | `alignment=center` | Set table alignment on page |
+| `autofit` | `fixed`, `content`, `window` | `autofit=window` | Set autofit behavior |
+
+**Example Markdown:**
+```markdown
+| Method | Accuracy | F1-Score |
+|--------|----------|----------|
+| Baseline | 78.3% | 77.8% |
+| Proposed | 92.4% | 92.1% |
+
+: Performance comparison. Best results in **bold**. |cell_margin=0.1cm alignment=center|
 ```
 
-### Insert page breaks before specific headings
-```powershell
-foreach ($para in $doc.Paragraphs) {
-    if ($para.Style -eq "Heading 1" -and $para.Range.Start -gt 0) {
-        $para.Range.InsertBreak(7)  # wdPageBreak = 7
-    }
-}
+**After processing:** The metadata `|cell_margin=0.1cm alignment=center|` is removed from the caption, and the settings are applied to the table.
+
+**Usage:**
+```bash
+uv run scripts/process_table_metadata.py output/docx/manuscript.docx
 ```
 
-### Set different first page header
-```powershell
-$doc.PageSetup.DifferentFirstPageHeaderFooter = $true
-$firstPageHeader = $doc.Sections.Item(1).Headers.Item(1)
-$firstPageHeader.Range.Text = "First Page Header"
+#### 3. Auto-fit Tables
+
+Sets all tables to auto-fit to window width (100%) and centers them on the page.
+
+**Usage:**
+```bash
+# With center alignment (default)
+uv run scripts/autofit_tables.py output/docx/manuscript.docx
+
+# Without center alignment
+uv run scripts/autofit_tables.py output/docx/manuscript.docx --no-center
 ```
 
-### Find and replace text
-```powershell
-$word.Selection.Find.ClearFormatting()
-$word.Selection.Find.Replacement.ClearFormatting()
-$word.Selection.Find.Execute(
-    "old text",     # FindText
-    $false,         # MatchCase
-    $false,         # MatchWholeWord
-    $false,         # MatchWildcards
-    $false,         # MatchSoundsLike
-    $false,         # MatchAllWordForms
-    $true,          # Forward
-    0,              # Wrap (wdFindContinue)
-    $false,         # Format
-    "new text",     # ReplaceWith
-    2               # Replace (wdReplaceAll)
-)
+#### 4. Complete Pipeline
+
+Runs all processing steps in sequence:
+
+```bash
+uv run scripts/postprocess_docx.py output/docx/manuscript.docx
 ```
 
-## Testing
+**Processing order:**
+1. Merge table cells (markers)
+2. Apply table metadata (captions)
+3. Auto-fit tables to window
 
-Test the script independently:
+### Advanced Usage
 
-```powershell
-.\scripts\postprocess-docx.ps1 -DocxPath "output\docx\manuscript.docx"
+#### Use as Python Modules
+
+```python
+from docx import Document
+from merge_table_cells import merge_table_cells
+from process_table_metadata import process_table_metadata
+from autofit_tables import autofit_tables
+
+# Open document
+doc = Document("manuscript.docx")
+
+# Process
+left, up = merge_table_cells(doc)
+processed, settings = process_table_metadata(doc)
+fitted = autofit_tables(doc)
+
+# Save
+doc.save("manuscript.docx")
 ```
 
-## Advantages Over VBA
+#### Customize Processing
 
-✅ **No security settings needed** - No "Trust access to VBA project" required
-✅ **Easier to maintain** - PowerShell is more modern than VBA
-✅ **Version control friendly** - Pure text file, no binary .dotm
-✅ **Transparent** - All operations visible in the script
-✅ **Flexible** - Easy to add conditional logic, logging, etc.
+You can modify the Python scripts to add custom logic:
+
+**Example: Skip certain tables**
+```python
+# In autofit_tables.py, modify the autofit_tables function:
+for i, table in enumerate(doc.tables, start=1):
+    # Skip first table (often a title or abstract table)
+    if i == 1:
+        continue
+
+    set_table_autofit_window(table)
+    set_table_center_alignment(table)
+```
+
+**Example: Apply different margins based on table size**
+```python
+# In process_table_metadata.py, add custom logic:
+def apply_custom_margins(table):
+    num_cols = len(table.columns)
+
+    if num_cols > 5:
+        # Wide tables: smaller margins
+        set_cell_margins(table, top=Pt(2), bottom=Pt(2),
+                        left=Pt(3), right=Pt(3))
+    else:
+        # Narrow tables: larger margins
+        set_cell_margins(table, top=Pt(4), bottom=Pt(4),
+                        left=Pt(6), right=Pt(6))
+```
+
+### Troubleshooting
+
+#### Import Error: "No module named 'docx'"
+
+**Solution 1 (UV):** Use UV to run the script (it handles dependencies automatically):
+```bash
+uv run scripts/postprocess_docx.py output/docx/manuscript.docx
+```
+
+**Solution 2 (pip):** Install python-docx manually:
+```bash
+pip install python-docx
+```
+
+Note: The package name is `python-docx`, but you import it as `docx`.
+
+#### Script fails with "Failed to import processing modules"
+
+**Cause:** The scripts need to be in the same directory or Python path.
+
+**Solution:** Run from project root:
+```bash
+# Run from project root
+cd /path/to/pandoc-manuscript-template
+uv run scripts/postprocess_docx.py output/docx/manuscript.docx
+```
+
+#### Merged cells not working correctly
+
+**Cause:** Complex table structures or pre-existing merges may interfere.
+
+**Solution:**
+1. Ensure markers are the ONLY content in cells
+2. Process merges from simple to complex (left first, then up)
+3. Check the original table structure in Markdown
+
+#### Metadata not being applied
+
+**Cause:** Caption style not recognized or metadata format incorrect.
+
+**Solutions:**
+1. Ensure caption has "Caption" or "题注" style in Word
+2. Check metadata format: `|key=value key2=value2|` at the END of caption
+3. Use correct units: `cm`, `mm`, `in`, `pt`
+4. No spaces in key names: `cell_margin` not `cell margin`
+
+#### Tables not centered after auto-fit
+
+**Cause:** Document template may override table alignment.
+
+**Solution:** Use metadata to explicitly set alignment:
+```markdown
+: Table caption |alignment=center|
+```
+
+### Comparison with Word COM API
+
+| Feature | Python Scripts | Word COM API |
+|---------|----------------|--------------|
+| **Cross-platform** | ✅ Yes | ❌ Windows only |
+| **Requires Word** | ❌ No | ✅ Yes |
+| **Merge cells** | ✅ Full support | ✅ Full support |
+| **Table metadata** | ✅ Full support | ✅ Full support |
+| **Auto-fit tables** | ✅ Via XML | ✅ Native API |
+| **Update fields** | ❌ Not supported | ✅ Supported |
+| **Table styles** | ⚠️ Limited | ✅ Full support |
+| **Performance** | ✅ Fast | ⚠️ Slower (Word startup) |
+| **CI/CD friendly** | ✅ Yes | ⚠️ Windows only |
+| **Server deployment** | ✅ Easy | ❌ Difficult |
+
+**Recommendation:**
+- Use **Python** for most workflows (cross-platform, no Word needed)
+- If you need field updates or advanced Word features, update them manually in Word
 
 ## Requirements
 
-- Windows with Microsoft Word installed
-- PowerShell 5.1 or later (included in Windows 10/11)
+**Python version:** 3.11 or later
 
-## Troubleshooting
+**Dependencies (automatically managed by UV):**
+- `python-docx >= 1.1.0` - DOCX manipulation library
 
-### Script fails silently
+**Package Manager:**
+- `uv` - Fast Python package installer (recommended)
+- Alternative: `pip` (manual dependency management)
 
-**Solution:** Run the script manually to see detailed error messages:
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File scripts\postprocess-docx.ps1 -DocxPath "output\docx\manuscript.docx"
+### About UV Inline Scripts
+
+All Python scripts in this directory use **PEP 723 inline script metadata** format. This means:
+
+1. **Dependencies are declared in each script** - No separate `requirements.txt` needed
+2. **UV automatically manages dependencies** - Just run `uv run script.py`
+3. **Reproducible environments** - Each script specifies its exact dependencies
+4. **No virtual environment needed** - UV handles isolation automatically
+
+**Inline script metadata example:**
+```python
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "python-docx>=1.1.0",
+# ]
+# ///
 ```
 
-### Word opens visibly
-
-**Solution:** Make sure `$word.Visible = $false` is set in the script (line 33).
-
-### Changes not saved
-
-**Solution:** Check that `$doc.Save()` is called before closing (line 137).
-
-### Script hangs
-
-**Cause:** Word dialog box waiting for user input.
-**Solution:** Ensure `$word.DisplayAlerts = 0` is set (line 34).
-
-## References
-
-- [Word Object Model Reference](https://learn.microsoft.com/en-us/office/vba/api/overview/word/object-model)
-- [WdConstants Enumeration](https://learn.microsoft.com/en-us/office/vba/api/word.wdconstants)
+This approach provides:
+- ✅ **Simpler workflow** - No separate dependency installation step
+- ✅ **Better reproducibility** - Dependencies are versioned with the script
+- ✅ **Faster execution** - UV is significantly faster than pip
+- ✅ **Automatic caching** - Dependencies are cached and reused
 
 ## Security Note
 
-The PowerShell script runs with `-ExecutionPolicy Bypass` to avoid execution policy issues. Review the script before running to ensure it's safe.
+The Python scripts only use the `python-docx` library, which is a widely-used open source package. Always review dependencies before installation.
+
+## References
+
+- [python-docx Documentation](https://python-docx.readthedocs.io/)
+- [OOXML Specification](http://www.ecma-international.org/publications/standards/Ecma-376.htm)
+- [Office Open XML Wikipedia](https://en.wikipedia.org/wiki/Office_Open_XML)

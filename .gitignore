@@ -259,3 +259,4 @@ manuscript.tex
 
 # Pandoc cache
 .pandoc-cache/
+__pycache__/

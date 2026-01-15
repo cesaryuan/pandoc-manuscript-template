@@ -18,7 +18,7 @@ MANUSCRIPT = manuscript.md
 # Note: Image files with spaces are handled by Pandoc directly
 # We don't list them as Make dependencies to avoid escaping issues
 
-# DOCX post-processing (Windows only)
+# DOCX post-processing
 # Set to false to disable post-processing
 ENABLE_DOCX_POSTPROCESS = true
 
@@ -54,7 +54,7 @@ all: docx
 help:
 ifeq ($(OS),Windows_NT)
 	@Write-Host "Pandoc Manuscript Template - Available targets:"
-	@Write-Host "  make docx      - Generate DOCX file (with VBA post-processing on Windows)"
+	@Write-Host "  make docx      - Generate DOCX file (with Python post-processing)"
 	@Write-Host "  make latex     - Generate LaTeX file only"
 	@Write-Host "  make pdf       - Generate LaTeX and compile to PDF"
 	@Write-Host "  make clean     - Remove all generated files"
@@ -66,19 +66,22 @@ ifeq ($(OS),Windows_NT)
 	@Write-Host ""
 	@Write-Host "Post-Processing:"
 	@Write-Host "  To disable: Set ENABLE_DOCX_POSTPROCESS = false in Makefile"
-	@Write-Host "  To customize: Edit scripts\postprocess-docx.ps1"
+	@Write-Host "  To customize: Edit scripts\postprocess_docx.py"
 else
 	@echo "Pandoc Manuscript Template - Available targets:"
-	@echo "  make docx      - Generate DOCX file"
+	@echo "  make docx      - Generate DOCX file (with Python post-processing)"
 	@echo "  make latex     - Generate LaTeX file only"
 	@echo "  make pdf       - Generate LaTeX and compile to PDF"
 	@echo "  make clean     - Remove all generated files"
 	@echo ""
 	@echo "Configuration:"
 	@echo "  PROJECT_NAME = $(PROJECT_NAME)"
+	@echo "  DOCX Post-Processing = $(ENABLE_DOCX_POSTPROCESS)"
 	@echo "  Output: $(OUTPUT_DIR)/"
 	@echo ""
-	@echo "Note: VBA post-processing only available on Windows"
+	@echo "Post-Processing:"
+	@echo "  To disable: Set ENABLE_DOCX_POSTPROCESS = false in Makefile"
+	@echo "  To customize: Edit scripts/postprocess_docx.py"
 endif
 
 # Generate DOCX file
@@ -87,14 +90,17 @@ ifeq ($(OS),Windows_NT)
 	@if (!(Test-Path '$(subst /,\,$(DOCX_DIR))')) { New-Item -ItemType Directory -Path '$(subst /,\,$(DOCX_DIR))' -Force | Out-Null }
 	@pandoc --defaults pandoc/pandoc-docx.yml
 ifeq ($(ENABLE_DOCX_POSTPROCESS),true)
-	@Write-Host "Running post-processing..." -ForegroundColor Cyan
-	@powershell.exe -ExecutionPolicy Bypass -File scripts\postprocess-docx.ps1 -DocxPath "$(subst /,\,$(DOCX_DIR))\$(PROJECT_NAME).docx"
+	@Write-Host "Running Python post-processing..." -ForegroundColor Cyan
+	@uv run scripts\postprocess_docx.py "$(subst /,\,$(DOCX_DIR))\$(PROJECT_NAME).docx"
 	@if ($$LASTEXITCODE -ne 0) { exit $$LASTEXITCODE }
 endif
 else
 	@mkdir -p $(DOCX_DIR)
 	pandoc --defaults pandoc/pandoc-docx.yml
-	@echo "Note: Post-processing only available on Windows"
+ifeq ($(ENABLE_DOCX_POSTPROCESS),true)
+	@echo "Running Python post-processing..."
+	@uv run scripts/postprocess_docx.py "$(DOCX_DIR)/$(PROJECT_NAME).docx"
+endif
 endif
 
 # Generate LaTeX file

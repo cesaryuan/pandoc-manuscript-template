@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "python-docx>=1.1.0",
+# ]
+# ///
+"""
+Post-process DOCX file - orchestrator script.
+This script calls individual processing scripts in sequence.
+
+Usage:
+    uv run postprocess_docx.py path/to/file.docx
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+try:
+    from docx import Document
+except ImportError:
+    print("Error: python-docx is not installed. Install it with: pip install python-docx")
+    sys.exit(1)
+
+# Import processing modules
+try:
+    from merge_table_cells import merge_table_cells
+    from process_table_metadata import process_table_metadata
+    from autofit_tables import autofit_tables
+except ImportError as e:
+    print(f"Error: Failed to import processing modules: {e}")
+    print("Make sure all scripts are in the same directory:")
+    print("  - merge_table_cells.py")
+    print("  - process_table_metadata.py")
+    print("  - autofit_tables.py")
+    sys.exit(1)
+
+
+class Colors:
+    """ANSI color codes for terminal output"""
+    GREEN = '\033[92m'
+    CYAN = '\033[96m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    RESET = '\033[0m'
+
+
+def print_success(message: str):
+    """Print success message in green"""
+    print(f"{Colors.GREEN}{message}{Colors.RESET}")
+
+
+def print_info(message: str):
+    """Print info message in cyan"""
+    print(f"{Colors.CYAN}{message}{Colors.RESET}")
+
+
+def print_warning(message: str):
+    """Print warning message in yellow"""
+    print(f"{Colors.YELLOW}{message}{Colors.RESET}")
+
+
+def print_error(message: str):
+    """Print error message in red"""
+    print(f"{Colors.RED}{message}{Colors.RESET}")
+
+
+def postprocess_docx(docx_path: str) -> bool:
+    """
+    Post-process a DOCX file with all processing steps.
+
+    Args:
+        docx_path: Path to the DOCX file to process
+
+    Returns:
+        True if successful, False otherwise
+    """
+    # Validate inputs
+    print_info("Validating inputs...")
+    docx_file = Path(docx_path)
+
+    if not docx_file.exists():
+        print_error(f"DOCX file not found: {docx_path}")
+        return False
+
+    docx_path_abs = docx_file.resolve()
+    print_info("=== Starting DOCX Post-Processing Pipeline ===")
+    print_info(f"Target file: {docx_path_abs}")
+    print_info("")
+
+    try:
+        # Open document (shared across all steps)
+        print_info("Initializing document...")
+        doc = Document(str(docx_path_abs))
+        print_success("Document opened successfully")
+        print_info("")
+
+        # ===================================================================
+        # Step 1: Merge table cells based on markers
+        # ===================================================================
+        print_info("Step 1: Merging table cells...")
+        try:
+            left_merges, up_merges = merge_table_cells(doc)
+            print_success(f"Left merges: {left_merges}, Up merges: {up_merges}")
+            print_success("Step 1 completed")
+            print_info("")
+        except Exception as e:
+            print_error(f"Step 1 failed: {e}")
+            raise
+
+        # ===================================================================
+        # Step 2: Process table metadata from captions
+        # ===================================================================
+        print_info("Step 2: Processing table metadata...")
+        try:
+            processed, settings = process_table_metadata(doc)
+            print_success(f"Processed {processed} table(s), Applied {settings} setting(s)")
+            print_success("Step 2 completed")
+            print_info("")
+        except Exception as e:
+            print_error(f"Step 2 failed: {e}")
+            raise
+
+        # ===================================================================
+        # Step 3: Auto-fit tables to window
+        # ===================================================================
+        print_info("Step 3: Auto-fitting tables to window...")
+        try:
+            fitted_count = autofit_tables(doc, center_align=True)
+            print_success(f"Auto-fitted {fitted_count} table(s)")
+            print_success("Step 3 completed")
+            print_info("")
+        except Exception as e:
+            print_error(f"Step 3 failed: {e}")
+            raise
+
+        # ===================================================================
+        # Save document (all changes from all scripts)
+        # ===================================================================
+        print_info("Saving all changes to document...")
+        doc.save(str(docx_path_abs))
+        print_success("Document saved successfully")
+
+        print_success("=== Post-Processing Pipeline Completed Successfully ===")
+        return True
+
+    except Exception as e:
+        print_error("=== Post-Processing Pipeline Failed ===")
+        print_error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def main():
+    """Main entry point for command-line usage"""
+    parser = argparse.ArgumentParser(
+        description="Post-process DOCX files with table formatting and metadata",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  uv run postprocess_docx.py manuscript.docx
+  uv run postprocess_docx.py output/docx/manuscript.docx
+
+Processing steps:
+  1. Merge table cells based on markers (!<! and !^!)
+  2. Process table metadata from captions (|key=value|)
+  3. Auto-fit tables to window width and center align
+
+This script applies all post-processing steps in sequence.
+        """
+    )
+    parser.add_argument("docx_path", help="Path to the DOCX file to process")
+
+    args = parser.parse_args()
+
+    success = postprocess_docx(args.docx_path)
+    sys.exit(0 if success else 1)
+
+
+if __name__ == "__main__":
+    main()

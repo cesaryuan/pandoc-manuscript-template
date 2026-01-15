@@ -10,6 +10,9 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
+            "args": [
+                "output/docx/manuscript.docx"
+            ],
             "env": {
                 "GEMINI_API_KEY": ""
             }

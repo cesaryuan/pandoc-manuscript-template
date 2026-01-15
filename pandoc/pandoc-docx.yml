@@ -17,6 +17,7 @@ reference-doc: pandoc/manuscript-template/reference-doc.docx
 filters:
   - pandoc-crossref  # Must come before citeproc
   - citeproc
+  - pandoc/filters/to_mathbfit.py
 
 # Citation Style Language (CSL) file
 # Default: Vancouver style (numeric citations)

@@ -405,13 +405,9 @@ Scenarios are organized by priority (see [Assistance Priority Guide](#assistance
 
 ### High Priority Scenarios
 
+#### Scenario 1: User wants to start a new manuscript from scratch
 
-### On-Demand Scenarios
-
-#### Scenario 7: User wants to start a new manuscript from scratch
-
-Help them:
-1. Suggest copying `manuscript.example.md` as a starting point: `cp manuscript.example.md manuscript.md`
+1. Copying `manuscript.example.md` as a starting point: `cp manuscript.example.md manuscript.md`
 2. Reference the structure in `manuscript.example.md` for proper academic writing style
 3. Guide them to replace placeholder content with their own research
 4. Ensure they update the YAML header with their title, authors, and bibliography path

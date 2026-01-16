@@ -9,7 +9,9 @@
       "Bash(ls:*)",
       "Bash(dir scripts:*)",
       "Bash(uv --version:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(python scripts/update_bib_keys.py:*)",
+      "Bash(grep:*)"
     ]
   }
 }

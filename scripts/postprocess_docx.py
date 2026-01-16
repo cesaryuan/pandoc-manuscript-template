@@ -28,12 +28,14 @@ try:
     from merge_table_cells import merge_table_cells
     from process_table_metadata import process_table_metadata
     from autofit_tables import autofit_tables
+    from table_text_style import process_all_tables as convert_table_text_style, ensure_table_text_style_exists
 except ImportError as e:
     print(f"Error: Failed to import processing modules: {e}")
     print("Make sure all scripts are in the same directory:")
     print("  - merge_table_cells.py")
     print("  - process_table_metadata.py")
     print("  - autofit_tables.py")
+    print("  - table_text_style.py")
     sys.exit(1)
 
 
@@ -123,16 +125,33 @@ def postprocess_docx(docx_path: str) -> bool:
             raise
 
         # ===================================================================
-        # Step 3: Auto-fit tables to window
+        # Step 3: Convert table text style from Compact to Table Text
         # ===================================================================
-        print_info("Step 3: Auto-fitting tables to window...")
+        print_info("Step 3: Converting table text style...")
         try:
-            fitted_count = autofit_tables(doc, center_align=True)
-            print_success(f"Auto-fitted {fitted_count} table(s)")
+            # Ensure Table Text style exists
+            if not ensure_table_text_style_exists(doc):
+                print_warning("Could not ensure Table Text style exists, skipping style conversion")
+            else:
+                stats = convert_table_text_style(doc)
+                print_success(f"Converted {stats['converted']} paragraph(s) from 'Compact' to 'Table Text'")
             print_success("Step 3 completed")
             print_info("")
         except Exception as e:
             print_error(f"Step 3 failed: {e}")
+            raise
+
+        # ===================================================================
+        # Step 4: Auto-fit tables to window
+        # ===================================================================
+        print_info("Step 4: Auto-fitting tables to window...")
+        try:
+            fitted_count = autofit_tables(doc, center_align=True)
+            print_success(f"Auto-fitted {fitted_count} table(s)")
+            print_success("Step 4 completed")
+            print_info("")
+        except Exception as e:
+            print_error(f"Step 4 failed: {e}")
             raise
 
         # ===================================================================
@@ -166,7 +185,8 @@ Examples:
 Processing steps:
   1. Merge table cells based on markers (!<! and !^!)
   2. Process table metadata from captions (|key=value|)
-  3. Auto-fit tables to window width and center align
+  3. Convert table text style from 'Compact' to 'Table Text'
+  4. Auto-fit tables to window width and center align
 
 This script applies all post-processing steps in sequence.
         """

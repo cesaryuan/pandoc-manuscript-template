@@ -1,15 +1,18 @@
 ---
 title: "Your Manuscript Title: A Comprehensive Study"
-author:
+authors:
   - name: First Author
-    affiliation:
-      - Department of Example, University Name, City, Country
+    affiliations:
+      - a
     email: first.author@university.edu
   - name: Second Author
-    affiliation:
-      - Department of Example, University Name, City, Country
+    affiliations:
+      - a
     email: second.author@university.edu
     corresponding: true
+
+affiliations: 
+  a: Department of Example, University Name, City, Country
 
 abstract: |
   This is a template for academic manuscripts using Pandoc. Replace this abstract with your own summary of the research. The abstract should concisely describe the research problem, methodology, key results, and conclusions. Aim for 150-250 words depending on journal requirements. This template demonstrates proper formatting for figures, tables, citations, cross-references, and equations using Pandoc Markdown syntax.

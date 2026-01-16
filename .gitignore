@@ -253,9 +253,9 @@ temp/*
 .env
 # Generated output files
 output/
-manuscript.docx
-manuscript.pdf
-manuscript.tex
+/manuscript.docx
+/manuscript.pdf
+/manuscript.tex
 
 # Pandoc cache
 .pandoc-cache/

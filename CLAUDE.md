@@ -427,10 +427,8 @@ Scenarios are organized by priority (see [Assistance Priority Guide](#assistance
 
 #### Scenario 1: User wants to start a new manuscript from scratch
 
-1. Copying `manuscript.example.md` as a starting point: `cp manuscript.example.md manuscript.md`
-2. Reference the structure in `manuscript.example.md` for proper academic writing style
-3. Guide them to replace placeholder content with their own research
-4. Ensure they update the YAML header with their title, authors, and bibliography path
+1. Delete all body content in template: `manuscript.md`
+2. Write according to using instructions.
 
 
 ## Important Reminders

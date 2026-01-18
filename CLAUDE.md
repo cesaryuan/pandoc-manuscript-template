@@ -105,6 +105,26 @@ Create tables using pipe syntax with a caption below.
 As shown in @tbl:results, ...
 ```
 
+### Subfigures
+
+**Subfigures** - Group multiple figures together with a shared caption:
+**Subfigure grid layout** - Align subfigures in a grid with specified column widths: (requires `subfigGrid: true` in YAML metadata)
+```markdown
+<div id="fig:results">
+![caption a](coolfiga.png){#fig:resultsA width=50%}
+![caption b](coolfigb.png){#fig:resultsB width=50%}
+
+![caption d](coolfigd.png){#fig:resultsD}
+![caption e](coolfige.png){#fig:resultsE}
+
+Cool figure!
+</div>
+```
+- All subfigures within a `<div>` must be in separate paragraphs
+- The last paragraph contains the main figure caption
+- Use `width=X%` to specify column widths (only percentages allowed)
+- Add `nocaption` class to suppress individual subfigure captions: `![caption](image.png){#fig:label .nocaption}`
+
 ### Bibliography
 
 **Bibliography file** - Specify in the YAML header of `manuscript.md`:

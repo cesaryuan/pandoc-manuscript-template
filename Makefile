@@ -1,164 +1,68 @@
 # Pandoc Manuscript Template - Makefile
-# Generic build system for academic manuscripts
+# Wrapper for build.py - provides backward compatibility
+#
+# This Makefile delegates all build tasks to build.py for better
+# maintainability and readability. You can use either:
+#   - make <target>  (traditional)
+#   - python build.py <target>  (direct)
 
 # ============================================================================
-# CONFIGURATION - Customize these variables for your project
+# CONFIGURATION
 # ============================================================================
 
-# Project name (used for output files)
-PROJECT_NAME = manuscript
-
-# Output directories
-OUTPUT_DIR = output
-DOCX_DIR = $(OUTPUT_DIR)/docx
-LATEX_DIR = $(OUTPUT_DIR)/latex
-
-# Input files
-MANUSCRIPT = manuscript.md
-# Note: Image files with spaces are handled by Pandoc directly
-# We don't list them as Make dependencies to avoid escaping issues
-
-# DOCX post-processing
-# Set to false to disable post-processing
-ENABLE_DOCX_POSTPROCESS = true
+# Build script
+BUILD_SCRIPT = build.py
 
 # ============================================================================
-# PLATFORM DETECTION - Detect OS and set commands accordingly
+# PLATFORM DETECTION AND RUNNER SELECTION
 # ============================================================================
 
 ifeq ($(OS),Windows_NT)
-    # Windows detected - use PowerShell for better compatibility
-    SHELL := powershell.exe
-    .SHELLFLAGS := -NoProfile -Command
-    MKDIR = if (!(Test-Path '$(subst /,\,$(1))')) { New-Item -ItemType Directory -Path '$(subst /,\,$(1))' -Force | Out-Null }
-    RM = if (Test-Path '$(subst /,\,$(1))') { Remove-Item -Recurse -Force '$(subst /,\,$(1))' }
-    MV = Move-Item -Force '$(subst /,\,$(1))' '$(subst /,\,$(2))'
-    ECHO = Write-Host
+    # Windows - check for uv, fallback to python
+    UV_CHECK := $(shell where uv 2>nul)
+    ifneq ($(UV_CHECK),)
+        RUNNER = uv run
+    else
+        RUNNER = python
+    endif
 else
-    # Unix/Linux/macOS
-    MKDIR = mkdir -p $(1)
-    RM = rm -rf $(1)
-    MV = mv $(1) $(2)
-    ECHO = echo
+    # Unix/Linux/macOS - check for uv, fallback to python3
+    UV_CHECK := $(shell command -v uv 2>/dev/null)
+    ifneq ($(UV_CHECK),)
+        RUNNER = uv run
+    else
+        RUNNER = python3
+    endif
 endif
 
 # ============================================================================
 # TARGETS
 # ============================================================================
 
-.PHONY: all docx latex pdf clean help
+.PHONY: all docx latex pdf clean distclean help
 
 # Default target
 all: docx
 
 help:
-ifeq ($(OS),Windows_NT)
-	@Write-Host "Pandoc Manuscript Template - Available targets:"
-	@Write-Host "  make docx      - Generate DOCX file (with Python post-processing)"
-	@Write-Host "  make latex     - Generate LaTeX file only"
-	@Write-Host "  make pdf       - Generate LaTeX and compile to PDF"
-	@Write-Host "  make clean     - Remove all generated files"
-	@Write-Host ""
-	@Write-Host "Configuration:"
-	@Write-Host "  PROJECT_NAME = $(PROJECT_NAME)"
-	@Write-Host "  DOCX Post-Processing = $(ENABLE_DOCX_POSTPROCESS)"
-	@Write-Host "  Output: $(OUTPUT_DIR)/"
-	@Write-Host ""
-	@Write-Host "Post-Processing:"
-	@Write-Host "  To disable: Set ENABLE_DOCX_POSTPROCESS = false in Makefile"
-	@Write-Host "  To customize: Edit scripts\postprocess_docx.py"
-else
-	@echo "Pandoc Manuscript Template - Available targets:"
-	@echo "  make docx      - Generate DOCX file (with Python post-processing)"
-	@echo "  make latex     - Generate LaTeX file only"
-	@echo "  make pdf       - Generate LaTeX and compile to PDF"
-	@echo "  make clean     - Remove all generated files"
-	@echo ""
-	@echo "Configuration:"
-	@echo "  PROJECT_NAME = $(PROJECT_NAME)"
-	@echo "  DOCX Post-Processing = $(ENABLE_DOCX_POSTPROCESS)"
-	@echo "  Output: $(OUTPUT_DIR)/"
-	@echo ""
-	@echo "Post-Processing:"
-	@echo "  To disable: Set ENABLE_DOCX_POSTPROCESS = false in Makefile"
-	@echo "  To customize: Edit scripts/postprocess_docx.py"
-endif
+	@$(RUNNER) $(BUILD_SCRIPT) help
 
 # Generate DOCX file
 docx:
-ifeq ($(OS),Windows_NT)
-	@if (!(Test-Path '$(subst /,\,$(DOCX_DIR))')) { New-Item -ItemType Directory -Path '$(subst /,\,$(DOCX_DIR))' -Force | Out-Null }
-	@pandoc --defaults pandoc/pandoc-docx.yml
-ifeq ($(ENABLE_DOCX_POSTPROCESS),true)
-	@Write-Host "Running Python post-processing..." -ForegroundColor Cyan
-	@uv run scripts\postprocess_docx.py "$(subst /,\,$(DOCX_DIR))\$(PROJECT_NAME).docx"
-	@if ($$LASTEXITCODE -ne 0) { exit $$LASTEXITCODE }
-endif
-else
-	@mkdir -p $(DOCX_DIR)
-	pandoc --defaults pandoc/pandoc-docx.yml
-ifeq ($(ENABLE_DOCX_POSTPROCESS),true)
-	@echo "Running Python post-processing..."
-	@uv run scripts/postprocess_docx.py "$(DOCX_DIR)/$(PROJECT_NAME).docx"
-endif
-endif
+	@$(RUNNER) $(BUILD_SCRIPT) docx
 
 # Generate LaTeX file
-latex: $(LATEX_DIR)/$(PROJECT_NAME).tex
+latex:
+	@$(RUNNER) $(BUILD_SCRIPT) latex
 
-$(LATEX_DIR)/$(PROJECT_NAME).tex: $(MANUSCRIPT)
-ifeq ($(OS),Windows_NT)
-	@if (!(Test-Path '$(subst /,\,$(LATEX_DIR))')) { New-Item -ItemType Directory -Path '$(subst /,\,$(LATEX_DIR))' -Force | Out-Null }
-	@pandoc --defaults pandoc/pandoc-latex.yml
-else
-	@mkdir -p $(LATEX_DIR)
-	pandoc --defaults pandoc/pandoc-latex.yml
-endif
-
-# Generate PDF from LaTeX (requires LaTeX installation)
-pdf: latex
-ifeq ($(OS),Windows_NT)
-	@Write-Host "Compiling LaTeX to PDF..."
-	@Set-Location $(LATEX_DIR); latexmk -interaction=nonstopmode -file-line-error -xelatex -outdir=build $(PROJECT_NAME).tex
-	@Move-Item -Force '$(subst /,\,$(LATEX_DIR))\build\$(PROJECT_NAME).pdf' '$(subst /,\,$(OUTPUT_DIR))\$(PROJECT_NAME).pdf'
-	@if (Test-Path '$(subst /,\,$(LATEX_DIR))\build') { Remove-Item -Recurse -Force '$(subst /,\,$(LATEX_DIR))\build' }
-	@Write-Host "PDF created: $(OUTPUT_DIR)/$(PROJECT_NAME).pdf"
-else
-	@echo "Compiling LaTeX to PDF..."
-	@cd $(LATEX_DIR) && latexmk -interaction=nonstopmode -file-line-error -xelatex -outdir=build $(PROJECT_NAME).tex
-	@mv $(LATEX_DIR)/build/$(PROJECT_NAME).pdf $(OUTPUT_DIR)/$(PROJECT_NAME).pdf
-	@rm -rf $(LATEX_DIR)/build
-	@echo "PDF created: $(OUTPUT_DIR)/$(PROJECT_NAME).pdf"
-endif
-
-# Create distribution archive
-dist: pdf docx
-ifeq ($(OS),Windows_NT)
-	@if (!(Test-Path '$(subst /,\,$(OUTPUT_DIR))\dist')) { New-Item -ItemType Directory -Path '$(subst /,\,$(OUTPUT_DIR))\dist' -Force | Out-Null }
-	@Set-Location $(LATEX_DIR); Compress-Archive -Force -Path .\* -DestinationPath ..\..\$(OUTPUT_DIR)\dist\$(PROJECT_NAME)-latex.zip
-	@Write-Host "Distribution created: $(OUTPUT_DIR)/dist/"
-else
-	@mkdir -p $(OUTPUT_DIR)/dist
-	@cd $(LATEX_DIR) && zip -r ../../$(OUTPUT_DIR)/dist/$(PROJECT_NAME)-latex.zip ./*
-	@echo "Distribution created: $(OUTPUT_DIR)/dist/"
-endif
+# Generate PDF from LaTeX
+pdf:
+	@$(RUNNER) $(BUILD_SCRIPT) pdf
 
 # Clean all generated files
 clean:
-ifeq ($(OS),Windows_NT)
-	@Write-Host "Removing generated files..."
-	@if (Test-Path '$(subst /,\,$(OUTPUT_DIR))') { Remove-Item -Recurse -Force '$(subst /,\,$(OUTPUT_DIR))' }
-	@Write-Host "Clean complete."
-else
-	@echo "Removing generated files..."
-	@rm -rf $(OUTPUT_DIR)
-	@echo "Clean complete."
-endif
+	@$(RUNNER) $(BUILD_SCRIPT) clean
 
 # Deep clean (including pandoc cache)
-distclean: clean
-ifeq ($(OS),Windows_NT)
-	@if (Test-Path '.pandoc-cache') { Remove-Item -Recurse -Force '.pandoc-cache' }
-else
-	@rm -rf .pandoc-cache
-endif
+distclean:
+	@$(RUNNER) $(BUILD_SCRIPT) distclean

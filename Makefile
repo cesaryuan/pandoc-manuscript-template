@@ -11,7 +11,7 @@
 # ============================================================================
 
 # Build script
-BUILD_SCRIPT = build.py
+BUILD_SCRIPT = scripts/build.py
 
 # ============================================================================
 # PLATFORM DETECTION AND RUNNER SELECTION

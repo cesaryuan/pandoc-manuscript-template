@@ -189,6 +189,19 @@ This section presents the experimental results and analysis.
 
 @tbl:results presents the quantitative comparison of different approaches.
 
+To illustrate how standard figures are inserted and referenced in this template, we include a synthetic trend chart in @fig:single-example. The example uses an image stored under `examples/images/`, which is convenient for demonstrating relative paths in a reusable template repository.
+
+![A single-figure example showing a synthetic performance trend across evaluation steps.](examples/images/single-figure-example.png){#fig:single-example width=85%}
+
+Multi-panel layouts can be prepared with the built-in subfigure grid support enabled in the YAML header. A simple two-panel example is provided in @fig:subfigure-example to show how child figures can share one main caption while still keeping individual labels. In this layout, the left panel (@fig:subfigure-a) can be used to present one condition or ablation case, while the right panel (@fig:subfigure-b) can show the corresponding comparison setting.
+
+<div id="fig:subfigure-example">
+![Left panel showing one synthetic subfigure example.](examples/images/subfigure-a-example.png){#fig:subfigure-a width=49%}
+![Right panel showing another synthetic subfigure example.](examples/images/subfigure-b-example.png){#fig:subfigure-b width=49%}
+
+An example of a multi-subfigure layout using two synthetic panels.
+</div>
+
 | **Method**      | **Accuracy (%)** | **Precision (%)** | **Recall (%)** | **F1-Score (%)** |
 |-----------------|------------------|-------------------|----------------|------------------|
 | Baseline        | 78.3             | 76.5              | 79.2           | 77.8             |

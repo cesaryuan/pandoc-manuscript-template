@@ -136,7 +136,7 @@ def convert_cell_text_style(cell: _Cell, stats: dict) -> None:
     """
     for paragraph in cell.paragraphs:
         # Check if paragraph style is 'Compact'
-        if paragraph.style.name == 'Compact':
+        if paragraph.style.name == 'Compact': # type: ignore
             paragraph.style = 'Table Text'
             stats['converted'] += 1
         else:

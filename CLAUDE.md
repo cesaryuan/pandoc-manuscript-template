@@ -41,8 +41,8 @@ This template converts Pandoc Markdown manuscripts to DOCX (journal submission) 
 **Subfigures** (requires `subfigGrid: true` in YAML):
 ```markdown
 <div id="fig:results">
-![caption a](a.png){#fig:a width=50%}
-![caption b](b.png){#fig:b width=50%}
+![caption of a](a.png){#fig:a width=50%}
+![caption of b](b.png){#fig:b width=50%}
 
 Main caption
 </div>

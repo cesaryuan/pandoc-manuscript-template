@@ -31,6 +31,7 @@ try:
     from autofit_tables import autofit_tables
     from table_text_style import process_all_tables as convert_table_text_style, ensure_table_text_style_exists
     from insert_author_info import insert_author_info_to_doc
+    from clear_subfigure_table_format import clear_subfigure_table_format
 except ImportError as e:
     print(f"Error: Failed to import processing modules: {e}")
     print("Make sure all scripts are in the same directory:")
@@ -39,6 +40,7 @@ except ImportError as e:
     print("  - autofit_tables.py")
     print("  - table_text_style.py")
     print("  - insert_author_info.py")
+    print("  - clear_subfigure_table_format.py")
     sys.exit(1)
 
 
@@ -155,9 +157,23 @@ def postprocess_docx(docx_path: str, md_path: str = None) -> bool:
             raise
 
         # ===================================================================
-        # Step 4: Convert table text style from Compact to Table Text
+        # Step 4: Clear formatting for subfigure layout tables
         # ===================================================================
-        print_info("Step 4: Converting table text style...")
+        print_info("Step 4: Clearing subfigure table formatting...")
+        try:
+            processed_count = clear_subfigure_table_format(doc)
+            print_success(f"Cleared formatting for {processed_count} subfigure table(s)")
+            print_success("Step 4 completed")
+            print_info("")
+        except Exception as e:
+            print_error(f"Step 4 failed: {e}")
+            raise
+        
+        
+        # ===================================================================
+        # Step 5: Convert table text style from Compact to Table Text
+        # ===================================================================
+        print_info("Step 5: Converting table text style...")
         try:
             # Ensure Table Text style exists
             if not ensure_table_text_style_exists(doc):
@@ -165,23 +181,23 @@ def postprocess_docx(docx_path: str, md_path: str = None) -> bool:
             else:
                 stats = convert_table_text_style(doc)
                 print_success(f"Converted {stats['converted']} paragraph(s) from 'Compact' to 'Table Text'")
-            print_success("Step 4 completed")
-            print_info("")
-        except Exception as e:
-            print_error(f"Step 4 failed: {e}")
-            raise
-
-        # ===================================================================
-        # Step 5: Auto-fit tables to window
-        # ===================================================================
-        print_info("Step 5: Auto-fitting tables to window...")
-        try:
-            fitted_count = autofit_tables(doc, center_align=True)
-            print_success(f"Auto-fitted {fitted_count} table(s)")
             print_success("Step 5 completed")
             print_info("")
         except Exception as e:
             print_error(f"Step 5 failed: {e}")
+            raise
+
+        # ===================================================================
+        # Step 6: Auto-fit tables to window
+        # ===================================================================
+        print_info("Step 6: Auto-fitting tables to window...")
+        try:
+            fitted_count = autofit_tables(doc, center_align=True)
+            print_success(f"Auto-fitted {fitted_count} table(s)")
+            print_success("Step 6 completed")
+            print_info("")
+        except Exception as e:
+            print_error(f"Step 6 failed: {e}")
             raise
 
         # ===================================================================
@@ -217,7 +233,8 @@ Processing steps:
   2. Merge table cells based on markers (!<! and !^!)
   3. Process table metadata from captions (|key=value|)
   4. Convert table text style from 'Compact' to 'Table Text'
-  5. Auto-fit tables to window width and center align
+  5. Clear formatting for tables above 'Image Caption' paragraphs
+  6. Auto-fit tables to window width and center align
 
 This script applies all post-processing steps in sequence.
         """

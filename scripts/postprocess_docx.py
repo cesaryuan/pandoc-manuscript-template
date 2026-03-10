@@ -26,12 +26,12 @@ except ImportError:
 
 # Import processing modules
 try:
-    from merge_table_cells import merge_table_cells
-    from process_table_metadata import process_table_metadata
-    from autofit_tables import autofit_tables
-    from table_text_style import process_all_tables as convert_table_text_style, ensure_table_text_style_exists
-    from insert_author_info import insert_author_info_to_doc
-    from clear_subfigure_table_format import clear_subfigure_table_format
+    from postprocess.merge_table_cells import merge_table_cells
+    from postprocess.process_table_metadata import process_table_metadata
+    from postprocess.autofit_tables import autofit_tables
+    from postprocess.table_text_style import process_all_tables as convert_table_text_style, ensure_table_text_style_exists
+    from postprocess.insert_author_info import insert_author_info_to_doc
+    from postprocess.clear_subfigure_table_format import clear_subfigure_table_format
 except ImportError as e:
     print(f"Error: Failed to import processing modules: {e}")
     print("Make sure all scripts are in the same directory:")

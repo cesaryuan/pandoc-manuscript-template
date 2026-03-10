@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from autofit_tables import set_table_autofit_window
+from postprocess.autofit_tables import set_table_autofit_window
 
 try:
     from docx import Document

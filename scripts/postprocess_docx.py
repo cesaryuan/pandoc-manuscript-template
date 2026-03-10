@@ -73,7 +73,7 @@ def print_error(message: str):
     print(f"{Colors.RED}{message}{Colors.RESET}")
 
 
-def postprocess_docx(docx_path: str, md_path: str = None) -> bool:
+def postprocess_docx(docx_path: str, md_path: str = '') -> bool:
     """
     Post-process a DOCX file with all processing steps.
 

@@ -41,7 +41,7 @@ numberSections: true        # Number sections. Add 1.1., 1.2., etc.
 sectionsDepth: 3            # Depth of numbered sections
 subfigGrid: true            # Subfigure grid layout support
 subfigureChildTemplate: ($$i$$) $$t$$
-subfigureTemplate: $$figureTitle$$ $$i$$$$titleDelim$$ $$t$$.
+subfigureTemplate: $$figureTitle$$ $$i$$$$titleDelim$$ $$t$$
 
 # =============================================================================
 # JOURNAL-SPECIFIC CONFIGURATION (Uncomment and customize as needed)

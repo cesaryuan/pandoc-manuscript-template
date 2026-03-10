@@ -23,17 +23,20 @@ bibliography: examples/references/sample-references.bib
 reference-section-title: References
 
 # Pandoc-crossref settings for cross-references
+## Item caption prefix format
 figureTitle: "Figure "
 tableTitle: "Table "
+titleDelim: ""
+## Item cross-reference format
 figPrefix: "Figure"
 tblPrefix: "Table"
 secPrefix: "Section"
 eqnPrefix: "Equation"
-tableEqns: true             # Support for centered equations and right-aligned numbering
+# Support for centered equations and right-aligned numbering
+tableEqns: true
 eqnBlockTemplate: |
    `<w:pPr><w:tabs><w:tab w:val="center" w:leader="none" w:pos="4153" /><w:tab w:val="right" w:leader="none" w:pos="9360" /></w:tabs></w:pPr><w:r><w:tab /></w:r>`{=openxml} $$t$$ `<w:r><w:tab /></w:r>`{=openxml} $$nmi$$
 eqnBlockInlineMath: true    # Support for centered equations and right-aligned numbering
-titleDelim: ""
 linkReferences: true        # Convert references to hyperlinks
 autoSectionLabels: true     # Auto-add "sec:" prefix to section labels
 numberSections: true        # Number sections. Add 1.1., 1.2., etc.
@@ -45,24 +48,7 @@ subfigureTemplate: $$figureTitle$$ $$i$$$$titleDelim$$ $$t$$
 # =============================================================================
 # JOURNAL-SPECIFIC CONFIGURATION (Uncomment and customize as needed)
 # =============================================================================
-#
-# The following settings are examples for different journal formats.
-# Uncomment and modify the appropriate section for your target journal.
-#
-# --- Example 1: Elsevier Journal (elsarticle class) ---
-# documentclass: elsarticle
-# classoption: [preprint, 3p, authoryear]
-# header-includes:
-# - |
-#   ```{=latex}
-#   \journal{Journal Name}
-#   ```
-#
-# --- Example 2: Springer Journal ---
-# documentclass: svjour3
-# classoption: [smallextended]
-#
-# --- Example 3: Wiley Journal ---
+# --- Example 1: Wiley Journal ---
 # documentclass: WileyNJDv5
 # classoption: [HARVARD, Times2COL]
 # header-includes:
@@ -80,16 +66,6 @@ subfigureTemplate: $$figureTitle$$ $$i$$$$titleDelim$$ $$t$$
 #   \address[1]{\orgdiv{Department}, \orgname{University}, \orgaddress{\city{City}, \country{Country}}}
 #   \corres{Corresponding Author, Department, University, City, Country. \email{email@university.edu}}
 #   ```
-#
-# --- Example 4: IEEE Journal ---
-# documentclass: IEEEtran
-# classoption: [journal]
-#
-# --- Example 5: Generic LaTeX article (default) ---
-# documentclass: article
-# classoption: [11pt, a4paper]
-# geometry: [margin=1in]
-#
 # =============================================================================
 
 ---

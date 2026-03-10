@@ -18,12 +18,12 @@ This template converts Pandoc Markdown manuscripts to DOCX (journal submission) 
 
 ## Pandoc Markdown Syntax
 
-**Cross-references: (There must be spaces " " before and after @...)**
-- Figures: `![caption](path){#fig:label}` → `@fig:label`
-- Tables: `: Caption {#tbl:label}` → `@tbl:label`
-- Equations: `$$ math $$ {#eq:label}` → `@eq:label`
-- Sections: `# Title {#sec:label}` → `@sec:label`
-- Citations: `[@key]` (parenthetical), `@key` (narrative), `[@key1; @key2]` (multiple)
+**Cross-references:**
+- Figures: `![caption](path){#fig:label}` → `[@fig:label]`
+- Tables: `: Caption {#tbl:label}` → `[@tbl:label]`
+- Equations: `$$ math $$ {#eq:label}` → `[@eq:label]`
+- Sections: `# Title {#sec:label}` → `[@sec:label]`
+- Citations: `[@key]` (parenthetical), `[@key1; @key2]` (multiple)
 
 **Tables:**
 ```markdown

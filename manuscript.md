@@ -2,12 +2,11 @@
 title: "Your Manuscript Title: A Comprehensive Study"
 authors:
   - name: First Author
-    affiliations:
-      - a
+    affiliations: [ a ]
     email: first.author@university.edu
+
   - name: Second Author
-    affiliations:
-      - a
+    affiliations: [ a ]
     email: second.author@university.edu
     corresponding: true
 
@@ -105,7 +104,7 @@ Previous research has shown interesting results [@williams2023dataset], which mo
 
 This study addresses three key research questions: (1) What is the primary research question? (2) What secondary questions support the main investigation? (3) What practical implications can be derived from the findings?
 
-The main contributions of this work are threefold. First, we propose [describe first contribution]. Second, we provide [describe second contribution]. Third, we demonstrate [describe third contribution]. The remainder of this paper is organized as follows: @sec:methods describes the methodology, @sec:results presents experimental results, @sec:discussion discusses the findings and limitations, and @sec:conclusion concludes the paper.
+The main contributions of this work are threefold. First, we propose [describe first contribution]. Second, we provide [describe second contribution]. Third, we demonstrate [describe third contribution]. The remainder of this paper is organized as follows: @sec:methods describes the methodology, @sec:results presents experimental results, [@sec:discussion] discusses the findings and limitations, and @sec:conclusion concludes the paper.
 
 # Methods {#sec:methods}
 

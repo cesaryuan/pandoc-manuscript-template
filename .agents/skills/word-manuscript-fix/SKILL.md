@@ -15,7 +15,7 @@ Then continue with the rest of this skill on the generated Markdown file.
 
 ## Problems This Skill Must Fix
 
-- Convert plain-text numbered references and bibliography lists into `@citekey` citations plus a `.bib` file.
+- Convert plain-text numbered references and bibliography lists into `[@citekey]` citations plus a `.bib` file.
 - Generate meaningful citekeys rather than numeric keys; use a readable `authorYearKeyword` style such as `he2016resnet` or `shorten2019augmentation`.
 - Replace Word-style cross-references such as `[]{#_Ref221975190 .anchor}表 1...` and `如[表 1](#_Ref221975190)所示` with this repository's `pandoc-crossref` syntax.
 - Rewrite figures or captions that were laid out using Word tables into normal Pandoc Markdown figure blocks.
@@ -31,7 +31,7 @@ Then continue with the rest of this skill on the generated Markdown file.
 3. Run `scripts/unescape_latex.py` only for escaped math restoration.
 4. Directly edit the target Markdown for all remaining fixes; do not build extra scripts for citation conversion, cross-reference conversion, subfigure reconstruction, image-dimension cleanup, or table cleanup.
 5. Rebuild the plain-text bibliography into a `.bib` file and replace in-text numeric references with meaningful `@citekey` citations.
-6. Replace Word anchors like `_Ref...` with `pandoc-crossref` labels such as `#fig:*` and `#tbl:*`, and rewrite textual links like `[表 1](#_Ref...)` into `@tbl:*` or `@fig:*` references.
+6. Replace Word anchors like `_Ref...` with `pandoc-crossref` labels such as `#fig:*` and `#tbl:*`, and rewrite textual links like `[表 1](#_Ref...)` into `[@tbl:*]` or `[@fig:*]` references.
 7. Rewrite layout tables that only exist to place images and captions into semantic Pandoc figures or subfigure groups.
 8. Rewrite data tables using the repository's preferred Markdown table syntax instead of Word-exported bordered tables.
 9. Round image dimensions to four significant digits; when possible, prefer retaining only `width`.
@@ -40,7 +40,7 @@ Then continue with the rest of this skill on the generated Markdown file.
 ## Output Requirements
 
 - Math renders as Pandoc math, not visible LaTeX text.
-- Citations use `@citekey` syntax and the bibliography is stored in a `.bib` file rather than as a handwritten numbered list.
+- Citations use `[@citekey]` syntax and the bibliography is stored in a `.bib` file rather than as a handwritten numbered list.
 - Citekeys are meaningful strings, not simple numbers.
 - Figures use `![caption](path){#fig:label}` and tables use project-style Markdown table syntax plus caption lines like `: Caption {#tbl:label}`.
 - Word-style `_Ref...` anchors are removed from the final manuscript and replaced with `pandoc-crossref` references.

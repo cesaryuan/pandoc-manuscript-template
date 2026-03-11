@@ -18,20 +18,20 @@ Usage:
 
 Expected YAML structure in manuscript.md:
     authors:
-      - name: ***REMOVED***
+      - name: Author 1
         affiliations: [a, b, c]
-      - name: ***REMOVED***
+      - name: Author 2
         affiliations: [a, b, c]
         corresponding: true
-        email: ***REMOVED***
+        email: author2@university.edu
         title: Professor
-      - name: ***REMOVED***
+      - name: Author 3
         affiliations: [a, b, c]
 
     affiliations:
-      a: ***REMOVED***
-      b: ***REMOVED***
-      c: ***REMOVED***
+      a: School of XXXX Department, XXXX University, XXXX, China
+      b: Key Laboratory of XXXX, XXXX University, XXXX, China
+      c: Key Laboratory of XXXX, XXXX University, XXXX, China
 """
 
 import argparse
@@ -361,18 +361,21 @@ Examples:
   uv run insert_author_info.py output/manuscript.docx manuscript.md
 
 Expected YAML structure in manuscript.md:
-  authors:
-    - name: ***REMOVED***
-      affiliations: [a, b, c]
-    - name: ***REMOVED***
-      affiliations: [a, b, c]
-      corresponding: true
-      email: ***REMOVED***
-      title: Professor
+    authors:
+      - name: Author 1
+        affiliations: [a, b, c]
+      - name: Author 2
+        affiliations: [a, b, c]
+        corresponding: true
+        email: author2@university.edu
+        title: Professor
+      - name: Author 3
+        affiliations: [a, b, c]
 
-  affiliations:
-    a: ***REMOVED***
-    b: Key Lab of Structures Dynamic Behavior and Control...
+    affiliations:
+      a: School of XXXX Department, XXXX University, XXXX, China
+      b: Key Laboratory of XXXX, XXXX University, XXXX, China
+      c: Key Laboratory of XXXX, XXXX University, XXXX, China
         """
     )
     parser.add_argument("docx_path", help="Path to the DOCX file to process")

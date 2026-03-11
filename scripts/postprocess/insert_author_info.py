@@ -16,7 +16,7 @@ formatted author names, affiliations, and corresponding author footnote.
 Usage:
     uv run insert_author_info.py manuscript.docx manuscript.md
 
-Expected YAML structure in manuscript.md:
+Supported YAML structures in manuscript.md:
     authors:
       - name: Author 1
         affiliations: [a, b, c]
@@ -25,13 +25,25 @@ Expected YAML structure in manuscript.md:
         corresponding: true
         email: author2@university.edu
         title: Professor
-      - name: Author 3
-        affiliations: [a, b, c]
 
     affiliations:
       a: School of XXXX Department, XXXX University, XXXX, China
       b: Key Laboratory of XXXX, XXXX University, XXXX, China
       c: Key Laboratory of XXXX, XXXX University, XXXX, China
+
+Or inline affiliation text per author:
+    authors:
+      - name: Author 1
+        affiliations:
+          - School of XXXX Department, XXXX University, XXXX, China
+          - Key Laboratory of XXXX, XXXX University, XXXX, China
+      - name: Author 2
+        affiliations:
+          - School of XXXX Department, XXXX University, XXXX, China
+          - Key Laboratory of XXXX, XXXX University, XXXX, China
+        corresponding: true
+        email: author2@university.edu
+        title: Professor
 """
 
 import argparse
@@ -70,6 +82,87 @@ def parse_yaml_header(md_path: str) -> dict:
         raise ValueError("No YAML front matter found in markdown file")
 
     return yaml.safe_load(match.group(1))
+
+
+def normalize_author_metadata(metadata: dict) -> tuple[list[dict], dict[str, str]]:
+    """Normalize author and affiliation metadata to keyed affiliation form."""
+    authors = metadata.get('authors', metadata.get('author', [])) or []
+    raw_affiliations = metadata.get('affiliations', metadata.get('affiliation', {})) or {}
+
+    normalized_affiliations: dict[str, str] = {}
+    affiliation_index_by_text: dict[str, str] = {}
+
+    def index_to_alpha(index: int) -> str:
+        """Convert 1-based index to alphabetical labels: 1->a, 26->z, 27->aa."""
+        label = ''
+        current = index
+        while current > 0:
+            current -= 1
+            label = chr(ord('a') + (current % 26)) + label
+            current //= 26
+        return label
+
+    def register_affiliation(text: str) -> str:
+        cleaned_text = str(text).strip()
+        if not cleaned_text:
+            return ''
+
+        existing_key = affiliation_index_by_text.get(cleaned_text)
+        if existing_key:
+            return existing_key
+
+        new_key = index_to_alpha(len(normalized_affiliations) + 1)
+        normalized_affiliations[new_key] = cleaned_text
+        affiliation_index_by_text[cleaned_text] = new_key
+        return new_key
+
+    if isinstance(raw_affiliations, dict):
+        for key, value in raw_affiliations.items():
+            normalized_key = str(key)
+            normalized_value = str(value).strip()
+            if not normalized_value:
+                continue
+            normalized_affiliations[normalized_key] = normalized_value
+            affiliation_index_by_text[normalized_value] = normalized_key
+
+    normalized_authors = []
+    for author in authors:
+        if not isinstance(author, dict):
+            continue
+
+        normalized_author = dict(author)
+        raw_author_affiliations = author.get('affiliations', author.get('affiliation', [])) or []
+
+        if isinstance(raw_author_affiliations, str):
+            raw_author_affiliations = [raw_author_affiliations]
+
+        normalized_keys = []
+        for affiliation in raw_author_affiliations:
+            if affiliation is None:
+                continue
+
+            if isinstance(affiliation, str):
+                cleaned_affiliation = affiliation.strip()
+            else:
+                cleaned_affiliation = str(affiliation).strip()
+
+            if not cleaned_affiliation:
+                continue
+
+            if cleaned_affiliation in normalized_affiliations:
+                normalized_keys.append(cleaned_affiliation)
+                continue
+
+            if cleaned_affiliation in affiliation_index_by_text:
+                normalized_keys.append(affiliation_index_by_text[cleaned_affiliation])
+                continue
+
+            normalized_keys.append(register_affiliation(cleaned_affiliation))
+
+        normalized_author['affiliations'] = normalized_keys
+        normalized_authors.append(normalized_author)
+
+    return normalized_authors, normalized_affiliations
 
 
 # =============================================================================
@@ -273,8 +366,7 @@ def insert_author_info_to_doc(doc, md_path: str) -> tuple[int, int, bool]:
     # Parse YAML metadata
     metadata = parse_yaml_header(md_path)
 
-    authors = metadata.get('authors', metadata.get('author', []))
-    affiliations = metadata.get('affiliations', metadata.get('affiliation', {}))
+    authors, affiliations = normalize_author_metadata(metadata)
 
     if not authors:
         return (0, 0, False)
@@ -313,7 +405,7 @@ def insert_author_info_to_doc(doc, md_path: str) -> tuple[int, int, bool]:
     current_elem = author_para_elem
 
     # Create and insert affiliation paragraphs
-    for key in sorted(affiliations.keys()):
+    for key in sorted(affiliations.keys(), key=lambda value: (not str(value).isdigit(), int(value) if str(value).isdigit() else str(value))):
         affil_para_elem = create_affiliation_paragraph(key, affiliations[key])
         current_elem.addnext(affil_para_elem)
         current_elem = affil_para_elem
@@ -360,7 +452,7 @@ Examples:
   uv run insert_author_info.py manuscript.docx manuscript.md
   uv run insert_author_info.py output/manuscript.docx manuscript.md
 
-Expected YAML structure in manuscript.md:
+Supported YAML structures in manuscript.md:
     authors:
       - name: Author 1
         affiliations: [a, b, c]
@@ -369,13 +461,24 @@ Expected YAML structure in manuscript.md:
         corresponding: true
         email: author2@university.edu
         title: Professor
-      - name: Author 3
-        affiliations: [a, b, c]
-
     affiliations:
       a: School of XXXX Department, XXXX University, XXXX, China
       b: Key Laboratory of XXXX, XXXX University, XXXX, China
       c: Key Laboratory of XXXX, XXXX University, XXXX, China
+
+Or inline affiliation text per author:
+    authors:
+      - name: Author 1
+        affiliations:
+          - School of XXXX Department, XXXX University, XXXX, China
+          - Key Laboratory of XXXX, XXXX University, XXXX, China
+      - name: Author 2
+        affiliations:
+          - School of XXXX Department, XXXX University, XXXX, China
+          - Key Laboratory of XXXX, XXXX University, XXXX, China
+        corresponding: true
+        email: author2@university.edu
+        title: Professor
         """
     )
     parser.add_argument("docx_path", help="Path to the DOCX file to process")

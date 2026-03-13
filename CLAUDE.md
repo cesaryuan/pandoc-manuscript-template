@@ -63,6 +63,22 @@ Main caption ( 2x2 grid of subfigures, change line by adding a blank line betwee
 7. No single-sentence paragraphs (except transitions)
 8. Bold only for table best-results and contribution statements
 
+**Style and language preferences:**
+- Use formal academic prose with simple, precise, and common research vocabulary
+- Avoid contractions such as `it's` or `doesn't`; use full forms instead
+- Prefer natural academic flow; remove mechanical transitions and obvious AI-sounding wording
+- Do not rewrite for the sake of rewriting; keep passages that are already clear and publication-ready
+- Avoid noun possessives for methods, models, or systems when possible; prefer `the performance of X` or similar structures
+- Preserve established technical abbreviations such as `LLM` unless expansion is explicitly needed
+- Do not add bold or italics for emphasis in body text
+
+**Editing heuristics:**
+- Split long or awkward sentences when clarity improves, but preserve technical meaning
+- Prefer coherent narrative paragraphs over short bullets
+- Avoid opening a paragraph with a bare cross-reference such as `[@fig:case] shows`; state the point first, then attach the reference
+- Minimize em dashes; prefer commas, parentheses, or subordinate clauses when suitable
+- Replace inflated words such as `leverage`, `delve into`, `pivotal`, `underscore`, and `unveil` with plainer alternatives when possible
+
 **Standard section structure:**
 - **Introduction** (no subsections, integrates related work)
 - **Methods** (subsections allowed)
@@ -81,3 +97,4 @@ Main caption ( 2x2 grid of subfigures, change line by adding a blank line betwee
 - Citation keys must match `.bib` entries exactly
 - Always preserve technical content when improving structure and flow
 - When in doubt, follow conventions of the user's target journal
+

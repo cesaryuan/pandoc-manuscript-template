@@ -19,6 +19,13 @@ keywords: [Keyword 1, Keyword 2, Keyword 3, Keyword 4, Keyword 5]
 bibliography: examples/references/sample-references.bib
 reference-section-title: References
 link-citations: true
+# Citation Style Language (CSL) file
+# Default: Vancouver style (numeric citations)
+# Common alternatives:
+#   - pandoc/csl/elsevier-vancouver.csl (Vancouver)
+#   - pandoc/csl/engineering-applications-of-artificial-intelligence.csl (EA-AI journal)
+#   - Or download from https://www.zotero.org/styles
+csl: pandoc/csl/sage-vancouver.csl
 
 # Pandoc-crossref settings for cross-references
 ## Item caption prefix format

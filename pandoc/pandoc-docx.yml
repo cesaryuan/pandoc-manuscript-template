@@ -5,26 +5,13 @@ verbosity: WARNING
 input-files:
   - manuscript.md
 
-# Output file
 output-file: output/docx/manuscript.docx
-
 standalone: true
-
-# Reference document for styling (from manuscript-template submodule)
 reference-doc: pandoc/manuscript-template/reference-doc.docx
+# Custom XML template for DOCX formatting
+template: pandoc/default.xml
 
 # Filters are applied in order
 filters:
   - pandoc-crossref  # Must come before citeproc
   - citeproc
-
-# Citation Style Language (CSL) file
-# Default: Vancouver style (numeric citations)
-# Common alternatives:
-#   - pandoc/csl/elsevier-vancouver.csl (Vancouver)
-#   - pandoc/csl/engineering-applications-of-artificial-intelligence.csl (EA-AI journal)
-#   - Or download from https://www.zotero.org/styles
-csl: pandoc/csl/elsevier-vancouver.csl
-
-# Custom XML template for DOCX formatting
-template: pandoc/default.xml

@@ -9,7 +9,7 @@ output-file: output/docx/manuscript.docx
 standalone: true
 reference-doc: pandoc/manuscript-template/reference-doc.docx
 # Custom XML template for DOCX formatting
-template: pandoc/default.xml
+template: pandoc/templates/default.xml
 
 # Filters are applied in order
 filters:

@@ -54,6 +54,9 @@ from pathlib import Path
 try:
     from docx import Document
     from docx.oxml.ns import qn
+    from docx.enum.style import WD_STYLE_TYPE
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt
     from lxml import etree
 except ImportError as e:
     print(f"Error: Missing dependency: {e}")
@@ -185,15 +188,16 @@ def create_text_element(text: str) -> etree._Element:
     return t
 
 
-def set_font_properties(rPr, font_name: str, font_size: int | None = None,
+def set_font_properties(rPr, font_name: str | None = None, font_size: int | None = None,
                         superscript: bool = False, italic: bool = False):
     """Set font properties on a run properties element."""
     # Font family
-    rFonts = create_element('w:rFonts')
-    rFonts.set(qn('w:ascii'), font_name)
-    rFonts.set(qn('w:hAnsi'), font_name)
-    rFonts.set(qn('w:eastAsia'), font_name)
-    rPr.append(rFonts)
+    if font_name:
+        rFonts = create_element('w:rFonts')
+        rFonts.set(qn('w:ascii'), font_name)
+        rFonts.set(qn('w:hAnsi'), font_name)
+        rFonts.set(qn('w:eastAsia'), font_name)
+        rPr.append(rFonts)
 
     # Font size (in half-points)
     if font_size:
@@ -207,7 +211,7 @@ def set_font_properties(rPr, font_name: str, font_size: int | None = None,
         rPr.append(create_element('w:i'))
 
 
-def add_run_with_text(paragraph_elem, text: str, font_name: str = "Times New Roman",
+def add_run_with_text(paragraph_elem, text: str, font_name: str | None = "Times New Roman",
                       font_size: int = 24, superscript: bool = False, italic: bool = False):
     """Add a run with text to a paragraph element."""
     run = create_element('w:r')
@@ -219,13 +223,45 @@ def add_run_with_text(paragraph_elem, text: str, font_name: str = "Times New Rom
     return run
 
 
-def create_centered_paragraph() -> etree._Element:
-    """Create a centered paragraph element."""
+def create_centered_paragraph(style_name: str | None = None) -> etree._Element:
+    """Create a centered paragraph element, optionally using a paragraph style."""
     p = create_element('w:p')
     pPr = create_element('w:pPr')
+    if style_name:
+        pPr.append(create_element('w:pStyle', val=style_name))
     pPr.append(create_element('w:jc', val='center'))
     p.append(pPr)
     return p
+
+
+def ensure_affiliation_style_exists(doc) -> None:
+    """Ensure the document contains an 'Affiliation' paragraph style."""
+    styles = doc.styles
+
+    try:
+        _ = styles['Affiliation']
+        return
+    except KeyError:
+        pass
+
+    affiliation_style = styles.add_style('Affiliation', WD_STYLE_TYPE.PARAGRAPH)
+
+    for base_style_name in ('Body Text', 'Normal'):
+        try:
+            affiliation_style.base_style = styles[base_style_name]
+            break
+        except KeyError:
+            continue
+
+    affiliation_style.font.name = 'Times New Roman'
+    affiliation_style.font.size = Pt(10)
+    affiliation_style.font.italic = True
+    affiliation_style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    affiliation_style.paragraph_format.space_before = Pt(6)
+    affiliation_style.paragraph_format.space_after = Pt(6)
+    affiliation_style.hidden = False
+    affiliation_style.quick_style = True
+    affiliation_style.priority = 1
 
 
 
@@ -335,9 +371,9 @@ def create_author_paragraph(authors: list, font_name: str = "Times New Roman", f
 
 def create_affiliation_paragraph(key: str, text: str, font_name: str = "Times New Roman", font_size: int = 20):
     """Create a paragraph for a single affiliation."""
-    p = create_centered_paragraph()
-    add_run_with_text(p, key, font_name, font_size, superscript=True, italic=True)
-    add_run_with_text(p, ' ' + text, font_name, font_size, italic=True)
+    p = create_centered_paragraph(style_name='Affiliation')
+    add_run_with_text(p, key, font_name=None, font_size=None, superscript=True)
+    add_run_with_text(p, ' ' + text, font_name=None, font_size=None)
     return p
 
 
@@ -371,6 +407,8 @@ def insert_author_info_to_doc(doc, md_path: str) -> tuple[int, int, bool]:
     if not authors:
         return (0, 0, False)
 
+    ensure_affiliation_style_exists(doc)
+
     # Find title paragraph
     title_idx = find_title_paragraph_index(doc)
     title_para = doc.paragraphs[title_idx]
@@ -378,7 +416,12 @@ def insert_author_info_to_doc(doc, md_path: str) -> tuple[int, int, bool]:
     # Find corresponding author and build footnote text
     footnote_text = ''
     for author in authors:
-        if author.get('corresponding', False):
+        corresponding = author.get('corresponding', False)
+        if corresponding:
+            if isinstance(corresponding, str):
+                footnote_text = corresponding.strip()
+                break
+
             name = author.get('name', '')
             title = author.get('title', '')
             email = author.get('email', '')

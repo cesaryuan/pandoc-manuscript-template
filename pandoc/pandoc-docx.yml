@@ -21,10 +21,10 @@ filters:
 # Citation Style Language (CSL) file
 # Default: Vancouver style (numeric citations)
 # Common alternatives:
-#   - pandoc/elsevier-vancouver.csl (Vancouver)
-#   - pandoc/engineering-applications-of-artificial-intelligence.csl (EA-AI journal)
+#   - pandoc/csl/elsevier-vancouver.csl (Vancouver)
+#   - pandoc/csl/engineering-applications-of-artificial-intelligence.csl (EA-AI journal)
 #   - Or download from https://www.zotero.org/styles
-csl: pandoc/elsevier-vancouver.csl
+csl: pandoc/csl/elsevier-vancouver.csl
 
 # Custom XML template for DOCX formatting
 template: pandoc/default.xml

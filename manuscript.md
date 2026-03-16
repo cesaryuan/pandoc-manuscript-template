@@ -18,6 +18,7 @@ keywords: [Keyword 1, Keyword 2, Keyword 3, Keyword 4, Keyword 5]
 # Bibliography configuration
 bibliography: examples/references/sample-references.bib
 reference-section-title: References
+link-citations: true
 
 # Pandoc-crossref settings for cross-references
 ## Item caption prefix format

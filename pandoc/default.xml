@@ -53,18 +53,14 @@ $if(keywords)$
         <w:t xml:space="preserve">Keywords: </w:t>
       </w:r>
       ${ for(keywords) }${ keywords }${ sep }<w:r><w:t xml:space="preserve">, </w:t></w:r>${ endfor }
+      <w:r>
+        <w:br w:type="page"/>
+      </w:r>
     </w:p>
 $endif$
 $for(include-before)$
     $include-before$
 $endfor$
-
-<!-- Page break -->
-<w:p>
-  <w:r>
-    <w:br w:type="page"/>
-  </w:r>
-</w:p>
 
 $if(toc)$
     $toc$

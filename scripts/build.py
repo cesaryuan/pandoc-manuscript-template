@@ -60,7 +60,7 @@ def run_command(cmd: list, cwd: Path | None = None, check: bool = True, stream_o
         check: Raise exception on non-zero exit code
         stream_output: If True, stream stdout/stderr to console in real-time
     """
-    print(f"→ Running: {' '.join(str(c) for c in cmd)}")
+    print(f"[Run] {' '.join(str(c) for c in cmd)}")
 
     if stream_output:
         # Stream output to console in real-time

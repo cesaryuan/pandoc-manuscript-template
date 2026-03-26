@@ -260,3 +260,4 @@ output/
 # Pandoc cache
 .pandoc-cache/
 __pycache__/
+/tmp

@@ -100,7 +100,7 @@ def should_use_mathbfit_filter() -> bool:
 
 def build_docx():
     """Generate DOCX file with optional post-processing."""
-    print("\n📄 Building DOCX...\n")
+    print("\n[DOCX] Building DOCX...\n")
 
     # Create output directory
     docx_dir = Path(CONFIG['docx_dir'])
@@ -111,7 +111,7 @@ def build_docx():
 
     # Add filter for older Pandoc versions
     if should_use_mathbfit_filter():
-        print("ℹ️  Using mathbfit filter (Pandoc ≤ 3.8.3.0)")
+        print("[INFO] Using mathbfit filter (Pandoc <= 3.8.3.0)")
         cmd.extend(['--filter', 'pandoc/filters/to_mathbfit.py'])
 
     # Run pandoc
@@ -119,16 +119,16 @@ def build_docx():
 
     # Post-process DOCX if enabled
     if CONFIG['enable_docx_postprocess']:
-        print("\n🔧 Running Python post-processing...\n")
+        print("\n[DOCX] Running Python post-processing...\n")
         docx_file = docx_dir / f"{CONFIG['project_name']}.docx"
         run_command(['uv', 'run', 'scripts/postprocess_docx.py', str(docx_file)], stream_output=True)
 
-    print(f"\n✅ DOCX created: {CONFIG['docx_dir']}/{CONFIG['project_name']}.docx")
+    print(f"\n[OK] DOCX created: {CONFIG['docx_dir']}/{CONFIG['project_name']}.docx")
 
 
 def build_latex():
     """Generate LaTeX file."""
-    print("\n📝 Building LaTeX...\n")
+    print("\n[LaTeX] Building LaTeX...\n")
 
     # Create output directory
     latex_dir = Path(CONFIG['latex_dir'])
@@ -137,18 +137,18 @@ def build_latex():
     # Run pandoc
     run_command(['pandoc', '--defaults', 'pandoc/pandoc-latex.yml'], stream_output=True)
 
-    print(f"\n✅ LaTeX created: {CONFIG['latex_dir']}/{CONFIG['project_name']}.tex")
+    print(f"\n[OK] LaTeX created: {CONFIG['latex_dir']}/{CONFIG['project_name']}.tex")
 
 
 def build_pdf():
     """Generate PDF from LaTeX (requires LaTeX installation)."""
-    print("\n📕 Building PDF...\n")
+    print("\n[PDF] Building PDF...\n")
 
     # First generate LaTeX
     build_latex()
 
     # Compile to PDF
-    print("\n🔨 Compiling LaTeX to PDF...\n")
+    print("\n[PDF] Compiling LaTeX to PDF...\n")
     latex_dir = Path(CONFIG['latex_dir'])
     build_dir = latex_dir / 'build'
 
@@ -171,28 +171,28 @@ def build_pdf():
         # Clean up build directory
         shutil.rmtree(build_dir)
 
-        print(f"\n✅ PDF created: {output_pdf}")
+        print(f"\n[OK] PDF created: {output_pdf}")
 
     except subprocess.CalledProcessError as e:
-        print(f"\n❌ LaTeX compilation failed. Check the logs above.")
+        print("\n[ERROR] LaTeX compilation failed. Check the logs above.")
         sys.exit(1)
 
 
 def clean():
     """Remove all generated files."""
-    print("\n🧹 Cleaning generated files...\n")
+    print("\n[Clean] Cleaning generated files...\n")
 
     output_dir = Path(CONFIG['output_dir'])
     if output_dir.exists():
         shutil.rmtree(output_dir)
         print(f"Removed: {output_dir}")
 
-    print("\n✅ Clean complete.")
+    print("\n[OK] Clean complete.")
 
 
 def distclean():
     """Deep clean (including Pandoc cache)."""
-    print("\n🧹 Deep cleaning...\n")
+    print("\n[Clean] Deep cleaning...\n")
 
     # Regular clean
     clean()
@@ -203,7 +203,7 @@ def distclean():
         shutil.rmtree(cache_dir)
         print(f"Removed: {cache_dir}")
 
-    print("\n✅ Deep clean complete.")
+    print("\n[OK] Deep clean complete.")
 
 
 def show_help():
@@ -249,10 +249,10 @@ def main():
     try:
         targets[args.target]()
     except KeyboardInterrupt:
-        print("\n\n⚠️  Build interrupted by user.")
+        print("\n\n[WARN] Build interrupted by user.")
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\n[ERROR] {e}")
         sys.exit(1)
 
 

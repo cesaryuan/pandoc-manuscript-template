@@ -1,6 +1,6 @@
 ---
 name: manuscript-review
-description: "当需要审阅或提升以 Pandoc Markdown 编写的学术论文质量时，应使用此技能。它会根据学术写作规范检查结构、写作风格和格式，并给出具体、可执行的修改建议。当用户提出审阅、检查、润色或改进稿件时，应触发此技能。"
+description: "当需要审阅或提升以 Pandoc Markdown 编写的学术论文初稿时，应使用此技能。它会根据学术写作规范检查结构、写作风格和格式，并给出具体、可执行的修改建议。"
 ---
 
 # 稿件审阅
@@ -28,7 +28,7 @@ description: "当需要审阅或提升以 Pandoc Markdown 编写的学术论文�
 
 **1.3 过多使用 `###`（三级标题）**
 - 将其改写为带过渡语的叙述性段落
-- 可使用 “First, ...”“Subsequently, ...”“Building upon this, ...” 等表达连接主题
+- 可使用“First, ...”“Subsequently, ...”“Building upon this, ...”等表达连接主题
 
 ## 优先级 2：主要行文流畅性问题
 
@@ -81,7 +81,7 @@ The experimental results demonstrate superior performance, with the proposed
 method achieving 95% accuracy, as shown in @fig:results.
 ```
 
-表达可适当变化，例如 “as shown in”“depicted in”“presented in”，或使用括号形式 `(@fig:label)`。
+表达可适当变化，例如“as shown in”“depicted in”“presented in”，或使用括号形式 `(@fig:label)`。
 
 ## 优先级 3：次要格式问题
 

@@ -1,62 +1,62 @@
 ---
 name: manuscript-review
-description: "This skill should be used when reviewing or improving the quality of an academic manuscript written in Pandoc Markdown. It checks structure, writing style, and formatting against academic writing guidelines, and provides specific actionable suggestions. This skill should be triggered when users ask to review, check, polish, or improve their manuscript."
+description: "当需要审阅或提升以 Pandoc Markdown 编写的学术论文质量时，应使用此技能。它会根据学术写作规范检查结构、写作风格和格式，并给出具体、可执行的修改建议。当用户提出审阅、检查、润色或改进稿件时，应触发此技能。"
 ---
 
-# Manuscript Review
+# 稿件审阅
 
-Review the current manuscript file for academic writing quality issues. Read the manuscript, check against the guidelines below in priority order, then report specific issues with locations and suggested fixes.
+审阅当前稿件文件中的学术写作质量问题。先通读稿件，再按照下列规范的优先级依次检查，最后给出带位置标注的具体问题和修改建议。
 
-## Review Procedure
+## 审阅流程
 
-1. Read the full manuscript file (`manuscript.md` or as specified by the user)
-2. Check each guideline below in priority order
-3. Report findings grouped by priority, with file locations and concrete fix suggestions
-4. If the user agrees, apply the fixes
+1. 阅读完整稿件文件（`manuscript.md` 或用户指定的文件）
+2. 按照下方优先级顺序逐项检查各条规范
+3. 按优先级分组报告发现的问题，并附上文件位置和具体修改建议
+4. 如果用户同意，再应用这些修改
 
-## Priority 1: Critical Structure Issues
+## 优先级 1：关键结构问题
 
-Address these first as they affect the entire document.
+这些问题会影响整篇文稿，应优先处理。
 
-**1.1 Separate Introduction and Related Work sections**
-- Introduction and Related Work must be merged into a single unified Introduction
-- Structure: problem/motivation → traditional approaches → modern approaches with citations → research gaps → contributions → paper organization
+**1.1 引言与相关工作分离**
+- 引言和相关工作必须合并为一个统一的 Introduction
+- 建议结构：问题/研究动机 → 传统方法 → 带引用的现代方法 → 研究空白 → 本文贡献 → 论文组织
 
-**1.2 Subsections within Introduction**
-- Introduction must be a coherent narrative without any `##` headings
-- Remove all subsections and reorganize into flowing paragraphs
+**1.2 引言内部出现小节**
+- Introduction 必须是连贯叙述，不能包含任何 `##` 标题
+- 删除所有子小节，并重组为自然衔接的段落
 
-**1.3 Excessive `###` (level 3) headings**
-- Convert to narrative paragraphs with transitional phrases
-- Use "First,...", "Subsequently,...", "Building upon this,..." to connect topics
+**1.3 过多使用 `###`（三级标题）**
+- 将其改写为带过渡语的叙述性段落
+- 可使用 “First, ...”“Subsequently, ...”“Building upon this, ...” 等表达连接主题
 
-## Priority 2: Major Flow Issues
+## 优先级 2：主要行文流畅性问题
 
-Fix after structure is correct.
+在结构正确之后再处理这些问题。
 
-**2.1 Pseudo-headings** — Bold text used as headers
+**2.1 伪标题**：将加粗文本当作标题使用
 
-Detect pattern: `**Label**: content...` at paragraph start. Convert to narrative flow.
+识别模式：段首出现 `**Label**: content...`。应改写为自然叙述。
 
-Before:
+修改前：
 ```markdown
 **Data Collection**: We collected data from multiple sources...
 
 **Data Cleaning**: The data was preprocessed by removing outliers...
 ```
 
-After:
+修改后：
 ```markdown
 Data was collected from multiple sources including sensor networks and historical
 records. The raw data underwent preprocessing to remove outliers and handle missing
 values through interpolation.
 ```
 
-**2.2 List-heavy writing** — Short bullet lists instead of paragraphs
+**2.2 列表过多的写法**：用简短项目符号代替段落
 
-Convert to narrative using enumeration phrases.
+应使用枚举式衔接语将其改写为叙述性段落。
 
-Before:
+修改前：
 ```markdown
 The procedure includes:
 - Data preprocessing
@@ -64,51 +64,51 @@ The procedure includes:
 - Model training
 ```
 
-After:
+修改后：
 ```markdown
 The procedure consists of three main stages. First, data preprocessing cleans
 and normalizes the input. Second, feature extraction captures discriminative
 characteristics. Third, model training optimizes the objective function.
 ```
 
-**2.3 Repetitive figure patterns**
+**2.3 重复的图表引导句式**
 
-Detect: paragraphs starting with `@fig:label shows/presents/illustrates...`
+识别：段落以 `@fig:label shows/presents/illustrates...` 开头。
 
-Fix: lead with narrative content, place figure reference at end of paragraph.
+修改方式：先写叙述内容，再在句末或段末放置图引用。
 ```markdown
 The experimental results demonstrate superior performance, with the proposed
 method achieving 95% accuracy, as shown in @fig:results.
 ```
 
-Vary phrasing: "as shown in", "depicted in", "presented in", parenthetical `(@fig:label)`.
+表达可适当变化，例如 “as shown in”“depicted in”“presented in”，或使用括号形式 `(@fig:label)`。
 
-## Priority 3: Minor Formatting
+## 优先级 3：次要格式问题
 
-Polish after structure and flow are fixed.
+在结构和行文流畅性修正完成后再进行润色。
 
-**3.1 Bold text overuse**
-- Allowed: best results in tables, author names in contribution statements
-- Forbidden: emphasis in body text, list item labels, pseudo-headings
+**3.1 过度使用加粗**
+- 允许：表格中的最优结果、贡献陈述中的作者名称
+- 不允许：正文强调、列表项标签、伪标题
 
-**3.2 Cross-reference syntax errors**
-- Verify all `@fig:`, `@tbl:`, `@eq:`, `@sec:` references point to valid labels
+**3.2 交叉引用语法错误**
+- 检查所有 `@fig:`、`@tbl:`、`@eq:`、`@sec:` 引用是否都指向有效标签
 
-**3.3 Citation formatting**
-- Parenthetical: `[@key]` or `[@key1; @key2]`
-- Narrative: `@key showed that...`
+**3.3 引文格式**
+- 括号式引用：`[@key]` 或 `[@key1; @key2]`
+- 叙述式引用：`@key showed that...`
 
-## Additional Checks
+## 附加检查项
 
-**Paragraph quality:**
-- Each paragraph: 3-7 sentences, one main idea, topic sentence first
-- Flag single-sentence paragraphs (except transitions)
-- Flag overly long paragraphs (>10 sentences)
+**段落质量：**
+- 每段应有 3-7 句，围绕一个中心思想展开，并以主题句开头
+- 标记单句段落（过渡段除外）
+- 标记过长段落（超过 10 句）
 
-**Section structure:**
-- Introduction: no subsections, integrates related work
-- Methods/Results/Discussion: subsections allowed, 3-5 max per section
-- Conclusion: usually no subsections
+**章节结构：**
+- Introduction：不设子小节，并整合相关工作
+- Methods/Results/Discussion：允许子小节，但每节最多建议 3-5 个
+- Conclusion：通常不设子小节
 
-**Numbered lists:**
-- Each item should be a complete sentence or paragraph, not a short phrase
+**编号列表：**
+- 每一项都应是完整句子或完整段落，而不是简短词组

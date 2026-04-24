@@ -1,23 +1,23 @@
 ---
 name: revision
-description: "This skill should be used when handling journal reviewer comments and preparing a revised manuscript with a point-by-point response letter. This skill should be triggered when users mention reviewer comments, revision, rebuttal, or response letter."
+description: "当需要处理期刊审稿意见并准备修订稿及逐点回复信时，应使用此技能。当用户提到审稿意见、修改、rebuttal 或回复信时，应触发此技能。"
 ---
 
-# Revision
+# 论文修订
 
-Help the user respond to journal reviewer comments by preparing a point-by-point response letter and applying corresponding changes to the manuscript.
+帮助用户回应期刊审稿意见，起草逐点回复信，并将相应修改落实到稿件中。
 
-## Workflow
+## 工作流程
 
-1. Read the reviewer comments (provided by user as text or file)
-2. Read the current manuscript
-3. For each reviewer comment, draft a response and identify needed manuscript changes
-4. Present the response letter draft to the user for review
-5. After user approval, apply changes to the manuscript
+1. 阅读审稿意见（用户以文本或文件形式提供）
+2. 阅读当前稿件
+3. 针对每条审稿意见起草回复，并识别稿件中需要修改的内容
+4. 将回复信草稿呈现给用户审阅
+5. 在用户确认后，把修改应用到稿件中
 
-## Response Letter Format
+## 回复信格式
 
-Use the following structure for the response letter (Markdown format):
+回复信建议采用以下结构（Markdown 格式）：
 
 ```markdown
 # Response to Reviewers
@@ -43,40 +43,40 @@ follow each comment. All changes in the manuscript are highlighted in blue.
 ...
 ```
 
-## Response Writing Guidelines
+## 回复写作指南
 
-**Tone:**
-- Always respectful and professional, even for critical or unfair comments
-- Thank the reviewer for specific insights when genuine
-- Never dismissive or defensive
+**语气：**
+- 始终保持尊重和专业，即使面对尖锐或不公正的评论也是如此
+- 如果审稿人提出了确有价值的见解，应真诚表示感谢
+- 不要使用轻视、对抗或防御性的语气
 
-**Response types:**
+**回复类型：**
 
-For comments requiring changes:
-- Acknowledge the issue
-- Explain what was changed and where
-- Quote the new/revised text if brief
+对于需要修改的意见：
+- 先确认问题
+- 说明修改了什么，以及修改位置在哪里
+- 如果新文本或修订文本较短，可直接引用出来
 
-For comments disagreeing with:
-- Acknowledge the reviewer's perspective
-- Provide evidence or reasoning for the current approach
-- Offer a compromise if possible (e.g., adding a discussion paragraph)
+对于需要说明不同意见的情况：
+- 先承认审稿人的视角有其合理性
+- 为当前做法提供证据或论证
+- 如果可能，给出折中方案（例如补充一段讨论）
 
-For comments requesting additional experiments:
-- If feasible: perform and report results
-- If not feasible: explain why and propose alternatives
+对于要求补充实验的意见：
+- 如果可行：补做实验并报告结果
+- 如果不可行：解释原因，并提出替代方案
 
-**Manuscript changes:**
-- Track all changes clearly — note which section/paragraph was modified
-- Ensure changes are consistent across the manuscript (e.g., if terminology changes, update everywhere)
-- Verify cross-references remain valid after restructuring
+**稿件修改：**
+- 清晰追踪所有改动，注明修改了哪个章节或段落
+- 确保全文修改前后一致，例如术语一旦变化，全文都要同步更新
+- 在重组结构后，检查交叉引用是否仍然有效
 
-## Common Revision Patterns
+## 常见修订模式
 
-**Adding clarification:** Insert 1-2 sentences at the relevant location, maintain paragraph flow.
+**补充说明：** 在相关位置插入 1-2 句解释，并保持段落行文自然。
 
-**Restructuring a section:** Follow the academic writing rules in CLAUDE.md — no pseudo-headings, narrative paragraphs, proper transitions.
+**重组章节：** 遵循 `CLAUDE.md` 中的学术写作规范，不使用伪标题，保持叙述性段落，并做好过渡。
 
-**Adding references:** Add to `.bib` file and cite with `[@key]` syntax. Verify the key doesn't conflict with existing entries.
+**补充参考文献：** 将条目加入 `.bib` 文件，并使用 `[@key]` 语法引用。注意检查 key 是否与现有条目冲突。
 
-**Updating figures/tables:** Update both the figure/table and any text that describes or references it.
+**更新图表：** 同时更新图表本身，以及所有描述或引用该图表的正文内容。

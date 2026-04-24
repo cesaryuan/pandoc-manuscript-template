@@ -46,7 +46,7 @@ This template converts Pandoc Markdown manuscripts to DOCX (journal submission) 
 
 ![caption of c](c.png){#fig:c width=50%}
 ![caption of d](d.png){#fig:d width=50%}
-
+<!-- here should be a blank line -->
 Main caption ( 2x2 grid of subfigures, change line by adding a blank line between images).
 </div>
 ```
@@ -85,11 +85,6 @@ Main caption ( 2x2 grid of subfigures, change line by adding a blank line betwee
 - **Results** (subsections allowed)
 - **Discussion** (subsections allowed)
 - **Conclusion** (usually no subsections)
-
-## Skills
-
-- **`/manuscript-review`** — Detailed writing style guidelines with examples for reviewing and improving manuscript quality
-- **`/revision`** — Guidance for handling reviewer comments and writing response letters
 
 ## Reminders
 

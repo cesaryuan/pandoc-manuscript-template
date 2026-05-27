@@ -42,8 +42,10 @@ tableEqns: true
 eqnBlockTemplate: |
    `<w:pPr><w:tabs><w:tab w:val="center" w:leader="none" w:pos="4153" /><w:tab w:val="right" w:leader="none" w:pos="9360" /></w:tabs></w:pPr><w:r><w:tab /></w:r>`{=openxml} $$t$$ `<w:r><w:tab /></w:r>`{=openxml} $$nmi$$
 eqnBlockInlineMath: true    # Support for centered equations and right-aligned numbering
+## Options for section numbering and auto-labeling
 linkReferences: true        # Convert references to hyperlinks
 autoSectionLabels: true     # Auto-add "sec:" prefix to section labels
+autoEqnLabels: true         # Number all display equations
 numberSections: true        # Number sections. Add 1.1., 1.2., etc.
 sectionsDepth: 3            # Depth of numbered sections
 subfigGrid: true            # Subfigure grid layout support

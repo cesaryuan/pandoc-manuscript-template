@@ -51,6 +51,14 @@ Main caption ( 2x2 grid of subfigures, change line by adding a blank line betwee
 </div>
 ```
 
+## If I want to Change Citation Styles
+
+1. Visit [Zotero Style Repository](https://www.zotero.org/styles) and find a CSL file for user required target journal or preferred citation style.
+2. Download CSL file and save to `pandoc/` directory
+3. **Update `pandoc/pandoc-docx.yml`**:
+   ```yaml
+   csl: pandoc/csl-style-downloaded.csl
+   ```
 ## Academic Writing Rules
 
 **Critical Don'ts:**

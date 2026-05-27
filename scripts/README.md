@@ -8,6 +8,7 @@ This directory contains Python scripts for post-processing generated DOCX files.
 - `merge_table_cells.py` - Merge table cells based on markers
 - `process_table_metadata.py` - Apply table metadata from captions
 - `autofit_tables.py` - Auto-fit tables to window width
+- `body_text_style.py` - Apply Body Text style settings from manuscript YAML metadata
 
 ## Quick Start
 
@@ -40,6 +41,7 @@ The Python scripts use the `python-docx` library to manipulate DOCX files direct
 2. **Direct XML manipulation** - Modifies the DOCX internal structure
 3. **Processing steps:**
    - Merges table cells based on markers (`<<` or `!<!` for left, `^^` or `!^!` for up)
+   - Applies Body Text paragraph style settings from YAML metadata
    - Applies table metadata from captions (margins, alignment, row height, etc.)
    - Auto-fits tables to window width (100%)
    - Centers tables on page
@@ -161,7 +163,26 @@ uv run scripts/autofit_tables.py output/docx/manuscript.docx
 uv run scripts/autofit_tables.py output/docx/manuscript.docx --no-center
 ```
 
-#### 4. Complete Pipeline
+#### 4. Body Text Style Metadata
+
+Set body paragraph indentation and spacing in the manuscript YAML header:
+
+```yaml
+bodyText:
+  firstLineIndentChars: 2
+  paragraphSpacing:
+    before: 0pt
+    after: 0pt
+```
+
+The post-processor applies these settings to the DOCX `Body Text` style. Paragraph spacing values use points, and the first-line indent uses Word's character-based indent.
+
+**Usage:**
+```bash
+uv run scripts/postprocess/body_text_style.py output/docx/manuscript.docx manuscript.md
+```
+
+#### 5. Complete Pipeline
 
 Runs all processing steps in sequence:
 
@@ -170,9 +191,13 @@ uv run scripts/postprocess_docx.py output/docx/manuscript.docx
 ```
 
 **Processing order:**
-1. Merge table cells (markers)
-2. Apply table metadata (captions)
-3. Auto-fit tables to window
+1. Insert author information from YAML metadata
+2. Apply Body Text style settings from YAML metadata
+3. Merge table cells (markers)
+4. Apply table metadata (captions)
+5. Clear subfigure table formatting
+6. Convert table text style from `Compact` to `Table Text`
+7. Auto-fit tables to window
 
 ### Advanced Usage
 
@@ -183,11 +208,13 @@ from docx import Document
 from merge_table_cells import merge_table_cells
 from process_table_metadata import process_table_metadata
 from autofit_tables import autofit_tables
+from body_text_style import apply_body_text_style_metadata
 
 # Open document
 doc = Document("manuscript.docx")
 
 # Process
+apply_body_text_style_metadata(doc, "manuscript.md")
 left, up = merge_table_cells(doc)
 processed, settings = process_table_metadata(doc)
 fitted = autofit_tables(doc)

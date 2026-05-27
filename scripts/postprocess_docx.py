@@ -32,6 +32,7 @@ try:
     from postprocess.table_text_style import process_all_tables as convert_table_text_style, ensure_table_text_style_exists
     from postprocess.insert_author_info import insert_author_info_to_doc
     from postprocess.clear_subfigure_table_format import clear_subfigure_table_format
+    from postprocess.body_text_style import apply_body_text_style_metadata
 except ImportError as e:
     print(f"Error: Failed to import processing modules: {e}")
     print("Make sure all scripts are in the same directory:")
@@ -41,6 +42,7 @@ except ImportError as e:
     print("  - table_text_style.py")
     print("  - insert_author_info.py")
     print("  - clear_subfigure_table_format.py")
+    print("  - body_text_style.py")
     sys.exit(1)
 
 
@@ -131,25 +133,37 @@ def postprocess_docx(docx_path: str, md_path: str = '') -> bool:
             print_info("")
 
         # ===================================================================
-        # Step 2: Merge table cells based on markers
+        # Step 2: Apply body text style settings (if md_path provided)
         # ===================================================================
-        print_info("Step 2: Merging table cells...")
+        if md_path:
+            print_info("Step 2: Applying body text style metadata...")
+            try:
+                result = apply_body_text_style_metadata(doc, md_path)
+                if result is None:
+                    print_warning("No bodyText metadata found, skipping")
+                else:
+                    print_success(
+                        f"Style '{result['style_name']}': "
+                        f"first-line indent {result['first_line_indent_chars']} chars, "
+                        f"before {result['space_before_pt']} pt, "
+                        f"after {result['space_after_pt']} pt"
+                    )
+                print_success("Step 2 completed")
+                print_info("")
+            except Exception as e:
+                print_error(f"Step 2 failed: {e}")
+                raise
+        else:
+            print_info("Step 2: Skipping body text style metadata (no markdown file provided)")
+            print_info("")
+
+        # ===================================================================
+        # Step 3: Merge table cells based on markers
+        # ===================================================================
+        print_info("Step 3: Merging table cells...")
         try:
             left_merges, up_merges = merge_table_cells(doc)
             print_success(f"Left merges: {left_merges}, Up merges: {up_merges}")
-            print_success("Step 2 completed")
-            print_info("")
-        except Exception as e:
-            print_error(f"Step 2 failed: {e}")
-            raise
-
-        # ===================================================================
-        # Step 3: Process table metadata from captions
-        # ===================================================================
-        print_info("Step 3: Processing table metadata...")
-        try:
-            processed, settings = process_table_metadata(doc)
-            print_success(f"Processed {processed} table(s), Applied {settings} setting(s)")
             print_success("Step 3 completed")
             print_info("")
         except Exception as e:
@@ -157,23 +171,36 @@ def postprocess_docx(docx_path: str, md_path: str = '') -> bool:
             raise
 
         # ===================================================================
-        # Step 4: Clear formatting for subfigure layout tables
+        # Step 4: Process table metadata from captions
         # ===================================================================
-        print_info("Step 4: Clearing subfigure table formatting...")
+        print_info("Step 4: Processing table metadata...")
         try:
-            processed_count = clear_subfigure_table_format(doc)
-            print_success(f"Cleared formatting for {processed_count} subfigure table(s)")
+            processed, settings = process_table_metadata(doc)
+            print_success(f"Processed {processed} table(s), Applied {settings} setting(s)")
             print_success("Step 4 completed")
             print_info("")
         except Exception as e:
             print_error(f"Step 4 failed: {e}")
             raise
+
+        # ===================================================================
+        # Step 5: Clear formatting for subfigure layout tables
+        # ===================================================================
+        print_info("Step 5: Clearing subfigure table formatting...")
+        try:
+            processed_count = clear_subfigure_table_format(doc)
+            print_success(f"Cleared formatting for {processed_count} subfigure table(s)")
+            print_success("Step 5 completed")
+            print_info("")
+        except Exception as e:
+            print_error(f"Step 5 failed: {e}")
+            raise
         
         
         # ===================================================================
-        # Step 5: Convert table text style from Compact to Table Text
+        # Step 6: Convert table text style from Compact to Table Text
         # ===================================================================
-        print_info("Step 5: Converting table text style...")
+        print_info("Step 6: Converting table text style...")
         try:
             # Ensure Table Text style exists
             if not ensure_table_text_style_exists(doc):
@@ -181,23 +208,23 @@ def postprocess_docx(docx_path: str, md_path: str = '') -> bool:
             else:
                 stats = convert_table_text_style(doc)
                 print_success(f"Converted {stats['converted']} paragraph(s) from 'Compact' to 'Table Text'")
-            print_success("Step 5 completed")
-            print_info("")
-        except Exception as e:
-            print_error(f"Step 5 failed: {e}")
-            raise
-
-        # ===================================================================
-        # Step 6: Auto-fit tables to window
-        # ===================================================================
-        print_info("Step 6: Auto-fitting tables to window...")
-        try:
-            fitted_count = autofit_tables(doc, center_align=True)
-            print_success(f"Auto-fitted {fitted_count} table(s)")
             print_success("Step 6 completed")
             print_info("")
         except Exception as e:
             print_error(f"Step 6 failed: {e}")
+            raise
+
+        # ===================================================================
+        # Step 7: Auto-fit tables to window
+        # ===================================================================
+        print_info("Step 7: Auto-fitting tables to window...")
+        try:
+            fitted_count = autofit_tables(doc, center_align=True)
+            print_success(f"Auto-fitted {fitted_count} table(s)")
+            print_success("Step 7 completed")
+            print_info("")
+        except Exception as e:
+            print_error(f"Step 7 failed: {e}")
             raise
 
         # ===================================================================
@@ -230,11 +257,12 @@ Examples:
 
 Processing steps:
   1. Insert author information from YAML metadata (if md_path provided)
-  2. Merge table cells based on markers (<<, !<!, ^^, and !^!)
-  3. Process table metadata from captions (|key=value|)
-  4. Convert table text style from 'Compact' to 'Table Text'
+  2. Apply Body Text style settings from YAML metadata (if md_path provided)
+  3. Merge table cells based on markers (<<, !<!, ^^, and !^!)
+  4. Process table metadata from captions (|key=value|)
   5. Clear formatting for tables above 'Image Caption' paragraphs
-  6. Auto-fit tables to window width and center align
+  6. Convert table text style from 'Compact' to 'Table Text'
+  7. Auto-fit tables to window width and center align
 
 This script applies all post-processing steps in sequence.
         """

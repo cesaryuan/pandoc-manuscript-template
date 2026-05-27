@@ -143,6 +143,20 @@ affiliations:
 
 Avoid Pandoc's compact string-only author syntax, such as `author: [First Author, Second Author]`, when you need this template's DOCX author formatting. The post-processing script expects each author to be a mapping so it can read affiliations and correspondence metadata.
 
+### DOCX Body Text Formatting
+
+The DOCX post-processing step can update the `Body Text` paragraph style from YAML metadata in `manuscript.md`. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
+
+```yaml
+bodyText:
+  firstLineIndentChars: 2
+  paragraphSpacing:
+    before: 0pt
+    after: 0pt
+```
+
+Use point values for paragraph spacing, such as `6pt`. The first-line indent is written as a Word character-based indent, so `2` means two characters rather than a fixed centimeter or inch value.
+
 ### Optional LaTeX Source Configuration
 
 The primary workflow is DOCX generation. If you also generate LaTeX source with `make latex`, you can edit the YAML header in `manuscript.md` for document-class-specific output:

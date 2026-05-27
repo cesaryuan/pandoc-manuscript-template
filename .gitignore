@@ -261,3 +261,4 @@ output/
 .pandoc-cache/
 __pycache__/
 /tmp
+nul

@@ -31,6 +31,13 @@ link-citations: true
 #   - Or download from https://www.zotero.org/styles
 csl: pandoc/csl/sage-vancouver.csl
 
+# DOCX body text formatting (applied to the Body Text style in post-processing)
+bodyText:
+  firstLineIndentChars: 2
+  paragraphSpacing:
+    before: 0pt
+    after: 0pt
+
 # Pandoc-crossref settings for cross-references
 ## Item caption prefix format
 figureTitle: "Figure "

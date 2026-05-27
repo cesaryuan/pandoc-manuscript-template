@@ -17,14 +17,13 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 try:
     from docx import Document
     from docx.document import Document as DocumentObject
+    from docx.enum.style import WD_STYLE_TYPE
     from docx.table import Table, _Cell
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
     from docx.styles.style import _ParagraphStyle
 except ImportError:
     print("Error: python-docx is not installed. Install it with: pip install python-docx")
@@ -38,6 +37,9 @@ class Colors:
     YELLOW = '\033[93m'
     RED = '\033[91m'
     RESET = '\033[0m'
+
+
+NORMAL_STYLE_NAMES = ("Normal", "正文")
 
 
 def print_success(message: str):
@@ -60,10 +62,32 @@ def print_error(message: str):
     print(f"{Colors.RED}{message}{Colors.RESET}")
 
 
+def get_normal_style(doc: DocumentObject) -> tuple[_ParagraphStyle | None, str | None]:
+    """Return the Word Normal/正文 paragraph style used as the Table Text base."""
+    for style_name in NORMAL_STYLE_NAMES:
+        try:
+            return cast(_ParagraphStyle, doc.styles[style_name]), style_name
+        except KeyError:
+            continue
+    return None, None
+
+
+def set_table_text_base_style(doc: DocumentObject, table_text_style: _ParagraphStyle) -> bool:
+    """Set Table Text to be based on the document's Normal/正文 style."""
+    normal_style, normal_style_name = get_normal_style(doc)
+    if normal_style is None:
+        print_error("Neither 'Normal' nor '正文' style was found, cannot set 'Table Text' base style")
+        return False
+
+    table_text_style.base_style = normal_style
+    print_info(f"'Table Text' style based on '{normal_style_name}' style")
+    return True
+
+
 def ensure_table_text_style_exists(doc: DocumentObject) -> bool:
     """
     Ensure 'Table Text' style exists in the document.
-    If it doesn't exist, create it based on '正文文本' (Body Text) style.
+    If it doesn't exist, create it based on the Normal/正文 style.
 
     Args:
         doc: python-docx Document object
@@ -73,7 +97,9 @@ def ensure_table_text_style_exists(doc: DocumentObject) -> bool:
     """
     try:
         # Try to access the style
-        _ = doc.styles['Table Text']
+        table_text_style = cast(_ParagraphStyle, doc.styles['Table Text'])
+        if not set_table_text_base_style(doc, table_text_style):
+            return False
         print_info("'Table Text' style already exists")
         return True
     except KeyError:
@@ -81,33 +107,19 @@ def ensure_table_text_style_exists(doc: DocumentObject) -> bool:
         print_info("'Table Text' style not found, creating it...")
         try:
             from docx.shared import Cm
-            from typing import cast
 
             styles = doc.styles
             # Create the style and cast to _ParagraphStyle for proper type handling
-            table_text_style_obj = styles.add_style('Table Text', 1)  # 1 = WD_STYLE_TYPE.PARAGRAPH
+            table_text_style_obj = styles.add_style('Table Text', WD_STYLE_TYPE.PARAGRAPH)
             table_text_style = cast(_ParagraphStyle, table_text_style_obj)
 
-            # Base it on '正文文本' (Body Text) style if available
-            try:
-                body_text_style = styles['Body Text']
-                table_text_style.base_style = body_text_style
-                print_info("'Table Text' style based on 'Body Text' style")
-            except KeyError:
-                # Try 'Normal' as fallback
-                try:
-                    normal_style = styles['Normal']
-                    table_text_style.base_style = normal_style
-                    print_warning("'Body Text' style not found, using 'Normal' as base style")
-                except KeyError:
-                    print_warning("Neither 'Body Text' nor 'Normal' style found, creating 'Table Text' without base style")
-
-            # Font properties will be inherited from base style
+            if not set_table_text_base_style(doc, table_text_style):
+                return False
 
             # Set paragraph formatting
             pf = table_text_style.paragraph_format
 
-            # Set spacing before and after to 0.05 cm
+            # Set spacing before and after to 0.10 cm
             pf.space_before = Cm(0.10)
             pf.space_after = Cm(0.10)
 
@@ -230,12 +242,9 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
 
         # Save the document
         if save:
-            if stats['converted'] > 0:
-                print_info("Saving document...")
-                doc.save(str(docx_path_abs))
-                print_success("Document saved")
-            else:
-                print_info("No changes made, skipping save")
+            print_info("Saving document...")
+            doc.save(str(docx_path_abs))
+            print_success("Document saved")
 
         print_success("\nTable text style conversion completed successfully!")
         return doc

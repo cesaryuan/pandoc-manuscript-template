@@ -3,11 +3,15 @@ title: "Your Manuscript Title: A Comprehensive Study"
 authors:
   - name: First Author
     email: first.author@university.edu
-    affiliation: Department of Example, University Name, City, Country
+    affiliation: 
+      - Department of Example, University Name, City, Country
+      - Institute of Research, University Name, City, Country
 
   - name: Second Author
     email: second.author@university.edu
-    affiliation: Department of Example, University Name, City, Country
+    affiliation: 
+      - Department of Example, University Name, City, Country
+      - Institute of Another Research, University Name, City, Country
     corresponding: true
 
 abstract: |

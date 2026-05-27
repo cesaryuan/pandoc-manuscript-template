@@ -55,6 +55,94 @@ Install the following tools:
 
 **Edit `manuscript.md`**: Replace template content with your research.
 
+### Author Metadata
+
+The DOCX post-processing step reads author information from the YAML header in `manuscript.md` and inserts formatted author names, affiliations, and the corresponding-author footnote after the title. Use `authors` as the preferred field name. The singular alias `author` is also accepted by the post-processor for compatibility.
+
+Each author must be written as a YAML mapping with at least a `name` field. Optional fields are:
+
+- `affiliation`: A single affiliation key or a single inline affiliation string.
+- `affiliations`: One affiliation key/string or a list of affiliation keys/strings.
+- `email`: Used in the generated corresponding-author footnote.
+- `title`: Added in parentheses in the generated corresponding-author footnote.
+- `corresponding`: Use `true` to generate the default correspondence footnote, or provide a string to use as the complete footnote text.
+
+Affiliations can be written inline under each author, or defined once in a top-level `affiliations` map and then referenced by key. The singular top-level alias `affiliation` is also accepted when using keyed affiliations.
+
+#### Format 1: Inline Single Affiliation
+
+This is the simplest format and matches the default `manuscript.md` template:
+
+```yaml
+authors:
+  - name: First Author
+    email: first.author@university.edu
+    affiliation: Department of Example, University Name, City, Country
+
+  - name: Second Author
+    email: second.author@university.edu
+    affiliation: Department of Example, University Name, City, Country
+    corresponding: true
+```
+
+#### Format 2: Inline Multiple Affiliations
+
+Use `affiliations` as a list when an author has more than one affiliation. Repeated affiliation text is automatically assigned the same superscript label.
+
+```yaml
+authors:
+  - name: First Author
+    affiliations:
+      - Department of Example, University Name, City, Country
+      - Research Center, Institute Name, City, Country
+
+  - name: Second Author
+    affiliations:
+      - Department of Example, University Name, City, Country
+      - Research Center, Institute Name, City, Country
+    corresponding: true
+    email: second.author@university.edu
+```
+
+#### Format 3: Keyed Affiliations
+
+Use a top-level `affiliations` map when several authors share the same institutions. Author entries can reference one key with `affiliation`, or several keys with `affiliations`.
+
+```yaml
+authors:
+  - name: First Author
+    affiliations: [a, b]
+
+  - name: Second Author
+    affiliation: a
+    corresponding: true
+    email: second.author@university.edu
+    title: Professor
+
+affiliations:
+  a: Department of Example, University Name, City, Country
+  b: Research Center, Institute Name, City, Country
+```
+
+#### Format 4: Custom Corresponding-Author Footnote
+
+Set `corresponding` to a string when the journal requires custom wording. The string is used as the complete footnote text.
+
+```yaml
+authors:
+  - name: First Author
+    affiliation: a
+
+  - name: Second Author
+    affiliation: a
+    corresponding: "Correspondence concerning this article should be addressed to Second Author, Department of Example, University Name. Email: second.author@university.edu."
+
+affiliations:
+  a: Department of Example, University Name, City, Country
+```
+
+Avoid Pandoc's compact string-only author syntax, such as `author: [First Author, Second Author]`, when you need this template's DOCX author formatting. The post-processing script expects each author to be a mapping so it can read affiliations and correspondence metadata.
+
 ### Optional LaTeX Source Configuration
 
 The primary workflow is DOCX generation. If you also generate LaTeX source with `make latex`, you can edit the YAML header in `manuscript.md` for document-class-specific output:

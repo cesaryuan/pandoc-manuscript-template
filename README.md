@@ -18,7 +18,7 @@ A professional, reusable template for academic manuscripts supporting both DOCX 
 Install the following tools:
 
 1. **Pandoc** (>= 3.0): [Download](https://pandoc.org/installing.html)
-2. **Python** (>= 3.8): For Pandoc filters
+2. **UV**: For Pandoc filters
 3. **LaTeX distribution** (optional, for PDF output):
    - Windows: [MiKTeX](https://miktex.org/) or [TeX Live](https://www.tug.org/texlive/)
    - macOS: [MacTeX](https://www.tug.org/mactex/)
@@ -26,12 +26,6 @@ Install the following tools:
 4. **Make** (optional but recommended):
    - Windows: Install via [Chocolatey](https://chocolatey.org/) (`choco install make`) or use WSL
    - macOS/Linux: Pre-installed
-
-Install Python dependencies:
-
-```bash
-pip install panflute
-```
 
 ### Generate Your First Document
 
@@ -49,6 +43,8 @@ pip install panflute
 3. **Generate DOCX**:
    ```bash
    make docx
+   # or 
+   uv run scripts/build.py docx
    # Output: output/docx/manuscript.docx
    ```
 
@@ -67,11 +63,9 @@ pip install panflute
 
 ### Writing Your Manuscript
 
-1. **Edit `manuscript.md`**: Replace template content with your research
-2. **Add images**: Place figures in `examples/images/` or create your own `images/` directory
-3. **Manage references**: Edit `examples/references/sample-references.bib` or use your own `.bib` file
+**Edit `manuscript.md`**: Replace template content with your research.
 
-### Customizing for Different Journals
+### Customizing for Different Journals (Only for LaTeX/PDF output)
 
 The template supports multiple journal formats. Edit the YAML header in `manuscript.md`:
 
@@ -157,9 +151,9 @@ Use standard Pandoc citation syntax:
 
 ### Advanced Table Formatting (DOCX Post-Processing)
 
-When generating DOCX output with `make docx`, three PowerShell scripts automatically enhance table formatting:
+When generating DOCX output with `make docx`, three post-processing scripts automatically enhance table formatting:
 
-#### 1. Table Metadata (process-table-metadata.ps1)
+#### 1. Table Metadata
 
 Add metadata to table captions to control table properties. The metadata is automatically removed from the final caption.
 
@@ -185,7 +179,7 @@ Add metadata to table captions to control table properties. The metadata is auto
 
 The metadata `|cell_margin=0.10cm autofit=window alignment=center|` will be applied to the table and then removed from the caption in the final DOCX.
 
-#### 2. Cell Merging (merge-table-cells.ps1)
+#### 2. Cell Merging
 
 Use special markers to merge table cells in the generated DOCX:
 
@@ -210,7 +204,7 @@ In this example, "Group A" will span two rows (merging with the cell below conta
 - Left merges (`!<!`) are processed first, then up merges (`!^!`)
 - The marker cell must be empty except for the marker itself
 
-#### 3. Auto-fit Tables (autofit-tables.ps1)
+#### 3. Auto-fit Tables
 
 All tables are automatically fitted to window width and centered. This can be overridden using the `autofit` metadata key.
 
@@ -220,43 +214,6 @@ All tables are automatically fitted to window width and centered. This can be ov
 - `autofit-tables.ps1` - Auto-fits tables to window
 
 These scripts run automatically when `ENABLE_DOCX_POSTPROCESS = true` in the Makefile (Windows only, requires Microsoft Word).
-
-## File Organization
-
-```
-pandoc-manuscript-template/
-├── manuscript.md              # Your manuscript content (EDIT THIS)
-├── Makefile                   # Build automation
-├── README.md                  # This file
-│
-├── output/                    # Generated files (gitignored)
-│   ├── docx/
-│   └── latex/
-│
-├── examples/                  # Example content and references
-│   ├── images/                # Sample figures
-│   └── references/
-│       ├── sample-references.bib      # Generic sample bibliography
-│       └── paper-specific-example.bib # Advanced example
-│
-├── pandoc/                    # Pandoc infrastructure
-│   ├── pandoc-docx.yml        # DOCX output configuration
-│   ├── pandoc-latex.yml       # LaTeX/PDF output configuration
-│   ├── filters/               # Python filters for document processing
-│   │   ├── emf_to_pdf.py     # Convert EMF images to PDF
-│   │   ├── resource_move.py  # Copy resources to output directory
-│   │   ├── path_filter.py    # Adjust file paths
-│   │   └── table_convert.py  # Table format conversion
-│   ├── templates/             # LaTeX templates
-│   │   ├── common.latex
-│   │   ├── default.latex
-│   │   └── fonts.latex
-│   ├── manuscript-template/   # DOCX reference document (submodule)
-│   ├── elsevier-vancouver.csl # Citation style (numeric)
-│   └── engineering-applications-of-artificial-intelligence.csl
-│
-└── .vscode/                   # VS Code settings (optional)
-```
 
 ## Build System
 
@@ -321,47 +278,6 @@ See the [manuscript-template submodule](pandoc/manuscript-template/) for advance
      - your_filter.py
    ```
 
-## Troubleshooting
-
-### Common Issues
-
-**Error: "pandoc-crossref not found"**
-- Install: Download from [releases](https://github.com/lierdakil/pandoc-crossref/releases)
-- Or install via: `pip install pandoc-crossref` (if available for your platform)
-
-**Error: "LaTeX Error: File 'xxx.sty' not found"**
-- Install missing LaTeX package via your distribution's package manager
-- MiKTeX: Packages auto-install on first use
-- TeX Live: `tlmgr install <package-name>`
-
-**Images not appearing in PDF**
-- Ensure image paths are correct relative to `manuscript.md`
-- Check that EMF files have corresponding PDF versions (or use PNG/JPG)
-
-**Citations not rendering**
-- Verify bibliography file path in YAML header
-- Ensure `citeproc` filter is enabled
-- Check citation keys match entries in `.bib` file
-
-**DOCX formatting incorrect**
-- Update reference document (`pandoc/manuscript-template/reference-doc.docx`)
-- Ensure `reference-doc` path in `pandoc/pandoc-docx.yml` is correct
-
-### Platform-Specific Notes
-
-**Windows**:
-- Use PowerShell or WSL for best compatibility
-- Ensure Pandoc and Python are in system PATH
-- Consider using [Chocolatey](https://chocolatey.org/) for package management
-
-**macOS**:
-- Use Homebrew to install dependencies: `brew install pandoc`
-- MacTeX provides complete LaTeX distribution
-
-**Linux**:
-- Install via package manager: `sudo apt-get install pandoc texlive-full`
-- May need to install `make` separately: `sudo apt-get install build-essential`
-
 ## Journal Submission Checklist
 
 - [ ] Update title, authors, and affiliations in YAML header
@@ -377,25 +293,6 @@ See the [manuscript-template submodule](pandoc/manuscript-template/) for advance
 - [ ] Verify all figures, tables, and references appear correctly
 - [ ] Run journal-specific formatting checks (line numbers, anonymization, etc.)
 
-## IDE Integration
-
-### Cursor IDE
-
-Example Cursor IDE configurations are available in `examples/cursor-configs/` for users who want academic writing assistance. These provide templates for:
-- Pandoc Markdown syntax guidance
-- Academic writing style enforcement
-- Bilingual content support
-
-### VS Code
-
-The template includes `.vscode/settings.json` with recommended settings:
-- Word wrap enabled for Markdown files
-- GitLens annotations configured for document history
-
-### Other IDEs
-
-The template uses standard Pandoc Markdown syntax and is compatible with any text editor.
-
 ## Examples
 
 See `manuscript.md` for a complete example demonstrating:
@@ -409,22 +306,11 @@ See `manuscript.md` for a complete example demonstrating:
 
 For a real-world example of a complete research paper, see `examples/references/paper-specific-example.bib`.
 
-## Contributing
-
-Contributions are welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request with clear description of changes
-
-## License
-
-[Specify your license here - MIT, Apache 2.0, CC-BY, etc.]
 
 ## Acknowledgments
 
 - [Pandoc](https://pandoc.org/) - Universal document converter
 - [pandoc-crossref](https://github.com/lierdakil/pandoc-crossref) - Cross-reference filter
-- [manuscript-template](https://github.com/rnwest/pandoc-manuscript-template) - DOCX reference document tools
 
 ## Support
 

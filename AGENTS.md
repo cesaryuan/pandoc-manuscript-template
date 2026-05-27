@@ -14,7 +14,7 @@ This template converts Pandoc Markdown manuscripts to DOCX, with optional LaTeX 
 - Sections: `# Title {#sec:label}` → `[@sec:label]`
 - Citations: `[@key]` (parenthetical), `[@key1; @key2]` (multiple)
 
-**Tables:**
+**Tables:** Please prefer to use pipe_tables which is identical to PHP Markdown Extra tables.
 ```markdown
 | **Method** | **Accuracy (%)** |
 |:----------:|:----------------:|

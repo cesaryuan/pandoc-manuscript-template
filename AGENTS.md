@@ -92,7 +92,7 @@ Main caption ( 2x2 grid of subfigures, change line by adding a blank line betwee
 - **Methods** (subsections allowed)
 - **Results** (subsections allowed)
 - **Discussion** (subsections allowed)
-- **Conclusion** (usually no subsections)
+- **Conclusions** (usually no subsections)
 
 ## Reminders
 

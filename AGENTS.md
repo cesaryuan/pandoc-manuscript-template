@@ -1,14 +1,3 @@
----
-version: 2.0.0
-last_updated: 2026-03-03
----
-
-# CLAUDE.md
-
-Guidance for helping users write academic papers using this Pandoc manuscript template.
-
-## Project Overview
-
 This template converts Pandoc Markdown manuscripts to DOCX, with optional LaTeX source generation for advanced users.
 
 - Main file: `manuscript.md` — edit this to write the paper

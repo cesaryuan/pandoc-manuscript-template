@@ -1,14 +1,14 @@
 # Pandoc Manuscript Template
 
-A professional, reusable template for academic manuscripts supporting both DOCX and LaTeX/PDF output formats using [Pandoc](https://pandoc.org/).
+A professional, reusable template for academic manuscripts focused on DOCX output, with optional LaTeX source generation using [Pandoc](https://pandoc.org/).
 
 ## Features
 
-- **Dual-format output**: Generate both DOCX (for submission) and LaTeX/PDF (for archival)
+- **DOCX-focused output**: Generate Word-ready manuscripts for journal submission
 - **Automatic formatting**: Consistent styling using reference documents and templates
 - **Cross-references**: Automatic numbering and linking for figures, tables, equations, and sections
 - **Flexible citations**: Support for 9000+ citation styles via CSL
-- **Journal-ready**: Examples for common journal document classes (Elsevier, Springer, Wiley, IEEE)
+- **Journal-ready DOCX workflow**: Reference-document styling and post-processing for submission files
 - **Reproducible**: Version-controlled workflow with Make-based builds
 
 ## Quick Start
@@ -19,11 +19,7 @@ Install the following tools:
 
 1. **Pandoc** (>= 3.0): [Download](https://pandoc.org/installing.html)
 2. **UV**: For Pandoc filters
-3. **LaTeX distribution** (optional, for PDF output):
-   - Windows: [MiKTeX](https://miktex.org/) or [TeX Live](https://www.tug.org/texlive/)
-   - macOS: [MacTeX](https://www.tug.org/mactex/)
-   - Linux: `sudo apt-get install texlive-full`
-4. **Make** (optional but recommended):
+3. **Make** (optional but recommended):
    - Windows: Install via [Chocolatey](https://chocolatey.org/) (`choco install make`) or use WSL
    - macOS/Linux: Pre-installed
 
@@ -48,13 +44,7 @@ Install the following tools:
    # Output: output/docx/manuscript.docx
    ```
 
-4. **Generate PDF** (requires LaTeX):
-   ```bash
-   make pdf
-   # Output: output/manuscript.pdf
-   ```
-
-5. **View available commands**:
+4. **View available commands**:
    ```bash
    make help
    ```
@@ -65,9 +55,9 @@ Install the following tools:
 
 **Edit `manuscript.md`**: Replace template content with your research.
 
-### Customizing for Different Journals (Only for LaTeX/PDF output)
+### Optional LaTeX Source Configuration
 
-The template supports multiple journal formats. Edit the YAML header in `manuscript.md`:
+The primary workflow is DOCX generation. If you also generate LaTeX source with `make latex`, you can edit the YAML header in `manuscript.md` for document-class-specific output:
 
 #### Example 1: Elsevier Journal
 
@@ -222,8 +212,6 @@ These scripts run automatically when `ENABLE_DOCX_POSTPROCESS = true` in the Mak
 ```bash
 make docx          # Generate DOCX
 make latex         # Generate LaTeX source only
-make pdf           # Generate PDF via LaTeX
-make dist          # Create distribution archive (PDF + LaTeX source)
 make clean         # Remove generated files
 make help          # Show available commands
 ```
@@ -238,20 +226,13 @@ pandoc --defaults pandoc/pandoc-docx.yml
 
 # Generate LaTeX
 pandoc --defaults pandoc/pandoc-latex.yml
-
-# Generate PDF (from LaTeX)
-cd output/latex
-xelatex manuscript.tex
-bibtex manuscript
-xelatex manuscript.tex
-xelatex manuscript.tex
 ```
 
 ## Advanced Customization
 
 ### Custom LaTeX Preamble
 
-Edit `pandoc/templates/common.latex` to add custom LaTeX packages or commands.
+Edit `pandoc/templates/common.latex` to add custom LaTeX packages or commands for the optional LaTeX source output.
 
 ### Custom DOCX Styling
 
@@ -285,11 +266,9 @@ See the [manuscript-template submodule](pandoc/manuscript-template/) for advance
 - [ ] Write manuscript content in `manuscript.md`
 - [ ] Add figures to appropriate directory and reference in text
 - [ ] Create/update bibliography file with all references
-- [ ] Configure journal-specific document class in YAML header
 - [ ] Select appropriate citation style (CSL file)
 - [ ] Generate DOCX: `make docx`
 - [ ] Review output in Word/LibreOffice
-- [ ] Generate PDF: `make pdf`
 - [ ] Verify all figures, tables, and references appear correctly
 - [ ] Run journal-specific formatting checks (line numbers, anonymization, etc.)
 
@@ -315,7 +294,6 @@ For a real-world example of a complete research paper, see `examples/references/
 ## Support
 
 For issues and questions:
-- Check the [Troubleshooting](#troubleshooting) section
 - Review [Pandoc documentation](https://pandoc.org/MANUAL.html)
 - Create an issue with minimal reproducible example
 

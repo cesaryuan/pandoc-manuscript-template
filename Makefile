@@ -39,7 +39,7 @@ endif
 # TARGETS
 # ============================================================================
 
-.PHONY: all docx latex pdf clean distclean help
+.PHONY: all docx latex clean distclean help
 
 # Default target
 all: docx
@@ -54,10 +54,6 @@ docx:
 # Generate LaTeX file
 latex:
 	@$(RUNNER) $(BUILD_SCRIPT) latex
-
-# Generate PDF from LaTeX
-pdf:
-	@$(RUNNER) $(BUILD_SCRIPT) pdf
 
 # Clean all generated files
 clean:

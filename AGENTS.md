@@ -9,10 +9,10 @@ Guidance for helping users write academic papers using this Pandoc manuscript te
 
 ## Project Overview
 
-This template converts Pandoc Markdown manuscripts to DOCX (journal submission) or LaTeX/PDF (archival).
+This template converts Pandoc Markdown manuscripts to DOCX, with optional LaTeX source generation for advanced users.
 
 - Main file: `manuscript.md` — edit this to write the paper
-- Build: `make docx` / `make pdf` / `make help`
+- Build: `make docx` / `make latex` / `make help`
 - Images: place in `images/` directory
 - References: `.bib` file specified in YAML header
 

@@ -18,7 +18,6 @@ Replaces the complex Makefile with clean Python code.
 Usage:
     python build.py docx       # Generate DOCX (default)
     python build.py latex      # Generate LaTeX
-    python build.py pdf        # Generate PDF
     python build.py clean      # Remove generated files
     python build.py distclean  # Deep clean (including cache)
     python build.py help       # Show this help
@@ -140,44 +139,6 @@ def build_latex():
     print(f"\n[OK] LaTeX created: {CONFIG['latex_dir']}/{CONFIG['project_name']}.tex")
 
 
-def build_pdf():
-    """Generate PDF from LaTeX (requires LaTeX installation)."""
-    print("\n[PDF] Building PDF...\n")
-
-    # First generate LaTeX
-    build_latex()
-
-    # Compile to PDF
-    print("\n[PDF] Compiling LaTeX to PDF...\n")
-    latex_dir = Path(CONFIG['latex_dir'])
-    build_dir = latex_dir / 'build'
-
-    try:
-        # Run latexmk
-        run_command([
-            'latexmk',
-            '-interaction=nonstopmode',
-            '-file-line-error',
-            '-xelatex',
-            f'-outdir={build_dir}',
-            f'{CONFIG["project_name"]}.tex'
-        ], cwd=latex_dir, stream_output=True)
-
-        # Move PDF to output directory
-        pdf_file = build_dir / f'{CONFIG["project_name"]}.pdf'
-        output_pdf = Path(CONFIG['output_dir']) / f'{CONFIG["project_name"]}.pdf'
-        shutil.move(str(pdf_file), str(output_pdf))
-
-        # Clean up build directory
-        shutil.rmtree(build_dir)
-
-        print(f"\n[OK] PDF created: {output_pdf}")
-
-    except subprocess.CalledProcessError as e:
-        print("\n[ERROR] LaTeX compilation failed. Check the logs above.")
-        sys.exit(1)
-
-
 def clean():
     """Remove all generated files."""
     print("\n[Clean] Cleaning generated files...\n")
@@ -230,7 +191,7 @@ def main():
         'target',
         nargs='?',
         default='docx',
-        choices=['docx', 'latex', 'pdf', 'clean', 'distclean', 'help'],
+        choices=['docx', 'latex', 'clean', 'distclean', 'help'],
         help='Build target (default: docx)'
     )
 
@@ -240,7 +201,6 @@ def main():
     targets = {
         'docx': build_docx,
         'latex': build_latex,
-        'pdf': build_pdf,
         'clean': clean,
         'distclean': distclean,
         'help': show_help,

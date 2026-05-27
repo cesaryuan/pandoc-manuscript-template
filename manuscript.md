@@ -221,7 +221,7 @@ Several promising directions exist for future research. Extension to larger-scal
 
 This paper presents [brief summary of main contribution]. The proposed approach achieves [key result] as demonstrated in @tbl:results, with improvements of [specific metrics] over existing baselines. The methodology described in @sec:methods provides a systematic framework for [application domain], while the experimental validation in @sec:results confirms its effectiveness across multiple evaluation criteria.
 
-This Pandoc Markdown template supports automatic formatting for multiple journal styles, cross-references to tables, sections, and equations, flexible citation styles using CSL, mathematical notation, and conversion to both DOCX and LaTeX/PDF formats. Users should modify the YAML header to adjust formatting, citation styles, and document class options according to their target journal requirements.
+This Pandoc Markdown template supports automatic DOCX formatting, cross-references to tables, sections, and equations, flexible citation styles using CSL, mathematical notation, and optional LaTeX source generation. Users should modify the YAML header to adjust formatting and citation styles according to their target journal requirements.
 
 ## Data and Code Availability {.unnumbered}
 

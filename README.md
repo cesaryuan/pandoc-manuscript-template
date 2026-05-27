@@ -259,27 +259,27 @@ The metadata `|cell_margin=0.10cm autofit=window alignment=center|` will be appl
 
 #### 2. Cell Merging
 
-Use special markers to merge table cells in the generated DOCX:
+Use special markers to merge table cells in the generated DOCX. The lightweight markers are recommended, and the older `!<!` / `!^!` markers remain supported for compatibility:
 
-- `!<!` - Merge with the cell to the left
-- `!^!` - Merge with the cell above
+- `<<` or `!<!` - Merge with the cell to the left
+- `^^` or `!^!` - Merge with the cell above
 
 **Example**:
 ```markdown
 | **Category** | **Subcategory** | **Value** |
 |:------------:|:---------------:|:---------:|
 | Group A      | Item 1          | 10        |
-| !^!          | Item 2          | 20        |
+| ^^           | Item 2          | 20        |
 | Group B      | Item 3          | 30        |
 
 : Table with merged cells. {#tbl:merged}
 ```
 
-In this example, "Group A" will span two rows (merging with the cell below containing `!^!`).
+In this example, "Group A" will span two rows (merging with the cell below containing `^^`).
 
 **Important notes**:
 - Markers are processed and removed during DOCX generation
-- Left merges (`!<!`) are processed first, then up merges (`!^!`)
+- Left merges (`<<` / `!<!`) are processed first, then up merges (`^^` / `!^!`)
 - The marker cell must be empty except for the marker itself
 
 #### 3. Auto-fit Tables

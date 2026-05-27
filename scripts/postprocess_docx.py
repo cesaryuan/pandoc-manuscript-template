@@ -230,7 +230,7 @@ Examples:
 
 Processing steps:
   1. Insert author information from YAML metadata (if md_path provided)
-  2. Merge table cells based on markers (!<! and !^!)
+  2. Merge table cells based on markers (<<, !<!, ^^, and !^!)
   3. Process table metadata from captions (|key=value|)
   4. Convert table text style from 'Compact' to 'Table Text'
   5. Clear formatting for tables above 'Image Caption' paragraphs

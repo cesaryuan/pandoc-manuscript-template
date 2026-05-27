@@ -134,14 +134,14 @@ The caption above includes metadata `|cell_margin=0.10cm cell_spacing=0pt autofi
 
 ### Cell Merging
 
-Use special markers to merge cells: `!<!` merges left, `!^!` merges up:
+Use special markers to merge cells: `<<` (or `!<!`) merges left, and `^^` (or `!^!`) merges up:
 
 | **Category** | **Subcategory** | **Value** | **Notes**        |
 |:------------:|:---------------:|:---------:|:----------------:|
 | Group A      | Item 1          | 10        | First item       |
-| !^!          | Item 2          | 20        | Second item      |
+| ^^           | Item 2          | 20        | Second item      |
 | Group B      | Item 3          | 30        | Third item       |
-| !^!          | Item 4          | 40        | !<!              |
+| ^^           | Item 4          | 40        | <<               |
 
 : Example of merged cells using markers. {#tbl:merged-cells}
 

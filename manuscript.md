@@ -236,7 +236,7 @@ This paper presents [brief summary of main contribution]. The proposed approach 
 
 This Pandoc Markdown template supports automatic DOCX formatting, cross-references to tables, sections, and equations, flexible citation styles using CSL, mathematical notation, and optional LaTeX source generation. Users should modify the YAML header to adjust formatting and citation styles according to their target journal requirements.
 
-## Data and Code Availability {.unnumbered}
+# Data and Code Availability {.unnumbered}
 
 [Optionally include information about data and code availability, following your target journal's requirements]
 

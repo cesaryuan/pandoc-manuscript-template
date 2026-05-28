@@ -10,6 +10,7 @@ This directory contains Python scripts for post-processing generated DOCX files.
 - `autofit_tables.py` - Auto-fit tables to window width
 - `body_text_style.py` - Apply Body Text style settings from manuscript YAML metadata
 - `inline_math_spacing.py` - Keep standalone inline math from rendering as display math in Word
+- `where_paragraph_style.py` - Apply `Where Paragraph` style to where clauses after equations
 
 ## Quick Start
 
@@ -46,6 +47,7 @@ The Python scripts use the `python-docx` library to manipulate DOCX files direct
    - Applies table metadata from captions (margins, alignment, row height, etc.)
    - Auto-fits tables to window width (100%)
    - Centers tables on page
+   - Applies `Where Paragraph` style to `where` paragraphs immediately after equations
    - Adds a trailing space after standalone inline math paragraphs
 
 **Limitations:**
@@ -200,6 +202,7 @@ uv run scripts/postprocess_docx.py output/docx/manuscript.docx
 5. Clear subfigure table formatting
 6. Convert table text style from `Compact` to `Table Text`
 7. Auto-fit tables to window
+8. Apply `Where Paragraph` style after equations
 
 ### Advanced Usage
 

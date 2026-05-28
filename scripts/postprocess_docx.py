@@ -34,6 +34,7 @@ try:
     from postprocess.clear_subfigure_table_format import clear_subfigure_table_format
     from postprocess.body_text_style import apply_body_text_style_metadata
     from postprocess.inline_math_spacing import add_space_after_standalone_inline_math
+    from postprocess.where_paragraph_style import apply_where_paragraph_style, ensure_where_paragraph_style_exists
 except ImportError as e:
     print(f"Error: Failed to import processing modules: {e}")
     print("Make sure all scripts are in the same directory:")
@@ -45,6 +46,7 @@ except ImportError as e:
     print("  - clear_subfigure_table_format.py")
     print("  - body_text_style.py")
     print("  - inline_math_spacing.py")
+    print("  - where_paragraph_style.py")
     sys.exit(1)
 
 
@@ -230,16 +232,32 @@ def postprocess_docx(docx_path: str, md_path: str = '') -> bool:
             raise
 
         # ===================================================================
-        # Step 8: Keep standalone inline math from rendering as display math
+        # Step 8: Apply Where Paragraph style after equation paragraphs
         # ===================================================================
-        print_info("Step 8: Adding spaces after standalone inline math...")
+        print_info("Step 8: Applying where paragraph style...")
         try:
-            fixed_count = add_space_after_standalone_inline_math(doc)
-            print_success(f"Fixed {fixed_count} standalone inline math paragraph(s)")
+            if not ensure_where_paragraph_style_exists(doc):
+                print_warning("Could not ensure Where Paragraph style exists, skipping style conversion")
+            else:
+                where_count = apply_where_paragraph_style(doc)
+                print_success(f"Styled {where_count} paragraph(s) as 'Where Paragraph'")
             print_success("Step 8 completed")
             print_info("")
         except Exception as e:
             print_error(f"Step 8 failed: {e}")
+            raise
+
+        # ===================================================================
+        # Step 9: Keep standalone inline math from rendering as display math
+        # ===================================================================
+        print_info("Step 9: Adding spaces after standalone inline math...")
+        try:
+            fixed_count = add_space_after_standalone_inline_math(doc)
+            print_success(f"Fixed {fixed_count} standalone inline math paragraph(s)")
+            print_success("Step 9 completed")
+            print_info("")
+        except Exception as e:
+            print_error(f"Step 9 failed: {e}")
             raise
 
         # ===================================================================
@@ -278,7 +296,8 @@ Processing steps:
   5. Clear formatting for tables above 'Image Caption' paragraphs
   6. Convert table text style from 'Compact' to 'Table Text'
   7. Auto-fit tables to window width and center align
-  8. Add trailing spaces after standalone inline math
+  8. Apply 'Where Paragraph' style after equation paragraphs
+  9. Add trailing spaces after standalone inline math
 
 This script applies all post-processing steps in sequence.
         """

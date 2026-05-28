@@ -6,7 +6,7 @@
 # ]
 # ///
 """
-Merge table cells based on markers (<< or !<! for left merge, ^^ or !^! for up merge)
+Merge table cells based on markers (!<! for left merge, !^! for up merge)
 This script implements the same functionality as merge-table-cells.ps1
 
 Usage:
@@ -35,11 +35,6 @@ class Colors:
     YELLOW = '\033[93m'
     RED = '\033[91m'
     RESET = '\033[0m'
-
-
-# Keep legacy markers so existing manuscripts continue to build.
-LEFT_MERGE_MARKERS = {"!<!", "<<"}
-UP_MERGE_MARKERS = {"!^!", "^^"}
 
 
 def print_success(message: str):
@@ -76,8 +71,8 @@ def merge_table_cells(doc: DocumentObject) -> tuple[int, int]:
     Merge table cells based on special markers.
 
     Markers:
-        << or !<! - Merge with cell to the left
-        ^^ or !^! - Merge with cell above
+        !<! - Merge with cell to the left
+        !^! - Merge with cell above
 
     Args:
         doc: python-docx Document object
@@ -98,7 +93,7 @@ def merge_table_cells(doc: DocumentObject) -> tuple[int, int]:
 
     for table in doc.tables:
         # ===================================================================
-        # Phase 1: Process left merges (<< / !<!)
+        # Phase 1: Process left merges (!<!])
         # Iterate from last row to first, last column to second column
         # ===================================================================
 
@@ -111,7 +106,7 @@ def merge_table_cells(doc: DocumentObject) -> tuple[int, int]:
                     cell = row.cells[col_idx]
                     cell_text = get_clean_cell_text(cell)
 
-                    if cell_text in LEFT_MERGE_MARKERS:
+                    if cell_text == "!<!":
                         # Clear the marker text
                         cell.text = ""
 
@@ -139,7 +134,7 @@ def merge_table_cells(doc: DocumentObject) -> tuple[int, int]:
                     continue
 
         # ===================================================================
-        # Phase 2: Process up merges (^^ / !^!)
+        # Phase 2: Process up merges (!^!)
         # Iterate from last row to second row
         # ===================================================================
 
@@ -152,7 +147,7 @@ def merge_table_cells(doc: DocumentObject) -> tuple[int, int]:
                     cell = row.cells[col_idx]
                     cell_text = get_clean_cell_text(cell)
 
-                    if cell_text in UP_MERGE_MARKERS:
+                    if cell_text == "!^!":
                         # Clear the marker text
                         cell.text = ""
 
@@ -236,7 +231,7 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
 def main():
     """Main entry point for command-line usage"""
     parser = argparse.ArgumentParser(
-        description="Merge table cells in DOCX files based on markers (<<, !<!, ^^, and !^!)",
+        description="Merge table cells in DOCX files based on markers (!<! and !^!)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -244,8 +239,8 @@ Examples:
   uv run merge_table_cells.py output/docx/manuscript.docx
 
 Markers:
-  << or !<!  - Merge with cell to the left
-  ^^ or !^!  - Merge with cell above
+  !<!  - Merge with cell to the left
+  !^!  - Merge with cell above
         """
     )
     parser.add_argument("docx_path", help="Path to the DOCX file to process")

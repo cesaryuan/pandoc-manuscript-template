@@ -291,7 +291,7 @@ Examples:
 Processing steps:
   1. Insert author information from YAML metadata (if md_path provided)
   2. Apply Body Text style settings from YAML metadata (if md_path provided)
-  3. Merge table cells based on markers (<<, !<!, ^^, and !^!)
+  3. Merge table cells based on markers (!<! and !^!)
   4. Process table metadata from captions (|key=value|)
   5. Clear formatting for tables above 'Image Caption' paragraphs
   6. Convert table text style from 'Compact' to 'Table Text'

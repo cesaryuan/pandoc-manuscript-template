@@ -42,7 +42,7 @@ The Python scripts use the `python-docx` library to manipulate DOCX files direct
 1. **No Microsoft Word required** - Works on Windows, macOS, and Linux
 2. **Direct XML manipulation** - Modifies the DOCX internal structure
 3. **Processing steps:**
-   - Merges table cells based on markers (`<<` or `!<!` for left, `^^` or `!^!` for up)
+   - Merges table cells based on markers (`!<!` for left, `!^!` for up)
    - Applies Body Text paragraph style settings from YAML metadata
    - Applies table metadata from captions (margins, alignment, row height, etc.)
    - Auto-fits tables to window width (100%)
@@ -97,16 +97,16 @@ pip install python-docx>=1.1.0
 #### 1. Merge Table Cells
 
 **Markers:**
-- `<<` or `!<!` - Merge cell with the one to its left
-- `^^` or `!^!` - Merge cell with the one above
+- `!<!` - Merge cell with the one to its left
+- `!^!` - Merge cell with the one above
 
 **Example Markdown:**
 ```markdown
 | Header 1 | Header 2 | Header 3 |
 |----------|----------|----------|
-| A        | <<       | C        |
+| A        | !<!      | C        |
 | D        | E        | F        |
-| ^^       | ^^       | G        |
+| !^!      | !^!      | G        |
 
 : Table with merged cells
 ```

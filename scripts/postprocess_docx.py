@@ -33,6 +33,7 @@ try:
     from postprocess.insert_author_info import insert_author_info_to_doc
     from postprocess.clear_subfigure_table_format import clear_subfigure_table_format
     from postprocess.body_text_style import apply_body_text_style_metadata
+    from postprocess.inline_math_spacing import add_space_after_standalone_inline_math
 except ImportError as e:
     print(f"Error: Failed to import processing modules: {e}")
     print("Make sure all scripts are in the same directory:")
@@ -43,6 +44,7 @@ except ImportError as e:
     print("  - insert_author_info.py")
     print("  - clear_subfigure_table_format.py")
     print("  - body_text_style.py")
+    print("  - inline_math_spacing.py")
     sys.exit(1)
 
 
@@ -228,6 +230,19 @@ def postprocess_docx(docx_path: str, md_path: str = '') -> bool:
             raise
 
         # ===================================================================
+        # Step 8: Keep standalone inline math from rendering as display math
+        # ===================================================================
+        print_info("Step 8: Adding spaces after standalone inline math...")
+        try:
+            fixed_count = add_space_after_standalone_inline_math(doc)
+            print_success(f"Fixed {fixed_count} standalone inline math paragraph(s)")
+            print_success("Step 8 completed")
+            print_info("")
+        except Exception as e:
+            print_error(f"Step 8 failed: {e}")
+            raise
+
+        # ===================================================================
         # Save document (all changes from all scripts)
         # ===================================================================
         print_info("Saving all changes to document...")
@@ -263,6 +278,7 @@ Processing steps:
   5. Clear formatting for tables above 'Image Caption' paragraphs
   6. Convert table text style from 'Compact' to 'Table Text'
   7. Auto-fit tables to window width and center align
+  8. Add trailing spaces after standalone inline math
 
 This script applies all post-processing steps in sequence.
         """

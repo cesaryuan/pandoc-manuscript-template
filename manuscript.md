@@ -113,7 +113,7 @@ This section describes the methodology employed in the research.
 | Dataset size       | 10,000 samples     | Total number of observations       |
 | Training split     | 70%                | Portion used for model training    |
 | Validation split   | 15%                | Portion used for hyperparameter tuning |
-| Test split         | 15%                | Portion used for final evaluation  |
+| Test split         | $15\%$            | Portion used for final evaluation  |
 | Cross-validation   | 5-fold             | Number of folds for CV             |
 
 : Experimental setup configuration {#tbl:setup}

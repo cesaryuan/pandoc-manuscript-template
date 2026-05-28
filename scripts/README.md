@@ -9,6 +9,7 @@ This directory contains Python scripts for post-processing generated DOCX files.
 - `process_table_metadata.py` - Apply table metadata from captions
 - `autofit_tables.py` - Auto-fit tables to window width
 - `body_text_style.py` - Apply Body Text style settings from manuscript YAML metadata
+- `inline_math_spacing.py` - Keep standalone inline math from rendering as display math in Word
 
 ## Quick Start
 
@@ -45,6 +46,7 @@ The Python scripts use the `python-docx` library to manipulate DOCX files direct
    - Applies table metadata from captions (margins, alignment, row height, etc.)
    - Auto-fits tables to window width (100%)
    - Centers tables on page
+   - Adds a trailing space after standalone inline math paragraphs
 
 **Limitations:**
 - Cannot update fields/cross-references (must be done manually in Word)

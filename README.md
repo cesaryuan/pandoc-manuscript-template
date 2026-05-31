@@ -232,6 +232,50 @@ Example:
 See @fig:results for details. As shown in @tbl:comparison and @eq:model...
 ```
 
+### Writing Pseudocode
+
+For method or workflow descriptions, the recommended pattern is to write pseudocode as a one-column pipe table. This format is easy to edit in Markdown and stays visually stable after DOCX conversion.
+
+**Recommended conventions**:
+
+- Use a bold first row for the algorithm title, for example `| **Algorithm: ...** |`.
+- Use bold label rows such as `**Input:**`, `**Output:**`, and `**Step 1 ...:**` to separate major blocks.
+- Put one operation in each table row so the procedure stays readable in both Markdown and DOCX.
+- Write control keywords in bold, such as `**for**`, `**if**`, `**else**`, `**end for**`, and `**end if**`.
+- Use inline math with `$...$` for symbols and variables, and use `@eq:label` when the pseudocode refers to numbered equations in the manuscript.
+- Inside table cells, use escaped spaces such as `\ \ ` to show nesting. This is useful because ordinary leading spaces in Markdown tables may collapse during rendering.
+
+Example:
+
+```markdown
+| **Algorithm: Library book borrowing workflow** |
+|---|
+| **Input:** |
+| Borrow request list $R=\{r_i \mid i=1,\cdots,N\}$ and catalog records $C$ |
+| **Output:** |
+| Updated borrowing log $L$ |
+| **Step 1 Validation:** |
+| Read the next request $r_i$ and extract the member ID and book ID |
+| Check whether the member account is active |
+| **Step 2 Availability check:** |
+| **for** each request $r_i$ in $R$ **do** |
+| \ \ Search the catalog record for the requested book |
+| \ \ **if** a copy is available **then** |
+| \ \ \ \ Mark the copy as borrowed |
+| \ \ \ \ Set the due date according to the lending policy |
+| \ \ **else** |
+| \ \ \ \ Add the request to the waiting list |
+| \ \ **end if** |
+| **end for** |
+| **Step 3 Logging:** |
+| Write the transaction result to the borrowing log $L$ |
+| **if** an overdue fine is triggered **then** |
+| \ \ Notify the member and update the account balance |
+| **end if** |
+```
+
+This pseudocode style is currently implemented as a normal table, not as a dedicated `algorithm` float. As a result, the template does not currently support cross-references.
+
 ### Citations
 
 Use standard Pandoc citation syntax:

@@ -38,6 +38,19 @@ This template converts Pandoc Markdown manuscripts to DOCX, with optional LaTeX 
 <!-- here should be a blank line -->
 Main caption ( 2x2 grid of subfigures, change line by adding a blank line between images).
 </div>
+
+**Pseudocode/Algorithms:**
+```markdown
+Write pseudocode as a one-column pipe table. Use bold control words such as `**for**` and `**if**`. This template does not currently support cross references.
+
+| **Algorithm: Library borrowing workflow** |
+|---|
+| **Input:** Request list $R$ |
+| **for** each request **do** |
+| \ \ Check availability |
+| **end for** |
+
+: Library borrowing workflow. {#tbl:algorithm}
 ```
 
 ## If I want to Change Citation Styles

@@ -8,7 +8,7 @@ This directory contains Python scripts for post-processing generated DOCX files.
 - `merge_table_cells.py` - Merge table cells based on markers
 - `process_table_metadata.py` - Apply table metadata from captions
 - `autofit_tables.py` - Auto-fit regular tables to window width
-- `format_equation_layout_tables.py` - Hide borders on equation layout tables
+- `format_equation_layout_tables.py` - Format borders, margins, and column widths for equation layout tables
 - `body_text_style.py` - Apply Body Text style settings from merged YAML metadata
 - `inline_math_spacing.py` - Keep standalone inline math from rendering as display math in Word
 - `where_paragraph_style.py` - Apply `Where Paragraph` style to where clauses after equations
@@ -49,7 +49,7 @@ The Python scripts use the `python-docx` library to manipulate DOCX files direct
    - Applies table metadata from captions (margins, alignment, row height, etc.)
    - Auto-fits regular tables to window width (100%)
    - Centers tables on page
-   - Hides borders on equation layout tables and removes the right margin from equation-number cells
+   - Hides borders on equation layout tables, removes the right margin from equation-number cells, and sets number columns to 0.6 cm for numbers below 10, otherwise 0.8 cm
    - Applies `Where Paragraph` style to `where` paragraphs immediately after equations
    - Adds a trailing space after standalone inline math paragraphs
 
@@ -172,7 +172,7 @@ uv run scripts/autofit_tables.py output/docx/manuscript.docx --no-center
 
 #### 4. Format Equation Layout Tables
 
-Hides all borders on equation layout tables and sets the right margin of the equation-number cell to zero.
+Hides all borders on equation layout tables, sets the right margin of the equation-number cell to zero, and sets the first and last columns to 0.6 cm for equation numbers below 10, otherwise 0.8 cm.
 
 **Usage:**
 ```bash

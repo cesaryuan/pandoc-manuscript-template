@@ -159,6 +159,8 @@ Avoid Pandoc's compact string-only author syntax, such as `author: [First Author
 
 Style-oriented metadata lives in `style.yml` so the manuscript YAML header can stay focused on the paper itself. During `make docx`, `make latex`, or `uv run scripts/build.py ...`, the build script loads `style.yml` before `manuscript.md`; any field already defined in the manuscript YAML header overrides the style default.
 
+If you want to change style-related content, edit `style.yml`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
+
 The DOCX post-processing step can update the `Body Text` paragraph style from the merged YAML metadata. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
 
 ```yaml
@@ -223,7 +225,7 @@ classoption: [journal]
 
 1. **Browse styles**: Visit [Zotero Style Repository](https://www.zotero.org/styles)
 2. **Download CSL file**: Save to `pandoc/` directory
-3. **Update `pandoc/pandoc-docx.yml`**:
+3. **Update `style.yml`**:
    ```yaml
    csl: pandoc/your-style.csl
    ```
@@ -415,10 +417,10 @@ If Make is not available:
 
 ```bash
 # Generate DOCX
-pandoc --defaults pandoc/pandoc-docx.yml
+pandoc --metadata-file style.yml --defaults pandoc/pandoc-docx.yml
 
 # Generate LaTeX
-pandoc --defaults pandoc/pandoc-latex.yml
+pandoc --metadata-file style.yml --defaults pandoc/pandoc-latex.yml
 ```
 
 ## Advanced Customization

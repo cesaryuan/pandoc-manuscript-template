@@ -1,9 +1,14 @@
 This template converts Pandoc Markdown manuscripts to DOCX, with optional LaTeX source generation for advanced users.
 
 - Main file: `manuscript.md` — edit this to write the paper
+- Style file: `style.yml` — edit this for style-related metadata, including citation style, cross-reference wording/numbering, subfigure behavior, and DOCX body text settings
 - Build: `make docx` / `make latex` / `make help`
 - Images: place in `images/` directory
 - References: `.bib` file specified in YAML header
+
+## Style Metadata
+
+If the user wants to change style-related content, update `style.yml` rather than the YAML header in `manuscript.md`. The build loads `style.yml` first and then overlays the manuscript YAML metadata, so any field explicitly present in `manuscript.md` still takes precedence for that manuscript.
 
 ## Pandoc Markdown Syntax
 
@@ -27,7 +32,7 @@ This template converts Pandoc Markdown manuscripts to DOCX, with optional LaTeX 
 - Alignment: `:--` left, `:--:` center, `--:` right
 - For advanced DOCX table formatting (cell merging, metadata), see README.md
 
-**Subfigures** (requires `subfigGrid: true` in YAML):
+**Subfigures** (requires `subfigGrid: true` in `style.yml` or merged YAML metadata):
 ```markdown
 <div id="fig:results">
 ![caption of a](a.png){#fig:a width=50%} # Only percent allowed in subfigure width
@@ -57,7 +62,7 @@ Write pseudocode as a one-column pipe table. Use bold control words such as `**f
 
 1. Visit [Zotero Style Repository](https://www.zotero.org/styles) and find a CSL file for user required target journal or preferred citation style.
 2. Download CSL file and save to `pandoc/` directory
-3. **Update `pandoc/pandoc-docx.yml`**:
+3. **Update `style.yml`**:
    ```yaml
    csl: pandoc/csl-style-downloaded.csl
    ```

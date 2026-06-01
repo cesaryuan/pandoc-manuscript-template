@@ -6,6 +6,8 @@ This template converts Pandoc Markdown manuscripts to DOCX, with optional LaTeX 
 - Images: place in `images/` directory
 - References: `.bib` file specified in YAML header
 
+For any syntax, formatting pattern, or writing fragment not covered in this `AGENTS.md`, consult `README.md` first and follow its more detailed guidance.
+
 ## Style Metadata
 
 If the user wants to change style-related content, update `style.yml` rather than the YAML header in `manuscript.md`. The build loads `style.yml` first and then overlays the manuscript YAML metadata, so any field explicitly present in `manuscript.md` still takes precedence for that manuscript.

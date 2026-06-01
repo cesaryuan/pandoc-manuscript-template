@@ -260,6 +260,7 @@ For method or workflow descriptions, the recommended pattern is to write pseudoc
 - Write control keywords in bold, such as `**for**`, `**if**`, `**else**`, `**end for**`, and `**end if**`.
 - Use inline math with `$...$` for symbols and variables, and use `@eq:label` when the pseudocode refers to numbered equations in the manuscript.
 - Inside table cells, use escaped spaces such as `\ \ ` to show nesting. This is useful because ordinary leading spaces in Markdown tables may collapse during rendering.
+- If line numbers are needed, prefix each operation row with `1.\ \`, `2.\ \`, and so on. For nested operations, add more escaped spaces after the line number, for example `4.\ \ \ \ Train ...`.
 
 Example:
 
@@ -288,6 +289,24 @@ Example:
 | **if** an overdue fine is triggered **then** |
 | \ \ Notify the member and update the account balance |
 | **end if** |
+```
+
+Numbered pseudocode rows use the same one-column table format:
+
+```markdown
+| **Algorithm: Dataset preparation and model evaluation workflow** |
+|---|
+| **Input:** Raw dataset $D$, model family $M$, evaluation metric $s$ |
+| **Output:** Trained model $\hat{m}$ and evaluation score $\hat{s}$ |
+| 1.\ \ Clean and normalize all records in $D$ |
+| 2.\ \ Split $D$ into training, validation, and test subsets |
+| 3.\ \ **for** each candidate model $m \in M$ **do** |
+| 4.\ \ \ \ Train $m$ on the training subset |
+| 5.\ \ \ \ Tune hyperparameters using the validation subset |
+| 6.\ \ **end for** |
+| 7.\ \ Select the best model $\hat{m}$ according to validation performance |
+| 8.\ \ Compute $\hat{s}$ for $\hat{m}$ on the test subset |
+| 9.\ \ **return** $\hat{m}$ and $\hat{s}$ |
 ```
 
 This pseudocode style is currently implemented as a normal table, not as a dedicated `algorithm` float. As a result, the template does not currently support cross-references.

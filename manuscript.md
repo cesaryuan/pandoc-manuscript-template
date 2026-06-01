@@ -109,6 +109,26 @@ where $\ell(\cdot)$ is the per-sample loss, $R(\theta)$ is a regularization term
 
 The experimental procedure consists of four main stages. First, we perform data preprocessing to clean and normalize the input data, removing outliers and handling missing values according to [specific criteria]. Second, feature extraction is conducted using [method name], which captures [specific characteristics] from the raw data. Third, model training is performed by optimizing @eq:linear and @eq:loss using [optimization algorithm] with [specific hyperparameters]. Finally, we evaluate the trained model using the metrics and protocols described in @sec:results.
 
+## Pseudocode Example
+
+The main workflow can also be summarized as pseudocode when an explicit step-by-step procedure is useful. In this template, pseudocode is represented as a one-column table and can be cited as a normal table, as shown in @tbl:algorithm.
+
+| **Algorithm: Dataset preparation and model evaluation workflow** |
+|---|
+| **Input:** Raw dataset $D$, model family $M$, evaluation metric $s$ |
+| **Output:** Trained model $\hat{m}$ and evaluation score $\hat{s}$ |
+| 1.\ \ Clean and normalize all records in $D$ |
+| 2.\ \ Split $D$ into training, validation, and test subsets |
+| 3.\ \ **for** each candidate model $m \in M$ **do** |
+| 4.\ \ \ \ Train $m$ on the training subset |
+| 5.\ \ \ \ Tune hyperparameters using the validation subset |
+| 6.\ \ **end for** |
+| 7.\ \ Select the best model $\hat{m}$ according to validation performance |
+| 8.\ \ Compute $\hat{s}$ for $\hat{m}$ on the test subset |
+| 9.\ \ **return** $\hat{m}$ and $\hat{s}$ |
+
+: Dataset preparation and model evaluation workflow. {#tbl:algorithm}
+
 # Results {#sec:results}
 
 This section presents the experimental results and analysis.

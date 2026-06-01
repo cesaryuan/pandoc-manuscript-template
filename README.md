@@ -155,9 +155,11 @@ affiliations:
 
 Avoid Pandoc's compact string-only author syntax, such as `author: [First Author, Second Author]`, when you need this template's DOCX author formatting. The post-processing script expects each author to be a mapping so it can read affiliations and correspondence metadata.
 
-### DOCX Body Text Formatting
+### Output Style Metadata
 
-The DOCX post-processing step can update the `Body Text` paragraph style from YAML metadata in `manuscript.md`. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
+Style-oriented metadata lives in `style.yml` so the manuscript YAML header can stay focused on the paper itself. During `make docx`, `make latex`, or `uv run scripts/build.py ...`, the build script loads `style.yml` before `manuscript.md`; any field already defined in the manuscript YAML header overrides the style default.
+
+The DOCX post-processing step can update the `Body Text` paragraph style from the merged YAML metadata. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
 
 ```yaml
 bodyText:

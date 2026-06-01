@@ -9,7 +9,7 @@ This directory contains Python scripts for post-processing generated DOCX files.
 - `process_table_metadata.py` - Apply table metadata from captions
 - `autofit_tables.py` - Auto-fit regular tables to window width
 - `format_equation_layout_tables.py` - Hide borders on equation layout tables
-- `body_text_style.py` - Apply Body Text style settings from manuscript YAML metadata
+- `body_text_style.py` - Apply Body Text style settings from merged YAML metadata
 - `inline_math_spacing.py` - Keep standalone inline math from rendering as display math in Word
 - `where_paragraph_style.py` - Apply `Where Paragraph` style to where clauses after equations
 
@@ -45,7 +45,7 @@ The Python scripts use the `python-docx` library to manipulate DOCX files direct
 2. **Direct XML manipulation** - Modifies the DOCX internal structure
 3. **Processing steps:**
    - Merges table cells based on markers (`!<!` for left, `!^!` for up)
-   - Applies Body Text paragraph style settings from YAML metadata
+   - Applies Body Text paragraph style settings from merged YAML metadata
    - Applies table metadata from captions (margins, alignment, row height, etc.)
    - Auto-fits regular tables to window width (100%)
    - Centers tables on page
@@ -181,7 +181,7 @@ uv run scripts/postprocess/format_equation_layout_tables.py output/docx/manuscri
 
 #### 5. Body Text Style Metadata
 
-Set body paragraph indentation and spacing in the manuscript YAML header:
+Set body paragraph indentation and spacing in `style.yml`, or override it in the manuscript YAML header:
 
 ```yaml
 bodyText:
@@ -191,11 +191,11 @@ bodyText:
     after: 0pt
 ```
 
-The post-processor applies these settings to the DOCX `Body Text` style. Paragraph spacing values use points, and the first-line indent uses Word's character-based indent.
+The post-processor applies these settings to the DOCX `Body Text` style. Paragraph spacing values use points, and the first-line indent uses Word's character-based indent. When both `style.yml` and `manuscript.md` define a value, the manuscript value wins.
 
 **Usage:**
 ```bash
-uv run scripts/postprocess/body_text_style.py output/docx/manuscript.docx manuscript.md
+uv run scripts/postprocess/body_text_style.py output/docx/manuscript.docx manuscript.md --metadata-file style.yml
 ```
 
 #### 6. Complete Pipeline
@@ -208,7 +208,7 @@ uv run scripts/postprocess_docx.py output/docx/manuscript.docx
 
 **Processing order:**
 1. Insert author information from YAML metadata
-2. Apply Body Text style settings from YAML metadata
+2. Apply Body Text style settings from merged YAML metadata
 3. Merge table cells (markers)
 4. Apply table metadata (captions)
 5. Clear subfigure table formatting
@@ -228,13 +228,15 @@ from merge_table_cells import merge_table_cells
 from process_table_metadata import process_table_metadata
 from autofit_tables import autofit_tables
 from format_equation_layout_tables import format_equation_layout_tables
+from metadata import load_merged_metadata
 from body_text_style import apply_body_text_style_metadata
 
 # Open document
 doc = Document("manuscript.docx")
 
 # Process
-apply_body_text_style_metadata(doc, "manuscript.md")
+metadata = load_merged_metadata("manuscript.md", ["style.yml"])
+apply_body_text_style_metadata(doc, metadata)
 left, up = merge_table_cells(doc)
 processed, settings = process_table_metadata(doc)
 fitted = autofit_tables(doc)

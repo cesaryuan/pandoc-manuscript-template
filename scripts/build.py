@@ -47,6 +47,7 @@ import yaml
 CONFIG = {
     'project_name': 'manuscript',
     'manuscript_file': 'manuscript.md',
+    'style_file': 'style.yml',
     'output_dir': 'output',
     'docx_dir': 'output/docx',
     'latex_dir': 'output/latex',
@@ -149,7 +150,41 @@ def pandoc_defaults_with_runtime_paths(defaults_file: Path, output_file: Path) -
 
     defaults['input-files'] = [CONFIG['manuscript_file']]
     defaults['output-file'] = to_pandoc_path(output_file)
+    add_style_metadata_file(defaults)
     return defaults
+
+
+def add_style_metadata_file(defaults: dict) -> None:
+    """Add style.yml as build-time defaults that manuscript metadata can override."""
+    style_file = Path(CONFIG['style_file'])
+    if not should_use_style_metadata_file():
+        return
+
+    metadata_files = defaults.get('metadata-files') or []
+    if isinstance(metadata_files, (str, Path)):
+        metadata_files = [to_pandoc_path(Path(metadata_files))]
+
+    style_path = to_pandoc_path(style_file)
+    if style_path not in metadata_files:
+        # Put style.yml first so any existing metadata-files and the manuscript
+        # YAML header can override these output-style defaults.
+        defaults['metadata-files'] = [style_path, *metadata_files]
+
+
+def should_use_style_metadata_file() -> bool:
+    """Return True when the configured style metadata file exists for this build."""
+    style_file = Path(CONFIG['style_file'])
+    if not style_file.exists():
+        print(f"[INFO] Style metadata file not found, skipping: {style_file}")
+        return False
+    return True
+
+
+def style_metadata_cli_args() -> list[str]:
+    """Return post-processing CLI args for the optional style metadata file."""
+    if not should_use_style_metadata_file():
+        return []
+    return ['--metadata-file', CONFIG['style_file']]
 
 
 def run_pandoc(defaults_file: Path, output_file: Path, extra_args: list[str] | None = None) -> None:
@@ -195,7 +230,14 @@ def build_docx():
     if CONFIG['enable_docx_postprocess']:
         print("\n[DOCX] Running Python post-processing...\n")
         run_command(
-            ['uv', 'run', 'scripts/postprocess_docx.py', str(docx_file), CONFIG['manuscript_file']],
+            [
+                'uv',
+                'run',
+                'scripts/postprocess_docx.py',
+                str(docx_file),
+                CONFIG['manuscript_file'],
+                *style_metadata_cli_args(),
+            ],
             stream_output=True,
         )
 

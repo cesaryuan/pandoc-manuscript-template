@@ -7,7 +7,7 @@
 # ]
 # ///
 """
-Apply DOCX body text style settings from manuscript YAML metadata.
+Apply DOCX body text style settings from merged YAML metadata.
 
 Supported metadata:
     bodyText:
@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any
 
 try:
-    import yaml
     from docx import Document
     from docx.document import Document as DocumentObject
     from docx.oxml import OxmlElement
@@ -34,6 +33,12 @@ except ImportError as e:
     print(f"Error: Missing dependency: {e}")
     print("Install with: pip install python-docx pyyaml")
     sys.exit(1)
+
+try:
+    from metadata import load_merged_metadata
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from metadata import load_merged_metadata
 
 
 DEFAULT_FIRST_LINE_INDENT_CHARS = 2.0
@@ -70,19 +75,6 @@ def print_warning(message: str) -> None:
 def print_error(message: str) -> None:
     """Print an error message in red."""
     print(f"{Colors.RED}{message}{Colors.RESET}")
-
-
-def parse_yaml_header(md_path: str | Path) -> dict[str, Any]:
-    """Parse YAML front matter from a markdown file."""
-    content = Path(md_path).read_text(encoding='utf-8')
-    match = re.match(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
-    if not match:
-        raise ValueError("No YAML front matter found in markdown file")
-
-    metadata = yaml.safe_load(match.group(1)) or {}
-    if not isinstance(metadata, dict):
-        raise ValueError("YAML front matter must be a mapping")
-    return metadata
 
 
 def first_present(mapping: dict[str, Any], keys: tuple[str, ...]) -> Any:
@@ -213,17 +205,21 @@ def apply_body_text_settings(doc: DocumentObject, settings: dict[str, float]) ->
     }
 
 
-def apply_body_text_style_metadata(doc: DocumentObject, md_path: str | Path) -> dict[str, Any] | None:
-    """Read manuscript YAML metadata and apply body text style settings."""
-    metadata = parse_yaml_header(md_path)
+def apply_body_text_style_metadata(doc: DocumentObject, metadata: dict[str, Any]) -> dict[str, Any] | None:
+    """Apply body text style settings from already-loaded metadata."""
     settings = normalize_body_text_settings(metadata)
     if settings is None:
         return None
     return apply_body_text_settings(doc, settings)
 
 
-def process_file(docx_path: str, md_path: str, save: bool = True) -> dict[str, Any] | None:
-    """Process a DOCX file using body text metadata from a markdown file."""
+def process_file(
+    docx_path: str,
+    md_path: str,
+    save: bool = True,
+    metadata_files: list[str | Path] | None = None,
+) -> dict[str, Any] | None:
+    """Process a DOCX file using merged body text metadata."""
     docx_file = Path(docx_path)
     md_file = Path(md_path)
     if not docx_file.exists():
@@ -234,7 +230,8 @@ def process_file(docx_path: str, md_path: str, save: bool = True) -> dict[str, A
         return None
 
     doc = Document(str(docx_file))
-    result = apply_body_text_style_metadata(doc, md_file)
+    metadata = load_merged_metadata(md_file, metadata_files)
+    result = apply_body_text_style_metadata(doc, metadata)
     if result is None:
         print_warning("No bodyText metadata found, skipping")
         return None
@@ -252,14 +249,25 @@ def process_file(docx_path: str, md_path: str, save: bool = True) -> dict[str, A
 def main() -> None:
     """Main entry point for command-line usage."""
     parser = argparse.ArgumentParser(
-        description="Apply DOCX Body Text style settings from manuscript YAML metadata"
+        description="Apply DOCX Body Text style settings from merged YAML metadata"
     )
     parser.add_argument("docx_path", help="Path to the DOCX file to process")
     parser.add_argument("md_path", nargs="?", default="manuscript.md", help="Path to the markdown manuscript")
+    parser.add_argument(
+        "--metadata-file",
+        action="append",
+        default=[],
+        help="YAML metadata file to merge before manuscript metadata",
+    )
     parser.add_argument("--no-save", action="store_true", help="Do not save changes")
     args = parser.parse_args()
 
-    result = process_file(args.docx_path, args.md_path, save=not args.no_save)
+    result = process_file(
+        args.docx_path,
+        args.md_path,
+        save=not args.no_save,
+        metadata_files=args.metadata_file,
+    )
     sys.exit(0 if result is not None else 1)
 
 

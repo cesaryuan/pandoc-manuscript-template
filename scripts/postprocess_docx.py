@@ -26,6 +26,7 @@ except ImportError:
 
 # Import processing modules
 try:
+    from metadata import load_merged_metadata
     from postprocess.merge_table_cells import merge_table_cells
     from postprocess.process_table_metadata import process_table_metadata
     from postprocess.autofit_tables import autofit_tables
@@ -39,6 +40,7 @@ try:
 except ImportError as e:
     print(f"Error: Failed to import processing modules: {e}")
     print("Make sure all scripts are in the same directory:")
+    print("  - metadata.py")
     print("  - merge_table_cells.py")
     print("  - process_table_metadata.py")
     print("  - autofit_tables.py")
@@ -81,13 +83,14 @@ def print_error(message: str):
     print(f"{Colors.RED}{message}{Colors.RESET}")
 
 
-def postprocess_docx(docx_path: str, md_path: str = '') -> bool:
+def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str] | None = None) -> bool:
     """
     Post-process a DOCX file with all processing steps.
 
     Args:
         docx_path: Path to the DOCX file to process
         md_path: Path to the markdown file with YAML metadata (optional)
+        metadata_files: YAML metadata files merged before manuscript metadata
 
     Returns:
         True if successful, False otherwise
@@ -95,6 +98,7 @@ def postprocess_docx(docx_path: str, md_path: str = '') -> bool:
     # Validate inputs
     print_info("Validating inputs...")
     docx_file = Path(docx_path)
+    metadata_files = metadata_files or []
 
     if not docx_file.exists():
         print_error(f"DOCX file not found: {docx_path}")
@@ -104,14 +108,23 @@ def postprocess_docx(docx_path: str, md_path: str = '') -> bool:
         print_error(f"Markdown file not found: {md_path}")
         return False
 
+    for metadata_file in metadata_files:
+        if not Path(metadata_file).exists():
+            print_error(f"Metadata file not found: {metadata_file}")
+            return False
+
     docx_path_abs = docx_file.resolve()
     print_info("=== Starting DOCX Post-Processing Pipeline ===")
     print_info(f"Target file: {docx_path_abs}")
     if md_path:
         print_info(f"Markdown file: {Path(md_path).resolve()}")
+    for metadata_file in metadata_files:
+        print_info(f"Metadata file: {Path(metadata_file).resolve()}")
     print_info("")
 
     try:
+        merged_metadata = load_merged_metadata(md_path, metadata_files) if md_path else {}
+
         # Open document (shared across all steps)
         print_info("Initializing document...")
         doc = Document(str(docx_path_abs))
@@ -144,7 +157,7 @@ def postprocess_docx(docx_path: str, md_path: str = '') -> bool:
         if md_path:
             print_info("Step 2: Applying body text style metadata...")
             try:
-                result = apply_body_text_style_metadata(doc, md_path)
+                result = apply_body_text_style_metadata(doc, merged_metadata)
                 if result is None:
                     print_warning("No bodyText metadata found, skipping")
                 else:
@@ -305,7 +318,7 @@ Examples:
 
 Processing steps:
   1. Insert author information from YAML metadata (if md_path provided)
-  2. Apply Body Text style settings from YAML metadata (if md_path provided)
+  2. Apply Body Text style settings from merged YAML metadata (if md_path provided)
   3. Merge table cells based on markers (!<! and !^!)
   4. Process table metadata from captions (|key=value|)
   5. Clear formatting for tables above 'Image Caption' paragraphs
@@ -320,10 +333,16 @@ This script applies all post-processing steps in sequence.
     )
     parser.add_argument("docx_path", help="Path to the DOCX file to process")
     parser.add_argument("md_path", nargs="?", default='manuscript.md', help="Path to the markdown file with YAML metadata (optional)")
+    parser.add_argument(
+        "--metadata-file",
+        action="append",
+        default=[],
+        help="YAML metadata file to merge before manuscript metadata",
+    )
 
     args = parser.parse_args()
 
-    success = postprocess_docx(args.docx_path, args.md_path)
+    success = postprocess_docx(args.docx_path, args.md_path, args.metadata_file)
     sys.exit(0 if success else 1)
 
 

@@ -7,7 +7,8 @@ This directory contains Python scripts for post-processing generated DOCX files.
 - `postprocess_docx.py` - Main orchestrator script
 - `merge_table_cells.py` - Merge table cells based on markers
 - `process_table_metadata.py` - Apply table metadata from captions
-- `autofit_tables.py` - Auto-fit tables to window width
+- `autofit_tables.py` - Auto-fit regular tables to window width
+- `format_equation_layout_tables.py` - Hide borders on equation layout tables
 - `body_text_style.py` - Apply Body Text style settings from manuscript YAML metadata
 - `inline_math_spacing.py` - Keep standalone inline math from rendering as display math in Word
 - `where_paragraph_style.py` - Apply `Where Paragraph` style to where clauses after equations
@@ -33,6 +34,7 @@ uv run scripts/postprocess_docx.py output/docx/manuscript.docx
 uv run scripts/merge_table_cells.py output/docx/manuscript.docx
 uv run scripts/process_table_metadata.py output/docx/manuscript.docx
 uv run scripts/autofit_tables.py output/docx/manuscript.docx
+uv run scripts/postprocess/format_equation_layout_tables.py output/docx/manuscript.docx
 ```
 
 ## How It Works
@@ -45,8 +47,9 @@ The Python scripts use the `python-docx` library to manipulate DOCX files direct
    - Merges table cells based on markers (`!<!` for left, `!^!` for up)
    - Applies Body Text paragraph style settings from YAML metadata
    - Applies table metadata from captions (margins, alignment, row height, etc.)
-   - Auto-fits tables to window width (100%)
+   - Auto-fits regular tables to window width (100%)
    - Centers tables on page
+   - Hides borders on equation layout tables and removes the right margin from equation-number cells
    - Applies `Where Paragraph` style to `where` paragraphs immediately after equations
    - Adds a trailing space after standalone inline math paragraphs
 
@@ -156,7 +159,7 @@ uv run scripts/process_table_metadata.py output/docx/manuscript.docx
 
 #### 3. Auto-fit Tables
 
-Sets all tables to auto-fit to window width (100%) and centers them on the page.
+Sets regular tables to auto-fit to window width (100%) and centers them on the page. Equation layout tables are skipped so their alignment is preserved.
 
 **Usage:**
 ```bash
@@ -167,7 +170,16 @@ uv run scripts/autofit_tables.py output/docx/manuscript.docx
 uv run scripts/autofit_tables.py output/docx/manuscript.docx --no-center
 ```
 
-#### 4. Body Text Style Metadata
+#### 4. Format Equation Layout Tables
+
+Hides all borders on equation layout tables and sets the right margin of the equation-number cell to zero.
+
+**Usage:**
+```bash
+uv run scripts/postprocess/format_equation_layout_tables.py output/docx/manuscript.docx
+```
+
+#### 5. Body Text Style Metadata
 
 Set body paragraph indentation and spacing in the manuscript YAML header:
 
@@ -186,7 +198,7 @@ The post-processor applies these settings to the DOCX `Body Text` style. Paragra
 uv run scripts/postprocess/body_text_style.py output/docx/manuscript.docx manuscript.md
 ```
 
-#### 5. Complete Pipeline
+#### 6. Complete Pipeline
 
 Runs all processing steps in sequence:
 
@@ -202,7 +214,9 @@ uv run scripts/postprocess_docx.py output/docx/manuscript.docx
 5. Clear subfigure table formatting
 6. Convert table text style from `Compact` to `Table Text`
 7. Auto-fit tables to window
-8. Apply `Where Paragraph` style after equations
+8. Format equation layout tables
+9. Apply `Where Paragraph` style after equations
+10. Add trailing spaces after standalone inline math
 
 ### Advanced Usage
 
@@ -213,6 +227,7 @@ from docx import Document
 from merge_table_cells import merge_table_cells
 from process_table_metadata import process_table_metadata
 from autofit_tables import autofit_tables
+from format_equation_layout_tables import format_equation_layout_tables
 from body_text_style import apply_body_text_style_metadata
 
 # Open document
@@ -223,6 +238,7 @@ apply_body_text_style_metadata(doc, "manuscript.md")
 left, up = merge_table_cells(doc)
 processed, settings = process_table_metadata(doc)
 fitted = autofit_tables(doc)
+equation_tables = format_equation_layout_tables(doc)
 
 # Save
 doc.save("manuscript.docx")

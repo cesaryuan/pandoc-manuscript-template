@@ -6,8 +6,9 @@
 # ]
 # ///
 """
-Auto-fit all tables to window width.
-This script adjusts all tables to fit window width automatically using XML manipulation.
+Auto-fit regular tables to window width.
+This script adjusts regular tables to fit window width automatically using XML manipulation,
+while skipping one-row equation layout tables generated for centered equations and labels.
 
 Usage:
     uv run autofit_tables.py path/to/file.docx
@@ -15,6 +16,7 @@ Usage:
 """
 
 import argparse
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -28,6 +30,9 @@ try:
 except ImportError:
     print("Error: python-docx is not installed. Install it with: pip install python-docx")
     sys.exit(1)
+
+
+EQUATION_LAYOUT_TEXT_PATTERN = re.compile(r"^[\s\t\r\n()（）\[\]【】0-9ivxlcdmIVXLCDM.\-–—]*$")
 
 
 class Colors:
@@ -111,9 +116,47 @@ def set_table_center_alignment(table: Table):
     jc.set(qn('w:val'), 'center')
 
 
+def table_contains_math(table: Table) -> bool:
+    """Return whether a table contains Word math elements."""
+    element = table._element
+    return bool(element.findall(f".//{qn('m:oMath')}") or element.findall(f".//{qn('m:oMathPara')}"))
+
+
+def table_non_math_text(table: Table) -> str:
+    """Return visible table text outside Word math elements."""
+    element = table._element
+    math_elements = set(element.findall(f".//{qn('m:oMath')}") + element.findall(f".//{qn('m:oMathPara')}"))
+    text_parts = []
+
+    for text_element in element.findall(f".//{qn('w:t')}"):
+        if any(parent in math_elements for parent in text_element.iterancestors()):
+            continue
+        if text_element.text:
+            text_parts.append(text_element.text)
+
+    return "".join(text_parts)
+
+
+def is_equation_layout_table(table: Table) -> bool:
+    """
+    Return whether a table is used only to lay out a centered equation and label.
+
+    Pandoc can render eqnBlockTemplate as a one-row, three-column table, such as
+    an empty left cell, a centered formula cell, and a right label cell. Auto-fit
+    widens that layout table and breaks the equation placement, so these tables
+    are intentionally skipped.
+    """
+    if not table_contains_math(table):
+        return False
+    if len(table.rows) != 1 or len(table.columns) < 3:
+        return False
+
+    return bool(EQUATION_LAYOUT_TEXT_PATTERN.match(table_non_math_text(table)))
+
+
 def autofit_tables(doc: DocumentObject, center_align: bool = True) -> int:
     """
-    Auto-fit all tables to window width.
+    Auto-fit regular tables to window width.
 
     Args:
         doc: python-docx Document object
@@ -124,6 +167,7 @@ def autofit_tables(doc: DocumentObject, center_align: bool = True) -> int:
     """
     table_count = len(doc.tables)
     success_count = 0
+    skipped_count = 0
 
     if table_count == 0:
         print_info("No tables found in document")
@@ -133,6 +177,11 @@ def autofit_tables(doc: DocumentObject, center_align: bool = True) -> int:
 
     for i, table in enumerate(doc.tables, start=1):
         try:
+            if is_equation_layout_table(table):
+                print_info(f"Skipping equation layout table {i}")
+                skipped_count += 1
+                continue
+
             # AutoFit to window
             set_table_autofit_window(table)
 
@@ -144,6 +193,9 @@ def autofit_tables(doc: DocumentObject, center_align: bool = True) -> int:
 
         except Exception as e:
             print_warning(f"Failed to auto-fit table {i}: {e}")
+
+    if skipped_count:
+        print_info(f"Skipped {skipped_count} equation layout table(s)")
 
     print_success(f"Auto-fitted {success_count} of {table_count} table(s) to window")
 
@@ -200,7 +252,7 @@ def process_file(docx_path: str, save: bool = True, center_align: bool = True) -
 def main():
     """Main entry point for command-line usage"""
     parser = argparse.ArgumentParser(
-        description="Auto-fit all tables to window width in DOCX files",
+        description="Auto-fit regular tables to window width in DOCX files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -208,8 +260,8 @@ Examples:
   uv run autofit_tables.py output/docx/manuscript.docx
   uv run autofit_tables.py manuscript.docx --no-center
 
-This script sets all tables to auto-fit to window width (100%)
-and optionally center-aligns them on the page.
+This script sets regular tables to auto-fit to window width (100%),
+optionally center-aligns them on the page, and skips equation layout tables.
         """
     )
     parser.add_argument("docx_path", help="Path to the DOCX file to process")

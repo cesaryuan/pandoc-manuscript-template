@@ -50,9 +50,13 @@ secPrefix: "Section"
 eqnPrefix: "Equation"
 # Support for centered equations and right-aligned numbering
 tableEqns: true
-eqnBlockTemplate: |
-   `<w:pPr><w:tabs><w:tab w:val="center" w:leader="none" w:pos="4153" /><w:tab w:val="right" w:leader="none" w:pos="9360" /></w:tabs></w:pPr><w:r><w:tab /></w:r>`{=openxml} $$t$$ `<w:r><w:tab /></w:r>`{=openxml} $$nmi$$
-eqnBlockInlineMath: true    # Support for centered equations and right-aligned numbering
+eqnBlockTemplate: | # 用表格排版公式，能正确显示 Display Math
+  +:------+:--------------------------------------------------:+--------:+
+  |       | $$t$$                                              | $$nmi$$ |
+  +-------+----------------------------------------------------+---------+
+# eqnBlockTemplate: |
+#    `<w:pPr><w:tabs><w:tab w:val="center" w:leader="none" w:pos="4153" /><w:tab w:val="right" w:leader="none" w:pos="9360" /></w:tabs></w:pPr><w:r><w:tab /></w:r>`{=openxml} $$t$$ `<w:r><w:tab /></w:r>`{=openxml} $$nmi$$
+# eqnBlockInlineMath: false    # Support for centered equations and right-aligned numbering
 ## Options for section numbering and auto-labeling
 linkReferences: true        # Convert references to hyperlinks
 autoSectionLabels: true     # Auto-add "sec:" prefix to section labels

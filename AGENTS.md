@@ -58,7 +58,7 @@ Write pseudocode as a one-column pipe table. Use bold control words such as `**f
 : Library borrowing workflow. {#tbl:algorithm}
 ```
 
-## If I want to Change Citation Styles
+## If User want to Change Citation Styles
 
 1. Visit [Zotero Style Repository](https://www.zotero.org/styles) and find a CSL file for user required target journal or preferred citation style.
 2. Download CSL file and save to `pandoc/` directory

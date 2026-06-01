@@ -9,8 +9,9 @@
 Apply the 'Where Paragraph' style to equation explanation paragraphs.
 
 The post-processor targets paragraphs that immediately follow a display-style
-math paragraph and begin with the word "where". This keeps formula definitions
-separate from regular body paragraphs in exported DOCX files.
+math paragraph or equation layout table and begin with the word "where". This
+keeps formula definitions separate from regular body paragraphs in exported
+DOCX files.
 """
 
 import argparse
@@ -20,12 +21,19 @@ from pathlib import Path
 from typing import Iterable, cast
 
 try:
+    from postprocess.autofit_tables import is_equation_layout_table
+except ModuleNotFoundError:
+    # Standalone execution from this directory does not expose the postprocess package name.
+    from autofit_tables import is_equation_layout_table
+
+try:
     from docx import Document
     from docx.document import Document as DocumentObject
     from docx.enum.style import WD_STYLE_TYPE
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
     from docx.styles.style import _ParagraphStyle
+    from docx.table import Table
     from docx.text.paragraph import Paragraph
 except ImportError:
     print("Error: python-docx is not installed. Install it with: pip install python-docx")
@@ -187,23 +195,40 @@ def starts_with_where(paragraph: Paragraph) -> bool:
     return bool(WHERE_START_PATTERN.match(paragraph_visible_text(paragraph)))
 
 
-def iter_adjacent_paragraph_pairs(paragraphs: Iterable[Paragraph]) -> Iterable[tuple[Paragraph, Paragraph]]:
-    """Yield adjacent paragraph pairs in document order."""
-    previous: Paragraph | None = None
-    for paragraph in paragraphs:
-        if previous is not None:
-            yield previous, paragraph
-        previous = paragraph
+def iter_body_blocks(doc: DocumentObject) -> Iterable[Paragraph | Table]:
+    """Yield top-level paragraphs and tables in document body order."""
+    for child in doc.element.body.iterchildren():
+        if child.tag == qn("w:p"):
+            yield Paragraph(child, doc)
+        elif child.tag == qn("w:tbl"):
+            yield Table(child, doc)
+
+
+def is_equation_block(block: Paragraph | Table) -> bool:
+    """Return whether a body block is an equation paragraph or equation layout table."""
+    if isinstance(block, Paragraph):
+        return is_equation_paragraph(block)
+    return is_equation_layout_table(block)
 
 
 def apply_where_paragraph_style(doc: DocumentObject) -> int:
-    """Style where paragraphs that immediately follow equation paragraphs."""
+    """Style where paragraphs that immediately follow equation paragraphs or tables."""
     updated = 0
-    for previous, current in iter_adjacent_paragraph_pairs(doc.paragraphs):
-        if not is_equation_paragraph(previous) or not starts_with_where(current):
+    previous: Paragraph | Table | None = None
+
+    for current in iter_body_blocks(doc):
+        if not isinstance(current, Paragraph):
+            previous = current
             continue
+
+        if previous is None or not is_equation_block(previous) or not starts_with_where(current):
+            previous = current
+            continue
+
         current.style = WHERE_STYLE_NAME
         updated += 1
+        previous = current
+
     return updated
 
 
@@ -229,7 +254,7 @@ def process_file(docx_path: str, save: bool = True) -> int | None:
 def main() -> None:
     """Main entry point for command-line usage."""
     parser = argparse.ArgumentParser(
-        description="Apply 'Where Paragraph' style after DOCX equation paragraphs"
+        description="Apply 'Where Paragraph' style after DOCX equations"
     )
     parser.add_argument("docx_path", help="Path to the DOCX file to process")
     parser.add_argument("--no-save", action="store_true", help="Do not save changes")

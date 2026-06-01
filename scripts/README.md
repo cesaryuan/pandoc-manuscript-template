@@ -11,7 +11,7 @@ This directory contains Python scripts for post-processing generated DOCX files.
 - `format_equation_layout_tables.py` - Format borders, margins, and column widths for equation layout tables
 - `body_text_style.py` - Apply Body Text style settings from merged YAML metadata
 - `inline_math_spacing.py` - Keep standalone inline math from rendering as display math in Word
-- `where_paragraph_style.py` - Apply `Where Paragraph` style to where clauses after equations
+- `where_paragraph_style.py` - Apply `Where Paragraph` style to where clauses after equation paragraphs or layout tables
 
 ## Quick Start
 
@@ -50,7 +50,7 @@ The Python scripts use the `python-docx` library to manipulate DOCX files direct
    - Auto-fits regular tables to window width (100%)
    - Centers tables on page
    - Hides borders on equation layout tables, removes the right margin from equation-number cells, and sets number columns to 0.6 cm for numbers below 10, otherwise 0.8 cm
-   - Applies `Where Paragraph` style to `where` paragraphs immediately after equations
+   - Applies `Where Paragraph` style to `where` paragraphs immediately after equation paragraphs or layout tables
    - Adds a trailing space after standalone inline math paragraphs
 
 **Limitations:**
@@ -215,7 +215,7 @@ uv run scripts/postprocess_docx.py output/docx/manuscript.docx
 6. Convert table text style from `Compact` to `Table Text`
 7. Auto-fit tables to window
 8. Format equation layout tables
-9. Apply `Where Paragraph` style after equations
+9. Apply `Where Paragraph` style after equation paragraphs or layout tables
 10. Add trailing spaces after standalone inline math
 
 ### Advanced Usage

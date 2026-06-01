@@ -18,8 +18,10 @@ Replaces the complex Makefile with clean Python code.
 Usage:
     python build.py docx       # Generate DOCX (default)
     python build.py docx paper.md  # Generate DOCX from a specific markdown file
+    python build.py docx paper.md --output-dir build  # Generate DOCX in build/docx
     python build.py latex      # Generate LaTeX
     python build.py latex paper.md # Generate LaTeX from a specific markdown file
+    python build.py latex paper.md --output-dir build # Generate LaTeX in build/latex
     python build.py clean      # Remove generated files
     python build.py distclean  # Deep clean (including cache)
     python build.py help       # Show this help
@@ -103,6 +105,15 @@ def to_pandoc_path(path: Path) -> str:
     return path.as_posix()
 
 
+def is_relative_to(path: Path, parent: Path) -> bool:
+    """Return True when path is inside parent on Python versions without Path.is_relative_to needs."""
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
 def configure_manuscript(markdown_path: str | Path, derive_project_name: bool = False) -> None:
     """Configure the runtime markdown input and validate that it exists.
 
@@ -118,6 +129,17 @@ def configure_manuscript(markdown_path: str | Path, derive_project_name: bool = 
     CONFIG['manuscript_file'] = to_pandoc_path(path)
     if derive_project_name:
         CONFIG['project_name'] = path.stem
+
+
+def configure_output_dir(output_dir: str | Path) -> None:
+    """Configure the base output directory and derived DOCX/LaTeX directories."""
+    path = Path(output_dir)
+    if path.exists() and not path.is_dir():
+        raise ValueError(f"Output path exists but is not a directory: {path}")
+
+    CONFIG['output_dir'] = to_pandoc_path(path)
+    CONFIG['docx_dir'] = to_pandoc_path(path / 'docx')
+    CONFIG['latex_dir'] = to_pandoc_path(path / 'latex')
 
 
 def pandoc_defaults_with_runtime_paths(defaults_file: Path, output_file: Path) -> dict:
@@ -202,10 +224,23 @@ def clean():
 
     output_dir = Path(CONFIG['output_dir'])
     if output_dir.exists():
+        ensure_safe_clean_dir(output_dir)
         shutil.rmtree(output_dir)
         print(f"Removed: {output_dir}")
 
     print("\n[OK] Clean complete.")
+
+
+def ensure_safe_clean_dir(output_dir: Path) -> None:
+    """Reject unsafe recursive clean targets caused by a custom output directory."""
+    project_dir = Path.cwd().resolve()
+    resolved_output = output_dir.resolve()
+
+    # Custom output directories make clean more flexible, but deleting the
+    # project root or a directory outside the project would be too easy to do by
+    # accident with options such as --output-dir . or --output-dir ..
+    if resolved_output == project_dir or not is_relative_to(resolved_output, project_dir):
+        raise ValueError(f"Refusing to clean unsafe output directory: {output_dir}")
 
 
 def distclean():
@@ -262,8 +297,16 @@ def main():
         dest='manuscript_option',
         help='Markdown file to build for docx/latex targets'
     )
+    parser.add_argument(
+        '-o',
+        '--output-dir',
+        help='Base output directory (default: output)'
+    )
 
     args = parser.parse_args()
+    if args.output_dir:
+        configure_output_dir(args.output_dir)
+
     if args.manuscript and args.manuscript_option:
         parser.error("Specify the markdown file either positionally or with --manuscript, not both.")
 

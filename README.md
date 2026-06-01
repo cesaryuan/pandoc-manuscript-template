@@ -50,6 +50,12 @@ Install the following tools:
    # Output: output/docx/paper.docx
    ```
 
+   To write generated files under another output directory:
+   ```bash
+   uv run scripts/build.py docx paper.md --output-dir build
+   # Output: build/docx/paper.docx
+   ```
+
 4. **View available commands**:
    ```bash
    make help
@@ -388,9 +394,18 @@ uv run scripts/build.py docx --manuscript paper.md
 uv run scripts/build.py latex -m paper.md
 ```
 
+Use `--output-dir` or `-o` to change the base output directory:
+
+```bash
+uv run scripts/build.py docx paper.md --output-dir build  # Generate build/docx/paper.docx
+uv run scripts/build.py latex paper.md -o build           # Generate build/latex/paper.tex
+uv run scripts/build.py clean --output-dir build          # Remove build/
+```
+
 When a markdown file is supplied, the output file name is derived from that
 file's stem. The DOCX post-processing step reads YAML metadata from the same
-markdown file.
+markdown file. When an output directory is supplied, `docx` and `latex`
+subdirectories are created under it.
 
 ### Direct Pandoc Commands
 

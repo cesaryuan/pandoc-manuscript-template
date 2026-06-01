@@ -17,7 +17,9 @@ Replaces the complex Makefile with clean Python code.
 
 Usage:
     python build.py docx       # Generate DOCX (default)
+    python build.py docx paper.md  # Generate DOCX from a specific markdown file
     python build.py latex      # Generate LaTeX
+    python build.py latex paper.md # Generate LaTeX from a specific markdown file
     python build.py clean      # Remove generated files
     python build.py distclean  # Deep clean (including cache)
     python build.py help       # Show this help
@@ -30,8 +32,11 @@ import argparse
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Tuple
+
+import yaml
 
 # ============================================================================
 # CONFIGURATION - Customize these variables for your project
@@ -93,6 +98,54 @@ def should_use_mathbfit_filter() -> bool:
     return version <= threshold
 
 
+def to_pandoc_path(path: Path) -> str:
+    """Return a Pandoc-friendly path string for generated defaults files."""
+    return path.as_posix()
+
+
+def configure_manuscript(markdown_path: str | Path, derive_project_name: bool = False) -> None:
+    """Configure the runtime markdown input and validate that it exists.
+
+    derive_project_name is used for command-line markdown overrides so a custom
+    input such as paper.md writes paper.docx/paper.tex instead of manuscript.*.
+    """
+    path = Path(markdown_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Markdown file not found: {path}")
+    if not path.is_file():
+        raise ValueError(f"Markdown path is not a file: {path}")
+
+    CONFIG['manuscript_file'] = to_pandoc_path(path)
+    if derive_project_name:
+        CONFIG['project_name'] = path.stem
+
+
+def pandoc_defaults_with_runtime_paths(defaults_file: Path, output_file: Path) -> dict:
+    """Load a Pandoc defaults file and replace input/output paths at runtime."""
+    with defaults_file.open('r', encoding='utf-8') as f:
+        defaults = yaml.safe_load(f) or {}
+
+    defaults['input-files'] = [CONFIG['manuscript_file']]
+    defaults['output-file'] = to_pandoc_path(output_file)
+    return defaults
+
+
+def run_pandoc(defaults_file: Path, output_file: Path, extra_args: list[str] | None = None) -> None:
+    """Run Pandoc with a temporary defaults file for the selected markdown input."""
+    extra_args = extra_args or []
+    defaults = pandoc_defaults_with_runtime_paths(defaults_file, output_file)
+
+    with tempfile.TemporaryDirectory(prefix='pandoc-build-') as temp_dir:
+        temp_defaults = Path(temp_dir) / defaults_file.name
+        with temp_defaults.open('w', encoding='utf-8') as f:
+            yaml.safe_dump(defaults, f, sort_keys=False, allow_unicode=True)
+
+        # The repo defaults keep manuscript.md fixed; this temporary copy lets
+        # command-line builds target another markdown file without editing YAML.
+        cmd = ['pandoc', '--defaults', str(temp_defaults), *extra_args]
+        run_command(cmd, stream_output=True)
+
+
 # ============================================================================
 # BUILD TARGETS
 # ============================================================================
@@ -105,22 +158,24 @@ def build_docx():
     docx_dir = Path(CONFIG['docx_dir'])
     docx_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build pandoc command
-    cmd = ['pandoc', '--defaults', 'pandoc/pandoc-docx.yml']
+    docx_file = docx_dir / f"{CONFIG['project_name']}.docx"
+    extra_args = []
 
     # Add filter for older Pandoc versions
     if should_use_mathbfit_filter():
         print("[INFO] Using mathbfit filter (Pandoc <= 3.8.3.0)")
-        cmd.extend(['--filter', 'pandoc/filters/to_mathbfit.py'])
+        extra_args.extend(['--filter', 'pandoc/filters/to_mathbfit.py'])
 
     # Run pandoc
-    run_command(cmd, stream_output=True)
+    run_pandoc(Path('pandoc/pandoc-docx.yml'), docx_file, extra_args=extra_args)
 
     # Post-process DOCX if enabled
     if CONFIG['enable_docx_postprocess']:
         print("\n[DOCX] Running Python post-processing...\n")
-        docx_file = docx_dir / f"{CONFIG['project_name']}.docx"
-        run_command(['uv', 'run', 'scripts/postprocess_docx.py', str(docx_file)], stream_output=True)
+        run_command(
+            ['uv', 'run', 'scripts/postprocess_docx.py', str(docx_file), CONFIG['manuscript_file']],
+            stream_output=True,
+        )
 
     print(f"\n[OK] DOCX created: {CONFIG['docx_dir']}/{CONFIG['project_name']}.docx")
 
@@ -133,8 +188,10 @@ def build_latex():
     latex_dir = Path(CONFIG['latex_dir'])
     latex_dir.mkdir(parents=True, exist_ok=True)
 
+    latex_file = latex_dir / f"{CONFIG['project_name']}.tex"
+
     # Run pandoc
-    run_command(['pandoc', '--defaults', 'pandoc/pandoc-latex.yml'], stream_output=True)
+    run_pandoc(Path('pandoc/pandoc-latex.yml'), latex_file)
 
     print(f"\n[OK] LaTeX created: {CONFIG['latex_dir']}/{CONFIG['project_name']}.tex")
 
@@ -194,8 +251,31 @@ def main():
         choices=['docx', 'latex', 'clean', 'distclean', 'help'],
         help='Build target (default: docx)'
     )
+    parser.add_argument(
+        'manuscript',
+        nargs='?',
+        help='Markdown file to build for docx/latex targets'
+    )
+    parser.add_argument(
+        '-m',
+        '--manuscript',
+        dest='manuscript_option',
+        help='Markdown file to build for docx/latex targets'
+    )
 
     args = parser.parse_args()
+    if args.manuscript and args.manuscript_option:
+        parser.error("Specify the markdown file either positionally or with --manuscript, not both.")
+
+    manuscript_arg = args.manuscript_option or args.manuscript
+    if manuscript_arg and args.target not in {'docx', 'latex'}:
+        parser.error("A markdown file can only be specified for docx or latex targets.")
+
+    if args.target in {'docx', 'latex'}:
+        configure_manuscript(
+            manuscript_arg or CONFIG['manuscript_file'],
+            derive_project_name=bool(manuscript_arg),
+        )
 
     # Dispatch to target function
     targets = {

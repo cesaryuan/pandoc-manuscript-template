@@ -44,6 +44,12 @@ Install the following tools:
    # Output: output/docx/manuscript.docx
    ```
 
+   To build a different markdown file without editing the Pandoc defaults:
+   ```bash
+   uv run scripts/build.py docx paper.md
+   # Output: output/docx/paper.docx
+   ```
+
 4. **View available commands**:
    ```bash
    make help
@@ -361,6 +367,30 @@ make latex         # Generate LaTeX source only
 make clean         # Remove generated files
 make help          # Show available commands
 ```
+
+### Using the Python Build Script
+
+The Python build script is the most flexible direct entry point. It uses the
+same Pandoc defaults as Make, but it can also build a markdown file specified
+on the command line.
+
+```bash
+uv run scripts/build.py docx              # Generate output/docx/manuscript.docx
+uv run scripts/build.py latex             # Generate output/latex/manuscript.tex
+uv run scripts/build.py docx paper.md     # Generate output/docx/paper.docx
+uv run scripts/build.py latex paper.md    # Generate output/latex/paper.tex
+```
+
+You can also pass the markdown path with `--manuscript` or `-m`:
+
+```bash
+uv run scripts/build.py docx --manuscript paper.md
+uv run scripts/build.py latex -m paper.md
+```
+
+When a markdown file is supplied, the output file name is derived from that
+file's stem. The DOCX post-processing step reads YAML metadata from the same
+markdown file.
 
 ### Direct Pandoc Commands
 

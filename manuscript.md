@@ -108,13 +108,13 @@ This section describes the methodology employed in the research.
 
 @tbl:setup summarizes the experimental configuration used in this study.
 
-| **Parameter**      | **Value**          | **Description**                    |
-|--------------------|--------------------|------------------------------------|
-| Dataset size       | 10,000 samples     | Total number of observations       |
-| Training split     | 70%                | Portion used for model training    |
-| Validation split   | 15%                | Portion used for hyperparameter tuning |
-| Test split         | $15\%$            | Portion used for final evaluation  |
-| Cross-validation   | 5-fold             | Number of folds for CV             |
+| **Parameter**    | **Value**      | **Description**                        |
+| ---------------- | -------------- | -------------------------------------- |
+| Dataset size     | 10,000 samples | Total number of observations           |
+| Training split   | 70%            | Portion used for model training        |
+| Validation split | 15%            | Portion used for hyperparameter tuning |
+| Test split       | $15\%$         | Portion used for final evaluation      |
+| Cross-validation | 5-fold         | Number of folds for CV                 |
 
 : Experimental setup configuration {#tbl:setup}
 
@@ -128,12 +128,12 @@ When generating DOCX output with `make docx`, you can use special features for e
 
 Add metadata to control table properties. The metadata is automatically removed from the final caption:
 
-| **Property**     | **Value**          | **Description**                    |
-|------------------|--------------------|------------------------------------|
-| Cell margins     | 0.10 cm            | Padding inside cells               |
-| Cell spacing     | 0 pt               | Space between cells                |
-| Autofit          | Window             | Table width adjustment             |
-| Alignment        | Center             | Table position on page             |
+| **Property** | **Value** | **Description**        |
+| ------------ | --------- | ---------------------- |
+| Cell margins | 0.10 cm   | Padding inside cells   |
+| Cell spacing | 0 pt      | Space between cells    |
+| Autofit      | Window    | Table width adjustment |
+| Alignment    | Center    | Table position on page |
 
 : Table formatting properties. |cell_margin=0.10cm cell_spacing=0pt autofit=window alignment=center| {#tbl:advanced-formatting}
 
@@ -143,12 +143,12 @@ The caption above includes metadata `|cell_margin=0.10cm cell_spacing=0pt autofi
 
 Use special markers to merge cells: `!<!` merges left, `!^!` merges up:
 
-| **Category** | **Subcategory** | **Value** | **Notes**        |
-|:------------:|:---------------:|:---------:|:----------------:|
-| Group A      | Item 1          | 10        | First item       |
-| !^!          | Item 2          | 20        | Second item      |
-| Group B      | Item 3          | 30        | Third item       |
-| !^!          | Item 4          | 40        | !<!              |
+| **Category** | **Subcategory** | **Value** |  **Notes**  |
+| :----------: | :-------------: | :-------: | :---------: |
+|   Group A    |     Item 1      |    10     | First item  |
+|     !^!      |     Item 2      |    20     | Second item |
+|   Group B    |     Item 3      |    30     | Third item  |
+|     !^!      |     Item 4      |    40     |     !<!     |
 
 : Example of merged cells using markers. {#tbl:merged-cells}
 
@@ -195,12 +195,12 @@ Multi-panel layouts can be prepared with the built-in subfigure grid support ena
 An example of a multi-subfigure layout using two synthetic panels.
 </div>
 
-| **Method**      | **Accuracy (%)** | **Precision (%)** | **Recall (%)** | **F1-Score (%)** |
-|-----------------|------------------|-------------------|----------------|------------------|
-| Baseline        | 78.3             | 76.5              | 79.2           | 77.8             |
-| Method A        | 85.7             | 84.2              | 86.5           | 85.3             |
-| Method B        | 89.1             | 88.3              | 89.8           | 89.0             |
-| **Proposed**    | **92.4**         | **91.7**          | **93.1**       | **92.4**         |
+| **Method**   | **Accuracy (%)** | **Precision (%)** | **Recall (%)** | **F1-Score (%)** |
+| ------------ | ---------------- | ----------------- | -------------- | ---------------- |
+| Baseline     | 78.3             | 76.5              | 79.2           | 77.8             |
+| Method A     | 85.7             | 84.2              | 86.5           | 85.3             |
+| Method B     | 89.1             | 88.3              | 89.8           | 89.0             |
+| **Proposed** | **92.4**         | **91.7**          | **93.1**       | **92.4**         |
 
 : Performance comparison across different methods. Best results in **bold**. {#tbl:results}
 

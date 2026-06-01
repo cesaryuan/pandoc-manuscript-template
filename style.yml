@@ -36,7 +36,7 @@ eqnBlockTemplate: | # 用表格排版公式，能正确显示 Display Math
   +:------+:--------------------------------------------------:+--------:+
   |       | $$t$$                                              | $$nmi$$ |
   +-------+----------------------------------------------------+---------+
-# eqnBlockTemplate: |
+# eqnBlockTemplate: | # 用制表符排版公式，不需要后处理脚本，但是 Display Math 在 docx 中会显示为行内公式
 #    `<w:pPr><w:tabs><w:tab w:val="center" w:leader="none" w:pos="4153" /><w:tab w:val="right" w:leader="none" w:pos="9360" /></w:tabs></w:pPr><w:r><w:tab /></w:r>`{=openxml} $$t$$ `<w:r><w:tab /></w:r>`{=openxml} $$nmi$$
 # eqnBlockInlineMath: false    # Support for centered equations and right-aligned numbering
 ## Options for section numbering and auto-labeling

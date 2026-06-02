@@ -36,7 +36,7 @@ try:
     from postprocess.format_equation_layout_tables import format_equation_layout_tables
     from postprocess.body_text_style import apply_body_text_style_metadata
     from postprocess.inline_math_spacing import add_space_after_standalone_inline_math
-    from postprocess.where_paragraph_style import apply_where_paragraph_style, ensure_where_paragraph_style_exists
+    from postprocess.where_paragraph_style import process_where_paragraph_styles
 except ImportError as e:
     print(f"Error: Failed to import processing modules: {e}")
     print("Make sure all scripts are in the same directory:")
@@ -264,10 +264,10 @@ def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str
         # ===================================================================
         print_info("Step 9: Applying where paragraph style...")
         try:
-            if not ensure_where_paragraph_style_exists(doc):
+            where_count = process_where_paragraph_styles(doc)
+            if where_count is None:
                 print_warning("Could not ensure Where Paragraph style exists, skipping style conversion")
             else:
-                where_count = apply_where_paragraph_style(doc)
                 print_success(f"Styled {where_count} paragraph(s) as 'Where Paragraph'")
             print_success("Step 9 completed")
             print_info("")

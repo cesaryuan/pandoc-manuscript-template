@@ -17,6 +17,7 @@ DOCX files.
 import argparse
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, cast
 
@@ -32,6 +33,7 @@ try:
     from docx.enum.style import WD_STYLE_TYPE
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
+    from docx.shared import Pt
     from docx.styles.style import _ParagraphStyle
     from docx.table import Table
     from docx.text.paragraph import Paragraph
@@ -42,10 +44,25 @@ except ImportError:
 
 WHERE_STYLE_NAME = "Where Paragraph"
 WHERE_FIRST_LINE_INDENT_CHARS = 0.0
+WHERE_TABLE_LAYOUT_SPACE_BEFORE_PT = 6.0
 BODY_TEXT_STYLE_CANDIDATES = ("Body Text", "正文文本")
 BASE_STYLE_CANDIDATES = (*BODY_TEXT_STYLE_CANDIDATES, "First Paragraph", "Normal", "正文")
 WHERE_START_PATTERN = re.compile(r"^\s*where\b", re.IGNORECASE)
 EQUATION_NUMBER_PATTERN = re.compile(r"^[\s\t\r\n()（）\[\]【】0-9ivxlcdmIVXLCDM.\-–—]*$")
+
+
+@dataclass
+class WhereParagraphAnalysis:
+    """Single-pass analysis result for where paragraphs and their equation layout mode."""
+
+    paragraphs: list[Paragraph]
+    table_layout_count: int = 0
+    tab_layout_count: int = 0
+
+    @property
+    def use_table_layout_spacing(self) -> bool:
+        """Return whether the Where Paragraph style should use table-layout spacing."""
+        return self.table_layout_count > 0
 
 
 class Colors:
@@ -123,19 +140,32 @@ def set_style_first_line_indent_chars(style: _ParagraphStyle, chars: float) -> N
             del ind.attrib[attr]
 
 
-def set_where_paragraph_format(style: _ParagraphStyle) -> None:
+def set_where_paragraph_format(style: _ParagraphStyle, use_table_layout_spacing: bool) -> None:
     """Apply fixed paragraph formatting for the Where Paragraph style."""
     set_style_first_line_indent_chars(style, WHERE_FIRST_LINE_INDENT_CHARS)
+    if use_table_layout_spacing:
+        # Equation tables sit visually closer to the following where clause than tab-layout equations.
+        style.paragraph_format.space_before = Pt(WHERE_TABLE_LAYOUT_SPACE_BEFORE_PT)
+        print_info(
+            f"'Where Paragraph' spacing before set to {WHERE_TABLE_LAYOUT_SPACE_BEFORE_PT:g} pt"
+        )
+    else:
+        style.paragraph_format.space_before = None
+        print_info("'Where Paragraph' spacing before inherits from base style")
     print_info("'Where Paragraph' first-line indent set to 0 chars")
 
 
-def ensure_where_paragraph_style_exists(doc: DocumentObject) -> bool:
+def ensure_where_paragraph_style_exists(
+    doc: DocumentObject, analysis: WhereParagraphAnalysis | None = None
+) -> bool:
     """Ensure the DOCX contains a paragraph style named 'Where Paragraph'."""
+    analysis = analysis or analyze_where_paragraphs(doc)
+    log_where_layout_detection(analysis)
     try:
         style = cast(_ParagraphStyle, doc.styles[WHERE_STYLE_NAME])
         if not set_where_next_paragraph_style(doc, style):
             return False
-        set_where_paragraph_format(style)
+        set_where_paragraph_format(style, analysis.use_table_layout_spacing)
         print_info("'Where Paragraph' style already exists")
         return True
     except KeyError:
@@ -149,7 +179,7 @@ def ensure_where_paragraph_style_exists(doc: DocumentObject) -> bool:
             print_info(f"'Where Paragraph' style based on '{base_style_name}' style")
         if not set_where_next_paragraph_style(doc, style):
             return False
-        set_where_paragraph_format(style)
+        set_where_paragraph_format(style, analysis.use_table_layout_spacing)
 
         # Where clauses are equation definitions, so keep them available as a named style.
         style.hidden = False
@@ -211,9 +241,9 @@ def is_equation_block(block: Paragraph | Table) -> bool:
     return is_equation_layout_table(block)
 
 
-def apply_where_paragraph_style(doc: DocumentObject) -> int:
-    """Style where paragraphs that immediately follow equation paragraphs or tables."""
-    updated = 0
+def analyze_where_paragraphs(doc: DocumentObject) -> WhereParagraphAnalysis:
+    """Find where paragraphs and detect whether their preceding equations use tables or tabs."""
+    analysis = WhereParagraphAnalysis(paragraphs=[])
     previous: Paragraph | Table | None = None
 
     for current in iter_body_blocks(doc):
@@ -221,15 +251,57 @@ def apply_where_paragraph_style(doc: DocumentObject) -> int:
             previous = current
             continue
 
-        if previous is None or not is_equation_block(previous) or not starts_with_where(current):
+        if previous is None or not starts_with_where(current):
             previous = current
             continue
 
-        current.style = WHERE_STYLE_NAME
-        updated += 1
+        if isinstance(previous, Table) and is_equation_layout_table(previous):
+            analysis.paragraphs.append(current)
+            analysis.table_layout_count += 1
+        elif isinstance(previous, Paragraph) and is_equation_paragraph(previous):
+            analysis.paragraphs.append(current)
+            if paragraph_has_equation_layout(previous):
+                analysis.tab_layout_count += 1
+
         previous = current
 
-    return updated
+    return analysis
+
+
+def log_where_layout_detection(analysis: WhereParagraphAnalysis) -> None:
+    """Log the detected equation layout mode used before where paragraphs."""
+    if analysis.table_layout_count:
+        print_info(
+            f"Detected {analysis.table_layout_count} where paragraph(s) after equation layout table(s); "
+            f"using {WHERE_TABLE_LAYOUT_SPACE_BEFORE_PT:g} pt style spacing before"
+        )
+        return
+
+    if analysis.tab_layout_count:
+        print_info(
+            f"Detected {analysis.tab_layout_count} where paragraph(s) after tab-layout equation paragraph(s); "
+            "leaving style spacing before inherited"
+        )
+    else:
+        print_info("No table-layout where paragraphs detected; leaving style spacing before inherited")
+
+
+def apply_where_paragraph_style(
+    doc: DocumentObject, analysis: WhereParagraphAnalysis | None = None
+) -> int:
+    """Style where paragraphs that immediately follow equation paragraphs or tables."""
+    analysis = analysis or analyze_where_paragraphs(doc)
+    for paragraph in analysis.paragraphs:
+        paragraph.style = WHERE_STYLE_NAME
+    return len(analysis.paragraphs)
+
+
+def process_where_paragraph_styles(doc: DocumentObject) -> int | None:
+    """Analyze once, configure the Where Paragraph style, and apply it to matching paragraphs."""
+    analysis = analyze_where_paragraphs(doc)
+    if not ensure_where_paragraph_style_exists(doc, analysis):
+        return None
+    return apply_where_paragraph_style(doc, analysis)
 
 
 def process_file(docx_path: str, save: bool = True) -> int | None:
@@ -240,10 +312,9 @@ def process_file(docx_path: str, save: bool = True) -> int | None:
         return None
 
     doc = Document(str(docx_file))
-    if not ensure_where_paragraph_style_exists(doc):
+    updated = process_where_paragraph_styles(doc)
+    if updated is None:
         return None
-
-    updated = apply_where_paragraph_style(doc)
     if save:
         doc.save(str(docx_file))
 

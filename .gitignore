@@ -262,3 +262,17 @@ output/
 __pycache__/
 /tmp
 nul
+
+# MathType probe generated artifacts
+tmp/
+output/docx/
+mathtype.docx
+
+# .NET helper build outputs
+scripts/mathtype_ole_helper/bin/
+scripts/mathtype_ole_helper/obj/
+
+# Generated binaries / docs
+*.exe
+*.pdb
+*.docx

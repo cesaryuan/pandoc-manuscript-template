@@ -11,7 +11,7 @@ link-citations: true
 #   - pandoc/csl/elsevier-vancouver.csl (Vancouver)
 #   - pandoc/csl/engineering-applications-of-artificial-intelligence.csl (EA-AI journal)
 #   - Or download from https://www.zotero.org/styles
-csl: pandoc/csl/sage-vancouver.csl
+csl: pandoc/csl/elsevier-vancouver.csl
 
 # DOCX body text formatting (applied to the Body Text style in post-processing)
 bodyText:

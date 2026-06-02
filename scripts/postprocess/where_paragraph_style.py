@@ -18,13 +18,14 @@ import argparse
 import re
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
 
-try:
-    from postprocess.autofit_tables import is_equation_layout_table
-except ModuleNotFoundError:
-    # Standalone execution from this directory does not expose the postprocess package name.
-    from autofit_tables import is_equation_layout_table
+if __package__ in (None, ""):
+    # Allow direct execution via `uv run scripts/postprocess/<script>.py`.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from postprocess.autofit_tables import is_equation_layout_table
 
 try:
     from docx.document import Document as DocumentObject
@@ -38,32 +39,18 @@ except ImportError:
     print("Error: python-docx is not installed. Install it with: pip install python-docx")
     sys.exit(1)
 
-try:
-    from postprocess.common import (
-        BODY_TEXT_STYLE_NAMES as BODY_TEXT_STYLE_CANDIDATES,
-        get_first_existing_paragraph_style,
-        iter_body_blocks,
-        open_docx,
-        print_error,
-        print_info,
-        print_success,
-        print_warning,
-        save_docx,
-        set_style_first_line_indent_chars as set_common_style_first_line_indent_chars,
-    )
-except ModuleNotFoundError:
-    from common import (
-        BODY_TEXT_STYLE_NAMES as BODY_TEXT_STYLE_CANDIDATES,
-        get_first_existing_paragraph_style,
-        iter_body_blocks,
-        open_docx,
-        print_error,
-        print_info,
-        print_success,
-        print_warning,
-        save_docx,
-        set_style_first_line_indent_chars as set_common_style_first_line_indent_chars,
-    )
+from postprocess.common import (
+    BODY_TEXT_STYLE_NAMES as BODY_TEXT_STYLE_CANDIDATES,
+    get_first_existing_paragraph_style,
+    iter_body_blocks,
+    open_docx,
+    print_error,
+    print_info,
+    print_success,
+    print_warning,
+    save_docx,
+    set_style_first_line_indent_chars as set_common_style_first_line_indent_chars,
+)
 
 
 WHERE_STYLE_NAME = "Where Paragraph"

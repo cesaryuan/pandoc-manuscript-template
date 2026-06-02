@@ -23,6 +23,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
+if __package__ in (None, ""):
+    # Allow direct execution via `uv run scripts/postprocess/<script>.py`.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 try:
     from docx.document import Document as DocumentObject
     from docx.shared import Pt
@@ -31,34 +35,18 @@ except ImportError as e:
     print("Install with: pip install python-docx pyyaml")
     sys.exit(1)
 
-try:
-    from postprocess.common import (
-        get_body_text_style,
-        open_docx,
-        print_error,
-        print_success,
-        print_warning,
-        save_docx,
-        set_style_first_line_indent_chars as set_common_style_first_line_indent_chars,
-        validate_existing_file,
-    )
-except ModuleNotFoundError:
-    from common import (
-        get_body_text_style,
-        open_docx,
-        print_error,
-        print_success,
-        print_warning,
-        save_docx,
-        set_style_first_line_indent_chars as set_common_style_first_line_indent_chars,
-        validate_existing_file,
-    )
+from postprocess.common import (
+    get_body_text_style,
+    open_docx,
+    print_error,
+    print_success,
+    print_warning,
+    save_docx,
+    set_style_first_line_indent_chars as set_common_style_first_line_indent_chars,
+    validate_existing_file,
+)
 
-try:
-    from metadata import load_merged_metadata
-except ImportError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from metadata import load_merged_metadata
+from metadata import load_merged_metadata
 
 
 DEFAULT_FIRST_LINE_INDENT_CHARS = 2.0

@@ -16,26 +16,21 @@ Usage:
 
 import argparse
 import sys
+from pathlib import Path
 from typing import Optional
 
-try:
-    from postprocess.common import (
-        open_docx,
-        print_error,
-        print_info,
-        print_success,
-        print_warning,
-        save_docx,
-    )
-except ModuleNotFoundError:
-    from common import (
-        open_docx,
-        print_error,
-        print_info,
-        print_success,
-        print_warning,
-        save_docx,
-    )
+if __package__ in (None, ""):
+    # Allow direct execution via `uv run scripts/postprocess/<script>.py`.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from postprocess.common import (
+    open_docx,
+    print_error,
+    print_info,
+    print_success,
+    print_warning,
+    save_docx,
+)
 
 try:
     from docx.document import Document as DocumentObject

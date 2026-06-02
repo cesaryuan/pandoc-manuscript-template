@@ -18,7 +18,12 @@ Usage:
 import argparse
 import re
 import sys
+from pathlib import Path
 from typing import Optional, Dict
+
+if __package__ in (None, ""):
+    # Allow direct execution via `uv run scripts/postprocess/<script>.py`.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from docx.document import Document as DocumentObject
 from docx.table import Table
@@ -26,26 +31,15 @@ from docx.shared import Pt, Cm, Mm, Inches
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-try:
-    from postprocess.common import (
-        get_or_add_tbl_pr,
-        open_docx,
-        print_error,
-        print_info,
-        print_success,
-        print_warning,
-        save_docx,
-    )
-except ModuleNotFoundError:
-    from common import (
-        get_or_add_tbl_pr,
-        open_docx,
-        print_error,
-        print_info,
-        print_success,
-        print_warning,
-        save_docx,
-    )
+from postprocess.common import (
+    get_or_add_tbl_pr,
+    open_docx,
+    print_error,
+    print_info,
+    print_success,
+    print_warning,
+    save_docx,
+)
 
 
 def parse_table_metadata(caption_text: str) -> Dict[str, str]:

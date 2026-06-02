@@ -21,13 +21,14 @@ Usage:
 import argparse
 import re
 import sys
+from pathlib import Path
 from typing import Optional
 
-try:
-    from postprocess.autofit_tables import is_equation_layout_table
-except ModuleNotFoundError:
-    # Standalone execution from this directory does not expose the postprocess package name.
-    from autofit_tables import is_equation_layout_table
+if __package__ in (None, ""):
+    # Allow direct execution via `uv run scripts/postprocess/<script>.py`.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from postprocess.autofit_tables import is_equation_layout_table
 
 try:
     from docx.document import Document as DocumentObject
@@ -38,28 +39,16 @@ except ImportError:
     print("Error: python-docx is not installed. Install it with: pip install python-docx")
     sys.exit(1)
 
-try:
-    from postprocess.common import (
-        get_or_add_child,
-        get_or_add_tbl_pr,
-        open_docx,
-        print_error,
-        print_info,
-        print_success,
-        print_warning,
-        save_docx,
-    )
-except ModuleNotFoundError:
-    from common import (
-        get_or_add_child,
-        get_or_add_tbl_pr,
-        open_docx,
-        print_error,
-        print_info,
-        print_success,
-        print_warning,
-        save_docx,
-    )
+from postprocess.common import (
+    get_or_add_child,
+    get_or_add_tbl_pr,
+    open_docx,
+    print_error,
+    print_info,
+    print_success,
+    print_warning,
+    save_docx,
+)
 
 
 BORDER_SIDES = ("top", "left", "bottom", "right", "insideH", "insideV")

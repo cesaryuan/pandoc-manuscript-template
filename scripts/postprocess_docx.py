@@ -17,6 +17,7 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
+from typing import Callable
 
 try:
     from docx import Document
@@ -27,6 +28,7 @@ except ImportError:
 # Import processing modules
 try:
     from metadata import load_merged_metadata
+    from postprocess.common import print_error, print_info, print_success, print_warning
     from postprocess.merge_table_cells import merge_table_cells
     from postprocess.process_table_metadata import process_table_metadata
     from postprocess.autofit_tables import autofit_tables
@@ -56,33 +58,22 @@ except ImportError as e:
     sys.exit(1)
 
 
-class Colors:
-    """ANSI color codes for terminal output"""
-    GREEN = '\033[92m'
-    CYAN = '\033[96m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    RESET = '\033[0m'
+def run_pipeline_step(label: str, action: Callable[[], None]) -> None:
+    """Run one post-processing step with consistent pipeline logging."""
+    print_info(f"Step: {label}...")
+    try:
+        action()
+        print_success("Step completed")
+        print_info("")
+    except Exception as e:
+        print_error(f"Step failed: {e}")
+        raise
 
 
-def print_success(message: str):
-    """Print success message in green"""
-    print(f"{Colors.GREEN}{message}{Colors.RESET}")
-
-
-def print_info(message: str):
-    """Print info message in cyan"""
-    print(f"{Colors.CYAN}{message}{Colors.RESET}")
-
-
-def print_warning(message: str):
-    """Print warning message in yellow"""
-    print(f"{Colors.YELLOW}{message}{Colors.RESET}")
-
-
-def print_error(message: str):
-    """Print error message in red"""
-    print(f"{Colors.RED}{message}{Colors.RESET}")
+def log_skip(label: str, reason: str) -> None:
+    """Log a skipped optional pipeline step using the same step format."""
+    print_info(f"Step: Skipping {label} ({reason})")
+    print_info("")
 
 
 def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str] | None = None) -> bool:
@@ -133,178 +124,107 @@ def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str
         print_success("Document opened successfully")
         print_info("")
 
-        # ===================================================================
-        # Step 1: Insert author information (if md_path provided)
-        # ===================================================================
         if md_path:
-            print_info("Step 1: Inserting author information...")
-            try:
+            def insert_author_info_step() -> None:
+                """Insert author metadata and log the number of inserted records."""
                 authors, affiliations, has_footnote = insert_author_info_to_doc(doc, md_path)
                 if authors > 0:
-                    print_success(f"Authors: {authors}, Affiliations: {affiliations}, Footnote: {'Yes' if has_footnote else 'No'}")
+                    print_success(
+                        f"Authors: {authors}, Affiliations: {affiliations}, "
+                        f"Footnote: {'Yes' if has_footnote else 'No'}"
+                    )
                 else:
                     print_warning("No authors found in YAML metadata, skipping")
-                print_success("Step 1 completed")
-                print_info("")
-            except Exception as e:
-                print_error(f"Step 1 failed: {e}")
-                raise
-        else:
-            print_info("Step 1: Skipping author information (no markdown file provided)")
-            print_info("")
 
-        # ===================================================================
-        # Step 2: Apply body text style settings (if md_path provided)
-        # ===================================================================
+            run_pipeline_step("Inserting author information", insert_author_info_step)
+        else:
+            log_skip("author information", "no markdown file provided")
+
         if md_path:
-            print_info("Step 2: Applying body text style metadata...")
-            try:
+            def apply_body_text_style_step() -> None:
+                """Apply merged YAML bodyText metadata to the DOCX body style."""
                 result = apply_body_text_style_metadata(doc, merged_metadata)
                 if result is None:
                     print_warning("No bodyText metadata found, skipping")
-                else:
-                    print_success(
-                        f"Style '{result['style_name']}': "
-                        f"first-line indent {result['first_line_indent_chars']} chars, "
-                        f"before {result['space_before_pt']} pt, "
-                        f"after {result['space_after_pt']} pt"
-                    )
-                print_success("Step 2 completed")
-                print_info("")
-            except Exception as e:
-                print_error(f"Step 2 failed: {e}")
-                raise
-        else:
-            print_info("Step 2: Skipping body text style metadata (no markdown file provided)")
-            print_info("")
+                    return
+                print_success(
+                    f"Style '{result['style_name']}': "
+                    f"first-line indent {result['first_line_indent_chars']} chars, "
+                    f"before {result['space_before_pt']} pt, "
+                    f"after {result['space_after_pt']} pt"
+                )
 
-        # ===================================================================
-        # Step 3: Merge table cells based on markers
-        # ===================================================================
-        print_info("Step 3: Merging table cells...")
-        try:
+            run_pipeline_step("Applying body text style metadata", apply_body_text_style_step)
+        else:
+            log_skip("body text style metadata", "no markdown file provided")
+
+        def merge_table_cells_step() -> None:
+            """Merge table cells marked with left/up merge placeholders."""
             left_merges, up_merges = merge_table_cells(doc)
             print_success(f"Left merges: {left_merges}, Up merges: {up_merges}")
-            print_success("Step 3 completed")
-            print_info("")
-        except Exception as e:
-            print_error(f"Step 3 failed: {e}")
-            raise
 
-        # ===================================================================
-        # Step 4: Process table metadata from captions
-        # ===================================================================
-        print_info("Step 4: Processing table metadata...")
-        try:
+        def process_table_metadata_step() -> None:
+            """Apply table caption metadata and report the applied setting count."""
             processed, settings = process_table_metadata(doc)
             print_success(f"Processed {processed} table(s), Applied {settings} setting(s)")
-            print_success("Step 4 completed")
-            print_info("")
-        except Exception as e:
-            print_error(f"Step 4 failed: {e}")
-            raise
 
-        # ===================================================================
-        # Step 5: Clear formatting for subfigure layout tables
-        # ===================================================================
-        print_info("Step 5: Clearing subfigure table formatting...")
-        try:
+        def clear_subfigure_table_format_step() -> None:
+            """Clear formatting from tables used only for subfigure layout."""
             processed_count = clear_subfigure_table_format(doc)
             print_success(f"Cleared formatting for {processed_count} subfigure table(s)")
-            print_success("Step 5 completed")
-            print_info("")
-        except Exception as e:
-            print_error(f"Step 5 failed: {e}")
-            raise
-        
-        
-        # ===================================================================
-        # Step 6: Convert table text style from Compact to Table Text
-        # ===================================================================
-        print_info("Step 6: Converting table text style...")
-        try:
-            # Ensure Table Text style exists
+
+        def convert_table_text_style_step() -> None:
+            """Convert table paragraphs from Compact to the shared Table Text style."""
             if not ensure_table_text_style_exists(doc):
                 print_warning("Could not ensure Table Text style exists, skipping style conversion")
-            else:
-                stats = convert_table_text_style(doc)
-                print_success(f"Converted {stats['converted']} paragraph(s) from 'Compact' to 'Table Text'")
-            print_success("Step 6 completed")
-            print_info("")
-        except Exception as e:
-            print_error(f"Step 6 failed: {e}")
-            raise
+                return
+            stats = convert_table_text_style(doc)
+            print_success(f"Converted {stats['converted']} paragraph(s) from 'Compact' to 'Table Text'")
 
-        # ===================================================================
-        # Step 7: Apply Para After Table style
-        # ===================================================================
-        print_info("Step 7: Applying post-table paragraph style...")
-        try:
+        def apply_para_after_table_style_step() -> None:
+            """Style regular body paragraphs that directly follow tables."""
             para_after_table_count = process_para_after_table_style(doc)
             if para_after_table_count is None:
                 print_warning("Could not ensure Para After Table style exists, skipping style conversion")
-            else:
-                print_success(f"Styled {para_after_table_count} paragraph(s) as 'Para After Table'")
-            print_success("Step 7 completed")
-            print_info("")
-        except Exception as e:
-            print_error(f"Step 7 failed: {e}")
-            raise
+                return
+            print_success(f"Styled {para_after_table_count} paragraph(s) as 'Para After Table'")
 
-        # ===================================================================
-        # Step 7: Auto-fit tables to window
-        # ===================================================================
-        print_info("Step 8: Auto-fitting tables to window...")
-        try:
+        def autofit_tables_step() -> None:
+            """Auto-fit regular tables while leaving equation layout tables alone."""
             fitted_count = autofit_tables(doc, center_align=True)
             print_success(f"Auto-fitted {fitted_count} table(s)")
-            print_success("Step 8 completed")
-            print_info("")
-        except Exception as e:
-            print_error(f"Step 8 failed: {e}")
-            raise
 
-        # ===================================================================
-        # Step 9: Format equation layout tables
-        # ===================================================================
-        print_info("Step 9: Formatting equation layout tables...")
-        try:
+        def format_equation_layout_tables_step() -> None:
+            """Hide borders and tune widths for equation layout tables."""
             equation_table_count = format_equation_layout_tables(doc)
             print_success(f"Formatted {equation_table_count} equation layout table(s)")
-            print_success("Step 9 completed")
-            print_info("")
-        except Exception as e:
-            print_error(f"Step 9 failed: {e}")
-            raise
 
-        # ===================================================================
-        # Step 10: Apply Where Paragraph style after equation paragraphs
-        # ===================================================================
-        print_info("Step 10: Applying where paragraph style...")
-        try:
+        def apply_where_paragraph_style_step() -> None:
+            """Style where clauses that immediately follow equations."""
             where_count = process_where_paragraph_styles(doc)
             if where_count is None:
                 print_warning("Could not ensure Where Paragraph style exists, skipping style conversion")
-            else:
-                print_success(f"Styled {where_count} paragraph(s) as 'Where Paragraph'")
-            print_success("Step 10 completed")
-            print_info("")
-        except Exception as e:
-            print_error(f"Step 10 failed: {e}")
-            raise
+                return
+            print_success(f"Styled {where_count} paragraph(s) as 'Where Paragraph'")
 
-        # ===================================================================
-        # Step 11: Keep standalone inline math from rendering as display math
-        # ===================================================================
-        print_info("Step 11: Adding spaces after standalone inline math...")
-        try:
+        def add_inline_math_spacing_step() -> None:
+            """Add a trailing space to standalone inline math paragraphs for Word rendering."""
             fixed_count = add_space_after_standalone_inline_math(doc)
             print_success(f"Fixed {fixed_count} standalone inline math paragraph(s)")
-            print_success("Step 11 completed")
-            print_info("")
-        except Exception as e:
-            print_error(f"Step 11 failed: {e}")
-            raise
+
+        # Keep this ordered list explicit because DOCX post-processing steps are order-sensitive.
+        for label, action in [
+            ("Merging table cells", merge_table_cells_step),
+            ("Processing table metadata", process_table_metadata_step),
+            ("Clearing subfigure table formatting", clear_subfigure_table_format_step),
+            ("Converting table text style", convert_table_text_style_step),
+            ("Applying post-table paragraph style", apply_para_after_table_style_step),
+            ("Auto-fitting tables to window", autofit_tables_step),
+            ("Formatting equation layout tables", format_equation_layout_tables_step),
+            ("Applying where paragraph style", apply_where_paragraph_style_step),
+            ("Adding spaces after standalone inline math", add_inline_math_spacing_step),
+        ]:
+            run_pipeline_step(label, action)
 
         # ===================================================================
         # Save document (all changes from all scripts)
@@ -335,17 +255,17 @@ Examples:
   uv run postprocess_docx.py output/docx/manuscript.docx manuscript.md
 
 Processing steps:
-  1. Insert author information from YAML metadata (if md_path provided)
-  2. Apply Body Text style settings from merged YAML metadata (if md_path provided)
-  3. Merge table cells based on markers (!<! and !^!)
-  4. Process table metadata from captions (|key=value|)
-  5. Clear formatting for tables above 'Image Caption' paragraphs
-  6. Convert table text style from 'Compact' to 'Table Text'
-  7. Apply 'Para After Table' style to body paragraphs after tables
-  8. Auto-fit tables to window width and center align
-  9. Format equation layout tables
-  10. Apply 'Where Paragraph' style after equation paragraphs
-  11. Add trailing spaces after standalone inline math
+  - Insert author information from YAML metadata (if md_path provided)
+  - Apply Body Text style settings from merged YAML metadata (if md_path provided)
+  - Merge table cells based on markers (!<! and !^!)
+  - Process table metadata from captions (|key=value|)
+  - Clear formatting for tables above 'Image Caption' paragraphs
+  - Convert table text style from 'Compact' to 'Table Text'
+  - Apply 'Para After Table' style to body paragraphs after tables
+  - Auto-fit tables to window width and center align
+  - Format equation layout tables
+  - Apply 'Where Paragraph' style after equation paragraphs
+  - Add trailing spaces after standalone inline math
 
 This script applies all post-processing steps in sequence.
         """

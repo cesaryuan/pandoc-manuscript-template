@@ -16,14 +16,36 @@ those post-table body paragraphs.
 
 import argparse
 import sys
-from pathlib import Path
-from typing import Iterable, Optional, cast
+from typing import Optional, cast
 
 try:
-    from docx import Document
+    from postprocess.common import (
+        BODY_TEXT_STYLE_NAMES,
+        get_body_text_style,
+        iter_body_blocks,
+        open_docx,
+        print_error,
+        print_info,
+        print_success,
+        print_warning,
+        save_docx,
+    )
+except ModuleNotFoundError:
+    from common import (
+        BODY_TEXT_STYLE_NAMES,
+        get_body_text_style,
+        iter_body_blocks,
+        open_docx,
+        print_error,
+        print_info,
+        print_success,
+        print_warning,
+        save_docx,
+    )
+
+try:
     from docx.document import Document as DocumentObject
     from docx.enum.style import WD_STYLE_TYPE
-    from docx.oxml.ns import qn
     from docx.shared import Pt
     from docx.styles.style import _ParagraphStyle
     from docx.table import Table
@@ -33,49 +55,8 @@ except ImportError:
     sys.exit(1)
 
 
-BODY_TEXT_STYLE_NAMES = ("Body Text", "正文文本")
 PARA_AFTER_TABLE_STYLE_NAME = "Para After Table"
 PARA_AFTER_TABLE_SPACE_BEFORE_PT = 6.0
-
-
-class Colors:
-    """ANSI color codes for terminal output."""
-
-    GREEN = "\033[92m"
-    CYAN = "\033[96m"
-    YELLOW = "\033[93m"
-    RED = "\033[91m"
-    RESET = "\033[0m"
-
-
-def print_success(message: str) -> None:
-    """Print a success message in green."""
-    print(f"{Colors.GREEN}{message}{Colors.RESET}")
-
-
-def print_info(message: str) -> None:
-    """Print an informational message in cyan."""
-    print(f"{Colors.CYAN}{message}{Colors.RESET}")
-
-
-def print_warning(message: str) -> None:
-    """Print a warning message in yellow."""
-    print(f"{Colors.YELLOW}{message}{Colors.RESET}")
-
-
-def print_error(message: str) -> None:
-    """Print an error message in red."""
-    print(f"{Colors.RED}{message}{Colors.RESET}")
-
-
-def get_body_text_style(doc: DocumentObject) -> tuple[_ParagraphStyle | None, str | None]:
-    """Return the Word Body Text/正文文本 paragraph style used for post-table paragraphs."""
-    for style_name in BODY_TEXT_STYLE_NAMES:
-        try:
-            return cast(_ParagraphStyle, doc.styles[style_name]), style_name
-        except KeyError:
-            continue
-    return None, None
 
 
 def configure_para_after_table_style(style: _ParagraphStyle, body_text_style: _ParagraphStyle) -> None:
@@ -120,15 +101,6 @@ def ensure_para_after_table_style_exists(doc: DocumentObject) -> bool:
         return False
 
 
-def iter_body_blocks(doc: DocumentObject) -> Iterable[Paragraph | Table]:
-    """Yield top-level body paragraphs and tables in document order."""
-    for child in doc.element.body.iterchildren():
-        if child.tag == qn("w:p"):
-            yield Paragraph(child, doc)
-        elif child.tag == qn("w:tbl"):
-            yield Table(child, doc)
-
-
 def is_body_text_paragraph(paragraph: Paragraph) -> bool:
     """Return whether a paragraph currently uses Body Text/正文文本 style."""
     style = paragraph.style
@@ -164,23 +136,16 @@ def process_para_after_table_style(doc: DocumentObject) -> int | None:
 
 def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
     """Process a DOCX file and optionally save Para After Table style changes."""
-    docx_file = Path(docx_path)
-    if not docx_file.exists():
-        print_error(f"DOCX file not found: {docx_path}")
-        return None
-
-    docx_path_abs = docx_file.resolve()
-    print_info(f"Processing: {docx_path_abs}")
-
     try:
-        doc = Document(str(docx_path_abs))
+        doc, docx_path_abs = open_docx(docx_path)
+        if doc is None or docx_path_abs is None:
+            return None
         updated = process_para_after_table_style(doc)
         if updated is None:
             return None
 
         if save:
-            doc.save(str(docx_path_abs))
-            print_success("Document saved")
+            save_docx(doc, docx_path_abs)
 
         print_success(f"Applied '{PARA_AFTER_TABLE_STYLE_NAME}' style to {updated} paragraph(s)")
         return doc

@@ -18,8 +18,7 @@ import argparse
 import re
 import sys
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Iterable, cast
+from typing import cast
 
 try:
     from postprocess.autofit_tables import is_equation_layout_table
@@ -28,10 +27,8 @@ except ModuleNotFoundError:
     from autofit_tables import is_equation_layout_table
 
 try:
-    from docx import Document
     from docx.document import Document as DocumentObject
     from docx.enum.style import WD_STYLE_TYPE
-    from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
     from docx.shared import Pt
     from docx.styles.style import _ParagraphStyle
@@ -41,11 +38,37 @@ except ImportError:
     print("Error: python-docx is not installed. Install it with: pip install python-docx")
     sys.exit(1)
 
+try:
+    from postprocess.common import (
+        BODY_TEXT_STYLE_NAMES as BODY_TEXT_STYLE_CANDIDATES,
+        get_first_existing_paragraph_style,
+        iter_body_blocks,
+        open_docx,
+        print_error,
+        print_info,
+        print_success,
+        print_warning,
+        save_docx,
+        set_style_first_line_indent_chars as set_common_style_first_line_indent_chars,
+    )
+except ModuleNotFoundError:
+    from common import (
+        BODY_TEXT_STYLE_NAMES as BODY_TEXT_STYLE_CANDIDATES,
+        get_first_existing_paragraph_style,
+        iter_body_blocks,
+        open_docx,
+        print_error,
+        print_info,
+        print_success,
+        print_warning,
+        save_docx,
+        set_style_first_line_indent_chars as set_common_style_first_line_indent_chars,
+    )
+
 
 WHERE_STYLE_NAME = "Where Paragraph"
 WHERE_FIRST_LINE_INDENT_CHARS = 0.0
 WHERE_TABLE_LAYOUT_SPACE_BEFORE_PT = 6.0
-BODY_TEXT_STYLE_CANDIDATES = ("Body Text", "正文文本")
 BASE_STYLE_CANDIDATES = (*BODY_TEXT_STYLE_CANDIDATES, "First Paragraph", "Normal", "正文")
 WHERE_START_PATTERN = re.compile(r"^\s*where\b", re.IGNORECASE)
 EQUATION_NUMBER_PATTERN = re.compile(r"^[\s\t\r\n()（）\[\]【】0-9ivxlcdmIVXLCDM.\-–—]*$")
@@ -65,48 +88,6 @@ class WhereParagraphAnalysis:
         return self.table_layout_count > 0
 
 
-class Colors:
-    """ANSI color codes for terminal output."""
-
-    GREEN = "\033[92m"
-    CYAN = "\033[96m"
-    YELLOW = "\033[93m"
-    RED = "\033[91m"
-    RESET = "\033[0m"
-
-
-def print_success(message: str) -> None:
-    """Print a success message in green."""
-    print(f"{Colors.GREEN}{message}{Colors.RESET}")
-
-
-def print_info(message: str) -> None:
-    """Print an info message in cyan."""
-    print(f"{Colors.CYAN}{message}{Colors.RESET}")
-
-
-def print_warning(message: str) -> None:
-    """Print a warning message in yellow."""
-    print(f"{Colors.YELLOW}{message}{Colors.RESET}")
-
-
-def print_error(message: str) -> None:
-    """Print an error message in red."""
-    print(f"{Colors.RED}{message}{Colors.RESET}")
-
-
-def get_first_existing_paragraph_style(
-    doc: DocumentObject, style_names: tuple[str, ...]
-) -> tuple[_ParagraphStyle | None, str | None]:
-    """Return the first paragraph style found from a list of candidate names."""
-    for style_name in style_names:
-        try:
-            return cast(_ParagraphStyle, doc.styles[style_name]), style_name
-        except KeyError:
-            continue
-    return None, None
-
-
 def set_where_next_paragraph_style(doc: DocumentObject, style: _ParagraphStyle) -> bool:
     """Set the paragraph style Word uses after pressing Enter in a where paragraph."""
     body_text_style, body_text_style_name = get_first_existing_paragraph_style(
@@ -122,22 +103,8 @@ def set_where_next_paragraph_style(doc: DocumentObject, style: _ParagraphStyle) 
 
 
 def set_style_first_line_indent_chars(style: _ParagraphStyle, chars: float) -> None:
-    """Set a paragraph style first-line indent using Word's character-based OOXML value."""
-    if chars < 0:
-        raise ValueError("Where Paragraph first-line indent must be greater than or equal to 0")
-
-    p_pr = style.element.get_or_add_pPr()
-    ind = p_pr.find(qn("w:ind"))
-    if ind is None:
-        ind = OxmlElement("w:ind")
-        p_pr.append(ind)
-
-    # This style is for equation definitions, so it explicitly disables inherited first-line indent.
-    ind.set(qn("w:firstLineChars"), str(int(round(chars * 100))))
-    for attr_name in ("w:firstLine", "w:hanging", "w:hangingChars"):
-        attr = qn(attr_name)
-        if attr in ind.attrib:
-            del ind.attrib[attr]
+    """Set the Where Paragraph first-line indent with a contextual error label."""
+    set_common_style_first_line_indent_chars(style, chars, "Where Paragraph first-line indent")
 
 
 def set_where_paragraph_format(style: _ParagraphStyle, use_table_layout_spacing: bool) -> None:
@@ -225,15 +192,6 @@ def starts_with_where(paragraph: Paragraph) -> bool:
     return bool(WHERE_START_PATTERN.match(paragraph_visible_text(paragraph)))
 
 
-def iter_body_blocks(doc: DocumentObject) -> Iterable[Paragraph | Table]:
-    """Yield top-level paragraphs and tables in document body order."""
-    for child in doc.element.body.iterchildren():
-        if child.tag == qn("w:p"):
-            yield Paragraph(child, doc)
-        elif child.tag == qn("w:tbl"):
-            yield Table(child, doc)
-
-
 def is_equation_block(block: Paragraph | Table) -> bool:
     """Return whether a body block is an equation paragraph or equation layout table."""
     if isinstance(block, Paragraph):
@@ -306,17 +264,14 @@ def process_where_paragraph_styles(doc: DocumentObject) -> int | None:
 
 def process_file(docx_path: str, save: bool = True) -> int | None:
     """Process a DOCX file and optionally save where paragraph style changes."""
-    docx_file = Path(docx_path)
-    if not docx_file.exists():
-        print_error(f"DOCX file not found: {docx_path}")
+    doc, docx_path_abs = open_docx(docx_path)
+    if doc is None or docx_path_abs is None:
         return None
-
-    doc = Document(str(docx_file))
     updated = process_where_paragraph_styles(doc)
     if updated is None:
         return None
     if save:
-        doc.save(str(docx_file))
+        save_docx(doc, docx_path_abs)
 
     print_success(f"Applied 'Where Paragraph' style to {updated} paragraph(s)")
     return updated

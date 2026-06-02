@@ -16,45 +16,33 @@ Usage:
 
 import argparse
 import sys
-from pathlib import Path
 from typing import Optional
 
 try:
-    from docx import Document
+    from postprocess.common import (
+        open_docx,
+        print_error,
+        print_info,
+        print_success,
+        print_warning,
+        save_docx,
+    )
+except ModuleNotFoundError:
+    from common import (
+        open_docx,
+        print_error,
+        print_info,
+        print_success,
+        print_warning,
+        save_docx,
+    )
+
+try:
     from docx.document import Document as DocumentObject
     from docx.table import _Cell
 except ImportError:
     print("Error: python-docx is not installed. Install it with: pip install python-docx")
     sys.exit(1)
-
-
-class Colors:
-    """ANSI color codes for terminal output"""
-    GREEN = '\033[92m'
-    CYAN = '\033[96m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    RESET = '\033[0m'
-
-
-def print_success(message: str):
-    """Print success message in green"""
-    print(f"{Colors.GREEN}{message}{Colors.RESET}")
-
-
-def print_info(message: str):
-    """Print info message in cyan"""
-    print(f"{Colors.CYAN}{message}{Colors.RESET}")
-
-
-def print_warning(message: str):
-    """Print warning message in yellow"""
-    print(f"{Colors.YELLOW}{message}{Colors.RESET}")
-
-
-def print_error(message: str):
-    """Print error message in red"""
-    print(f"{Colors.RED}{message}{Colors.RESET}")
 
 
 def get_clean_cell_text(cell: _Cell) -> str:
@@ -188,21 +176,10 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
     Returns:
         Document object if successful, None otherwise
     """
-    # Validate inputs
-    print_info("Validating inputs...")
-    docx_file = Path(docx_path)
-
-    if not docx_file.exists():
-        print_error(f"DOCX file not found: {docx_path}")
-        return None
-
-    docx_path_abs = docx_file.resolve()
-    print_info(f"Processing: {docx_path_abs}")
-
     try:
-        # Open document
-        print_info("Opening document...")
-        doc = Document(str(docx_path_abs))
+        doc, docx_path_abs = open_docx(docx_path)
+        if doc is None or docx_path_abs is None:
+            return None
 
         # Process table cell merges
         print_info("Processing table cell merges...")
@@ -214,9 +191,7 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
 
         # Save the document
         if save:
-            print_info("Saving document...")
-            doc.save(str(docx_path_abs))
-            print_success("Document saved")
+            save_docx(doc, docx_path_abs)
 
         print_success("\nTable cell merge processing completed successfully!")
         return doc

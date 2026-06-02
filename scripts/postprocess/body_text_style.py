@@ -24,15 +24,35 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from docx import Document
     from docx.document import Document as DocumentObject
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
     from docx.shared import Pt
 except ImportError as e:
     print(f"Error: Missing dependency: {e}")
     print("Install with: pip install python-docx pyyaml")
     sys.exit(1)
+
+try:
+    from postprocess.common import (
+        get_body_text_style,
+        open_docx,
+        print_error,
+        print_success,
+        print_warning,
+        save_docx,
+        set_style_first_line_indent_chars as set_common_style_first_line_indent_chars,
+        validate_existing_file,
+    )
+except ModuleNotFoundError:
+    from common import (
+        get_body_text_style,
+        open_docx,
+        print_error,
+        print_success,
+        print_warning,
+        save_docx,
+        set_style_first_line_indent_chars as set_common_style_first_line_indent_chars,
+        validate_existing_file,
+    )
 
 try:
     from metadata import load_merged_metadata
@@ -45,36 +65,6 @@ DEFAULT_FIRST_LINE_INDENT_CHARS = 2.0
 DEFAULT_SPACE_BEFORE_PT = 0.0
 DEFAULT_SPACE_AFTER_PT = 0.0
 BODY_TEXT_METADATA_KEYS = ("bodyText", "body-text", "body_text", "docxBodyText", "docx-body-text")
-BODY_TEXT_STYLE_NAMES = ("Body Text", "正文文本")
-
-
-class Colors:
-    """ANSI color codes for terminal output."""
-    GREEN = '\033[92m'
-    CYAN = '\033[96m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    RESET = '\033[0m'
-
-
-def print_success(message: str) -> None:
-    """Print a success message in green."""
-    print(f"{Colors.GREEN}{message}{Colors.RESET}")
-
-
-def print_info(message: str) -> None:
-    """Print an informational message in cyan."""
-    print(f"{Colors.CYAN}{message}{Colors.RESET}")
-
-
-def print_warning(message: str) -> None:
-    """Print a warning message in yellow."""
-    print(f"{Colors.YELLOW}{message}{Colors.RESET}")
-
-
-def print_error(message: str) -> None:
-    """Print an error message in red."""
-    print(f"{Colors.RED}{message}{Colors.RESET}")
 
 
 def first_present(mapping: dict[str, Any], keys: tuple[str, ...]) -> Any:
@@ -159,33 +149,13 @@ def normalize_body_text_settings(metadata: dict[str, Any]) -> dict[str, float] |
     }
 
 
-def get_body_text_style(doc: DocumentObject):
-    """Return the available body text paragraph style."""
-    for style_name in BODY_TEXT_STYLE_NAMES:
-        try:
-            return doc.styles[style_name], style_name
-        except KeyError:
-            continue
-    return None, None
-
-
 def set_style_first_line_indent_chars(style, chars: float) -> None:
-    """Set a style first-line indent using Word's character-based OOXML value."""
-    if chars < 0:
-        raise ValueError("bodyText.firstLineIndentChars must be greater than or equal to 0")
-
-    p_pr = style.element.get_or_add_pPr()
-    ind = p_pr.find(qn('w:ind'))
-    if ind is None:
-        ind = OxmlElement('w:ind')
-        p_pr.append(ind)
-
-    # Word stores character indents in hundredths of a character.
-    ind.set(qn('w:firstLineChars'), str(int(round(chars * 100))))
-    for attr_name in ('w:firstLine', 'w:hanging', 'w:hangingChars'):
-        attr = qn(attr_name)
-        if attr in ind.attrib:
-            del ind.attrib[attr]
+    """Set Body Text first-line indent with the metadata field name in errors."""
+    set_common_style_first_line_indent_chars(
+        style,
+        chars,
+        "bodyText.firstLineIndentChars",
+    )
 
 
 def apply_body_text_settings(doc: DocumentObject, settings: dict[str, float]) -> dict[str, Any]:
@@ -220,16 +190,13 @@ def process_file(
     metadata_files: list[str | Path] | None = None,
 ) -> dict[str, Any] | None:
     """Process a DOCX file using merged body text metadata."""
-    docx_file = Path(docx_path)
-    md_file = Path(md_path)
-    if not docx_file.exists():
-        print_error(f"DOCX file not found: {docx_path}")
+    doc, docx_file = open_docx(docx_path)
+    if doc is None or docx_file is None:
         return None
-    if not md_file.exists():
-        print_error(f"Markdown file not found: {md_path}")
+    md_file = validate_existing_file(md_path, "Markdown file")
+    if md_file is None:
         return None
 
-    doc = Document(str(docx_file))
     metadata = load_merged_metadata(md_file, metadata_files)
     result = apply_body_text_style_metadata(doc, metadata)
     if result is None:
@@ -237,7 +204,7 @@ def process_file(
         return None
 
     if save:
-        doc.save(str(docx_file))
+        save_docx(doc, docx_file)
     print_success(
         "Applied Body Text style: "
         f"first-line indent {result['first_line_indent_chars']} chars, "

@@ -21,13 +21,32 @@ Usage:
 
 import argparse
 import sys
-from pathlib import Path
 from typing import Optional
 
-from postprocess.autofit_tables import set_table_autofit_window
+try:
+    from postprocess.autofit_tables import set_table_autofit_window
+except ModuleNotFoundError:
+    from autofit_tables import set_table_autofit_window
+try:
+    from postprocess.common import (
+        get_or_add_tbl_pr,
+        open_docx,
+        print_error,
+        print_info,
+        print_success,
+        save_docx,
+    )
+except ModuleNotFoundError:
+    from common import (
+        get_or_add_tbl_pr,
+        open_docx,
+        print_error,
+        print_info,
+        print_success,
+        save_docx,
+    )
 
 try:
-    from docx import Document
     from docx.document import Document as DocumentObject
     from docx.table import Table
     from docx.oxml import OxmlElement
@@ -35,26 +54,6 @@ try:
 except ImportError:
     print("Error: python-docx is not installed. Install it with: pip install python-docx")
     sys.exit(1)
-
-
-class Colors:
-    GREEN = '\033[92m'
-    CYAN = '\033[96m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    RESET = '\033[0m'
-
-
-def print_success(message: str):
-    print(f"{Colors.GREEN}{message}{Colors.RESET}")
-
-
-def print_info(message: str):
-    print(f"{Colors.CYAN}{message}{Colors.RESET}")
-
-
-def print_error(message: str):
-    print(f"{Colors.RED}{message}{Colors.RESET}")
 
 
 def get_normal_table_style_id(doc: DocumentObject) -> str:
@@ -83,12 +82,7 @@ def get_normal_table_style_id(doc: DocumentObject) -> str:
 
 def set_neutral_table_style(table: Table, style_id: str) -> str:
     """Apply this document's neutral table style using its real style id."""
-    tbl = table._element
-    tbl_pr = tbl.tblPr
-
-    if tbl_pr is None:
-        tbl_pr = OxmlElement('w:tblPr')
-        tbl.insert(0, tbl_pr)
+    tbl_pr = get_or_add_tbl_pr(table)
 
     tbl_style = tbl_pr.find(qn('w:tblStyle'))
     if tbl_style is not None:
@@ -107,12 +101,7 @@ def set_neutral_table_style(table: Table, style_id: str) -> str:
 
 def set_zero_cell_margins(table: Table) -> None:
     """Set all table cell margins to zero."""
-    tbl = table._element
-    tbl_pr = tbl.tblPr
-
-    if tbl_pr is None:
-        tbl_pr = OxmlElement('w:tblPr')
-        tbl.insert(0, tbl_pr)
+    tbl_pr = get_or_add_tbl_pr(table)
 
     tbl_cell_mar = tbl_pr.find(qn('w:tblCellMar'))
     if tbl_cell_mar is None:
@@ -176,27 +165,16 @@ def clear_subfigure_table_format(doc: DocumentObject, caption_style: str = 'Imag
 
 
 def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
-    print_info("Validating inputs...")
-    docx_file = Path(docx_path)
-
-    if not docx_file.exists():
-        print_error(f"DOCX file not found: {docx_path}")
-        return None
-
-    docx_path_abs = docx_file.resolve()
-    print_info(f"Processing: {docx_path_abs}")
-
     try:
-        print_info("Opening document...")
-        doc = Document(str(docx_path_abs))
+        doc, docx_path_abs = open_docx(docx_path)
+        if doc is None or docx_path_abs is None:
+            return None
 
         processed_count = clear_subfigure_table_format(doc)
 
         if save:
             if processed_count > 0:
-                print_info("Saving document...")
-                doc.save(str(docx_path_abs))
-                print_success("Document saved")
+                save_docx(doc, docx_path_abs)
             else:
                 print_info("No changes made, skipping save")
 

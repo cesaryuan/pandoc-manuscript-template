@@ -21,7 +21,6 @@ Usage:
 import argparse
 import re
 import sys
-from pathlib import Path
 from typing import Optional
 
 try:
@@ -31,7 +30,6 @@ except ModuleNotFoundError:
     from autofit_tables import is_equation_layout_table
 
 try:
-    from docx import Document
     from docx.document import Document as DocumentObject
     from docx.table import Table, _Cell
     from docx.oxml import OxmlElement
@@ -39,6 +37,29 @@ try:
 except ImportError:
     print("Error: python-docx is not installed. Install it with: pip install python-docx")
     sys.exit(1)
+
+try:
+    from postprocess.common import (
+        get_or_add_child,
+        get_or_add_tbl_pr,
+        open_docx,
+        print_error,
+        print_info,
+        print_success,
+        print_warning,
+        save_docx,
+    )
+except ModuleNotFoundError:
+    from common import (
+        get_or_add_child,
+        get_or_add_tbl_pr,
+        open_docx,
+        print_error,
+        print_info,
+        print_success,
+        print_warning,
+        save_docx,
+    )
 
 
 BORDER_SIDES = ("top", "left", "bottom", "right", "insideH", "insideV")
@@ -53,44 +74,6 @@ MIN_FORMULA_COLUMN_WIDTH_TWIPS = 1440
 EQUATION_NUMBER_PATTERN = re.compile(r"\d+")
 
 
-class Colors:
-    """ANSI color codes for terminal output"""
-    GREEN = '\033[92m'
-    CYAN = '\033[96m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    RESET = '\033[0m'
-
-
-def print_success(message: str):
-    """Print success message in green"""
-    print(f"{Colors.GREEN}{message}{Colors.RESET}")
-
-
-def print_info(message: str):
-    """Print info message in cyan"""
-    print(f"{Colors.CYAN}{message}{Colors.RESET}")
-
-
-def print_warning(message: str):
-    """Print warning message in yellow"""
-    print(f"{Colors.YELLOW}{message}{Colors.RESET}")
-
-
-def print_error(message: str):
-    """Print error message in red"""
-    print(f"{Colors.RED}{message}{Colors.RESET}")
-
-
-def get_or_add_child(parent, tag: str):
-    """Return an existing child element or append a new one with the given tag."""
-    child = parent.find(qn(tag))
-    if child is None:
-        child = OxmlElement(tag)
-        parent.append(child)
-    return child
-
-
 def set_border_hidden(border_element) -> None:
     """Hide one Word table border element."""
     border_element.set(qn('w:val'), 'nil')
@@ -101,13 +84,7 @@ def set_border_hidden(border_element) -> None:
 
 def hide_table_borders(table: Table) -> None:
     """Hide all outer and inner borders for an equation layout table."""
-    tbl = table._element
-    tbl_pr = tbl.tblPr
-
-    if tbl_pr is None:
-        tbl_pr = OxmlElement('w:tblPr')
-        tbl.insert(0, tbl_pr)
-
+    tbl_pr = get_or_add_tbl_pr(table)
     tbl_borders = get_or_add_child(tbl_pr, 'w:tblBorders')
     for side in BORDER_SIDES:
         set_border_hidden(get_or_add_child(tbl_borders, f'w:{side}'))
@@ -166,13 +143,7 @@ def get_equation_number_column_width(cell: _Cell) -> int:
 
 def set_table_fixed_layout(table: Table) -> None:
     """Use fixed table layout so Word respects the explicit equation column widths."""
-    tbl = table._element
-    tbl_pr = tbl.tblPr
-
-    if tbl_pr is None:
-        tbl_pr = OxmlElement('w:tblPr')
-        tbl.insert(0, tbl_pr)
-
+    tbl_pr = get_or_add_tbl_pr(table)
     tbl_layout = get_or_add_child(tbl_pr, 'w:tblLayout')
     tbl_layout.set(qn('w:type'), 'fixed')
 
@@ -351,27 +322,16 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
     Returns:
         Document object if successful, None otherwise
     """
-    print_info("Validating inputs...")
-    docx_file = Path(docx_path)
-
-    if not docx_file.exists():
-        print_error(f"DOCX file not found: {docx_path}")
-        return None
-
-    docx_path_abs = docx_file.resolve()
-    print_info(f"Processing: {docx_path_abs}")
-
     try:
-        print_info("Opening document...")
-        doc = Document(str(docx_path_abs))
+        doc, docx_path_abs = open_docx(docx_path)
+        if doc is None or docx_path_abs is None:
+            return None
 
         processed_count = format_equation_layout_tables(doc)
 
         if save:
             if processed_count > 0:
-                print_info("Saving document...")
-                doc.save(str(docx_path_abs))
-                print_success("Document saved")
+                save_docx(doc, docx_path_abs)
             else:
                 print_info("No changes made, skipping save")
 

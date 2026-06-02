@@ -16,11 +16,14 @@ the paragraph in Word's inline-equation path while remaining visually harmless.
 
 import argparse
 import sys
-from pathlib import Path
 from typing import Iterable
 
 try:
-    from docx import Document
+    from postprocess.common import open_docx, print_error, print_success, save_docx
+except ModuleNotFoundError:
+    from common import open_docx, print_error, print_success, save_docx
+
+try:
     from docx.document import Document as DocumentObject
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
@@ -38,24 +41,6 @@ IGNORABLE_PARAGRAPH_CHILDREN = {
     qn("w:permStart"),
     qn("w:permEnd"),
 }
-
-
-class Colors:
-    """ANSI color codes for terminal output."""
-
-    GREEN = "\033[92m"
-    RED = "\033[91m"
-    RESET = "\033[0m"
-
-
-def print_success(message: str) -> None:
-    """Print a success message in green."""
-    print(f"{Colors.GREEN}{message}{Colors.RESET}")
-
-
-def print_error(message: str) -> None:
-    """Print an error message in red."""
-    print(f"{Colors.RED}{message}{Colors.RESET}")
 
 
 def iter_paragraph_elements(doc: DocumentObject) -> Iterable:
@@ -128,15 +113,12 @@ def add_space_after_standalone_inline_math(doc: DocumentObject) -> int:
 
 def process_file(docx_path: str, save: bool = True) -> int | None:
     """Process a DOCX file and optionally save the inline-math spacing fix."""
-    docx_file = Path(docx_path)
-    if not docx_file.exists():
-        print_error(f"DOCX file not found: {docx_path}")
+    doc, docx_path_abs = open_docx(docx_path)
+    if doc is None or docx_path_abs is None:
         return None
-
-    doc = Document(str(docx_file))
     updated = add_space_after_standalone_inline_math(doc)
     if save and updated:
-        doc.save(str(docx_file))
+        save_docx(doc, docx_path_abs)
 
     print_success(f"Added trailing spaces after {updated} standalone inline math paragraph(s)")
     return updated

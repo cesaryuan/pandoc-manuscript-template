@@ -35,7 +35,7 @@ except ImportError:
 
 BODY_TEXT_STYLE_NAMES = ("Body Text", "正文文本")
 PARA_AFTER_TABLE_STYLE_NAME = "Para After Table"
-PARA_AFTER_TABLE_SPACE_BEFORE_PT = 3.0
+PARA_AFTER_TABLE_SPACE_BEFORE_PT = 6.0
 
 
 class Colors:

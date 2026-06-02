@@ -31,6 +31,7 @@ try:
     from postprocess.process_table_metadata import process_table_metadata
     from postprocess.autofit_tables import autofit_tables
     from postprocess.table_text_style import process_all_tables as convert_table_text_style, ensure_table_text_style_exists
+    from postprocess.para_after_table_style import process_para_after_table_style
     from postprocess.insert_author_info import insert_author_info_to_doc
     from postprocess.clear_subfigure_table_format import clear_subfigure_table_format
     from postprocess.format_equation_layout_tables import format_equation_layout_tables
@@ -45,6 +46,7 @@ except ImportError as e:
     print("  - process_table_metadata.py")
     print("  - autofit_tables.py")
     print("  - table_text_style.py")
+    print("  - para_after_table_style.py")
     print("  - insert_author_info.py")
     print("  - clear_subfigure_table_format.py")
     print("  - format_equation_layout_tables.py")
@@ -234,12 +236,15 @@ def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str
             raise
 
         # ===================================================================
-        # Step 7: Auto-fit tables to window
+        # Step 7: Apply Para After Table style
         # ===================================================================
-        print_info("Step 7: Auto-fitting tables to window...")
+        print_info("Step 7: Applying post-table paragraph style...")
         try:
-            fitted_count = autofit_tables(doc, center_align=True)
-            print_success(f"Auto-fitted {fitted_count} table(s)")
+            para_after_table_count = process_para_after_table_style(doc)
+            if para_after_table_count is None:
+                print_warning("Could not ensure Para After Table style exists, skipping style conversion")
+            else:
+                print_success(f"Styled {para_after_table_count} paragraph(s) as 'Para After Table'")
             print_success("Step 7 completed")
             print_info("")
         except Exception as e:
@@ -247,12 +252,12 @@ def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str
             raise
 
         # ===================================================================
-        # Step 8: Format equation layout tables
+        # Step 7: Auto-fit tables to window
         # ===================================================================
-        print_info("Step 8: Formatting equation layout tables...")
+        print_info("Step 8: Auto-fitting tables to window...")
         try:
-            equation_table_count = format_equation_layout_tables(doc)
-            print_success(f"Formatted {equation_table_count} equation layout table(s)")
+            fitted_count = autofit_tables(doc, center_align=True)
+            print_success(f"Auto-fitted {fitted_count} table(s)")
             print_success("Step 8 completed")
             print_info("")
         except Exception as e:
@@ -260,15 +265,12 @@ def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str
             raise
 
         # ===================================================================
-        # Step 9: Apply Where Paragraph style after equation paragraphs
+        # Step 9: Format equation layout tables
         # ===================================================================
-        print_info("Step 9: Applying where paragraph style...")
+        print_info("Step 9: Formatting equation layout tables...")
         try:
-            where_count = process_where_paragraph_styles(doc)
-            if where_count is None:
-                print_warning("Could not ensure Where Paragraph style exists, skipping style conversion")
-            else:
-                print_success(f"Styled {where_count} paragraph(s) as 'Where Paragraph'")
+            equation_table_count = format_equation_layout_tables(doc)
+            print_success(f"Formatted {equation_table_count} equation layout table(s)")
             print_success("Step 9 completed")
             print_info("")
         except Exception as e:
@@ -276,16 +278,32 @@ def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str
             raise
 
         # ===================================================================
-        # Step 10: Keep standalone inline math from rendering as display math
+        # Step 10: Apply Where Paragraph style after equation paragraphs
         # ===================================================================
-        print_info("Step 10: Adding spaces after standalone inline math...")
+        print_info("Step 10: Applying where paragraph style...")
         try:
-            fixed_count = add_space_after_standalone_inline_math(doc)
-            print_success(f"Fixed {fixed_count} standalone inline math paragraph(s)")
+            where_count = process_where_paragraph_styles(doc)
+            if where_count is None:
+                print_warning("Could not ensure Where Paragraph style exists, skipping style conversion")
+            else:
+                print_success(f"Styled {where_count} paragraph(s) as 'Where Paragraph'")
             print_success("Step 10 completed")
             print_info("")
         except Exception as e:
             print_error(f"Step 10 failed: {e}")
+            raise
+
+        # ===================================================================
+        # Step 11: Keep standalone inline math from rendering as display math
+        # ===================================================================
+        print_info("Step 11: Adding spaces after standalone inline math...")
+        try:
+            fixed_count = add_space_after_standalone_inline_math(doc)
+            print_success(f"Fixed {fixed_count} standalone inline math paragraph(s)")
+            print_success("Step 11 completed")
+            print_info("")
+        except Exception as e:
+            print_error(f"Step 11 failed: {e}")
             raise
 
         # ===================================================================
@@ -323,10 +341,11 @@ Processing steps:
   4. Process table metadata from captions (|key=value|)
   5. Clear formatting for tables above 'Image Caption' paragraphs
   6. Convert table text style from 'Compact' to 'Table Text'
-  7. Auto-fit tables to window width and center align
-  8. Format equation layout tables
-  9. Apply 'Where Paragraph' style after equation paragraphs
-  10. Add trailing spaces after standalone inline math
+  7. Apply 'Para After Table' style to body paragraphs after tables
+  8. Auto-fit tables to window width and center align
+  9. Format equation layout tables
+  10. Apply 'Where Paragraph' style after equation paragraphs
+  11. Add trailing spaces after standalone inline math
 
 This script applies all post-processing steps in sequence.
         """

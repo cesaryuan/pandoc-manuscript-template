@@ -165,6 +165,21 @@ def sync_shape_size_to_wmf(shape: ET.Element, wmf_bytes: bytes) -> None:
     shape.set("style", style)
 
 
+def sync_object_extent_to_wmf(obj: ET.Element, wmf_bytes: bytes) -> None:
+    """Update Word's original OLE extent to match the WMF preview.
+
+    Word can re-read `w:dxaOrig`/`w:dyaOrig` after a MathType edit. Keeping the
+    template values here made edited equations reflow with stale dimensions.
+    """
+    size = wmf_size_points(wmf_bytes)
+    if size is None:
+        return
+
+    width, height = size
+    obj.set(qn("w", "dxaOrig"), str(max(1, round(width * 20))))
+    obj.set(qn("w", "dyaOrig"), str(max(1, round(height * 20))))
+
+
 def apply_run_position(run: ET.Element, position_half_points: int) -> None:
     """Set the Word run baseline offset used by MathType objects.
 
@@ -297,6 +312,7 @@ def make_object_run(
     shape_id = f"_x0000_i{3000 + index}"
     shape.set("id", shape_id)
     sync_shape_size_to_wmf(shape, template.image_bytes)
+    sync_object_extent_to_wmf(obj, template.image_bytes)
     image.set(qn("r", "id"), image_rid)
     ole.set(qn("r", "id"), ole_rid)
     ole.set("ShapeID", shape_id)

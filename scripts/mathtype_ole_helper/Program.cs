@@ -63,7 +63,10 @@ internal static class Program
         catch (Exception ex)
         {
             Console.Error.WriteLine("[ole-helper] " + ex.Message);
-            Console.Error.WriteLine(ex);
+            if (VerboseLoggingEnabled())
+            {
+                Console.Error.WriteLine(ex);
+            }
             return 1;
         }
     }
@@ -200,8 +203,7 @@ internal static class Program
             Marshal.ReleaseComObject(storage);
         }
 
-        Console.WriteLine($"[ole-helper] wrote {options.OutputPath}");
-        Console.WriteLine($"[ole-helper] format={options.Format}, bytes={new FileInfo(options.OutputPath).Length}");
+        Log($"wrote {options.OutputPath}, bytes={new FileInfo(options.OutputPath).Length}");
     }
 
     private static void ApplyMathTypePrefs(string prefsFilePath)
@@ -271,7 +273,7 @@ internal static class Program
             }
         }
 
-        Console.WriteLine($"[ole-helper] SetData({options.Format}) length={payload.Bytes.Length}");
+        Log($"SetData({options.Format}) length={payload.Bytes.Length}");
     }
 
     private static Payload BuildPayload(Options options)
@@ -338,7 +340,7 @@ internal static class Program
 
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
             File.WriteAllBytes(outputPath, bytes);
-            Console.WriteLine($"[ole-helper] wrote preview {outputPath}, bytes={bytes.Length}");
+            Log($"wrote preview {outputPath}, bytes={bytes.Length}");
             return new PreviewMetadata(
                 mapMode,
                 xExt,
@@ -360,7 +362,7 @@ internal static class Program
         // placement without depending on MathType COM at DOCX injection time.
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
         File.WriteAllText(outputPath, preview.ToJson(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-        Console.WriteLine($"[ole-helper] wrote metadata {outputPath}");
+        Log($"wrote metadata {outputPath}");
     }
 
     private static MathTypeLastDimensions? TryReadMathTypeLastDimensions()
@@ -602,7 +604,7 @@ internal static class Program
         var right = ClampPositiveInt16(xExt);
         var bottom = ClampPositiveInt16(yExt);
         var unitsPerInch = UnitsPerInchForMapMode(mapMode);
-        Console.Error.WriteLine($"[ole-helper] METAFILEPICT mapMode={mapMode}, xExt={xExt}, yExt={yExt}, unitsPerInch={unitsPerInch}");
+        Log($"METAFILEPICT mapMode={mapMode}, xExt={xExt}, yExt={yExt}, unitsPerInch={unitsPerInch}");
         var header = new byte[22];
         using var stream = new MemoryStream(header);
         using var writer = new BinaryWriter(stream);
@@ -692,14 +694,27 @@ internal static class Program
         }
         if (hr != S_OK)
         {
-            Console.WriteLine($"[ole-helper] {call} returned 0x{hr:X8}");
+            Log($"{call} returned 0x{hr:X8}");
         }
     }
 
     private static void Log(string message)
     {
+        // Keep normal conversion output quiet; enable this only when debugging
+        // noisy OLE/COM transitions on a local MathType installation.
+        if (!VerboseLoggingEnabled())
+        {
+            return;
+        }
         Console.Error.WriteLine("[ole-helper] " + message);
         Console.Error.Flush();
+    }
+
+    private static bool VerboseLoggingEnabled()
+    {
+        // Any non-empty, non-zero value restores the old diagnostic stream.
+        var value = Environment.GetEnvironmentVariable("MATHTYPE_OLE_HELPER_VERBOSE");
+        return !string.IsNullOrWhiteSpace(value) && value != "0";
     }
 
     private static void MtCheck(int status, string call)

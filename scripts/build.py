@@ -31,6 +31,7 @@ Configuration:
 """
 
 import argparse
+import errno
 import shutil
 import subprocess
 import sys
@@ -198,6 +199,31 @@ def style_metadata_files() -> list[str]:
     return [CONFIG['style_file']]
 
 
+def ensure_docx_target_writable(target: Path) -> None:
+    """Fail early when an existing DOCX target is open or cannot be overwritten.
+
+    Word commonly locks an opened DOCX on Windows. Pandoc would otherwise fail
+    later with a less direct error, so probe write access before starting work.
+    """
+    if not target.exists():
+        return
+    if target.is_dir():
+        raise RuntimeError(f"Target DOCX path is a directory and cannot be overwritten: {target}")
+
+    try:
+        with target.open('r+b'):
+            pass
+    except OSError as exc:
+        lock_like_errors = {errno.EACCES, errno.EPERM}
+        lock_like_winerrors = {5, 32, 33}
+        if exc.errno in lock_like_errors or getattr(exc, 'winerror', None) in lock_like_winerrors:
+            raise RuntimeError(
+                "目标 DOCX 可能已经在 Word 中打开，或正被其他程序占用，当前无法写入。\n"
+                f"请关闭后重试: {target}"
+            ) from exc
+        raise
+
+
 def load_build_metadata() -> dict[str, Any]:
     """Load style defaults plus manuscript metadata for build-time feature flags."""
     return load_merged_metadata(CONFIG['manuscript_file'], style_metadata_files())
@@ -309,6 +335,7 @@ def build_docx():
     docx_dir.mkdir(parents=True, exist_ok=True)
 
     docx_file = docx_dir / f"{CONFIG['project_name']}.docx"
+    ensure_docx_target_writable(docx_file)
     extra_args = []
     metadata = load_build_metadata()
     use_mathtype = resolve_mathtype_build_enabled(should_use_mathtype(metadata))

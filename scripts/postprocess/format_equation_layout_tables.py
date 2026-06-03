@@ -32,6 +32,7 @@ from postprocess.autofit_tables import is_equation_layout_table, is_mathtype_mar
 
 try:
     from docx.document import Document as DocumentObject
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.table import Table, _Cell
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
@@ -80,6 +81,40 @@ def hide_table_borders(table: Table) -> None:
         set_border_hidden(get_or_add_child(tbl_borders, f'w:{side}'))
 
 
+def clear_table_style(table: Table) -> None:
+    """Remove the table style before applying equation-layout formatting.
+
+    Equation layout tables are structural helpers, so inherited table styles can
+    reintroduce borders, padding, or width rules that fight the direct XML
+    formatting below.
+    """
+    tbl_pr = get_or_add_tbl_pr(table)
+
+    tbl_style = tbl_pr.find(qn('w:tblStyle'))
+    if tbl_style is not None:
+        tbl_pr.remove(tbl_style)
+
+    tbl_look = tbl_pr.find(qn('w:tblLook'))
+    if tbl_look is not None:
+        tbl_pr.remove(tbl_look)
+
+
+def set_table_zero_cell_margins(table: Table) -> None:
+    """Set the table's default cell margins to zero on all sides."""
+    tbl_pr = get_or_add_tbl_pr(table)
+    tbl_cell_mar = get_or_add_child(tbl_pr, 'w:tblCellMar')
+
+    for side in ('top', 'left', 'bottom', 'right'):
+        margin = tbl_cell_mar.find(qn(f'w:{side}'))
+        if margin is not None:
+            tbl_cell_mar.remove(margin)
+
+        margin = OxmlElement(f'w:{side}')
+        margin.set(qn('w:w'), '0')
+        margin.set(qn('w:type'), 'dxa')
+        tbl_cell_mar.append(margin)
+
+
 def hide_cell_borders(cell: _Cell) -> None:
     """Hide direct cell borders that can otherwise override table borders."""
     tc_pr = cell._tc.get_or_add_tcPr()
@@ -103,6 +138,20 @@ def set_cell_right_margin(cell: _Cell, twips: int = 0) -> None:
     right_margin = get_or_add_child(tc_mar, 'w:right')
     right_margin.set(qn('w:w'), str(twips))
     right_margin.set(qn('w:type'), 'dxa')
+
+
+def set_cell_vertical_alignment_center(cell: _Cell) -> None:
+    """Center the cell content vertically inside the equation-number column."""
+    tc_pr = cell._tc.get_or_add_tcPr()
+    v_align = get_or_add_child(tc_pr, 'w:vAlign')
+    v_align.set(qn('w:val'), 'center')
+
+
+def align_equation_number_cell(cell: _Cell) -> None:
+    """Make the number cell vertically centered and horizontally right-aligned."""
+    set_cell_vertical_alignment_center(cell)
+    for paragraph in cell.paragraphs:
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
 
 def cell_visible_text(cell: _Cell) -> str:
@@ -318,11 +367,14 @@ def format_equation_layout_table(table: Table) -> None:
     number_cell = get_equation_number_cell(table)
     edge_width = get_equation_number_column_width(number_cell)
 
+    clear_table_style(table)
+    set_table_zero_cell_margins(table)
     hide_table_borders(table)
     hide_all_cell_borders(table)
     set_cell_right_margin(number_cell, 0)
     set_equation_layout_column_widths(table, edge_width)
     normalize_equation_layout_paragraphs(table)
+    align_equation_number_cell(number_cell)
 
 
 def format_equation_layout_tables(doc: DocumentObject) -> int:

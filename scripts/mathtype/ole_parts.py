@@ -16,6 +16,8 @@ HELPER_EXE = Path("scripts/mathtype_ole_helper/bin/Debug/net48/MathTypeOleHelper
 MATHTYPE_PROG_ID = "Equation.DSMT4"
 MATHTYPE_DEFAULT_MT6_DLL = Path(r"C:\Program Files (x86)\MathType\System\64\MT6.dll")
 MATHTYPE_DEFAULT_PREFS_TEMPLATE = Path(r"C:\Program Files (x86)\MathType\Preferences\Times+Symbol 12.eqp")
+BEGIN_ALIGNED_RE = re.compile(r"\\begin\s*\{\s*aligned\s*\}")
+END_ALIGNED_RE = re.compile(r"\\end\s*\{\s*aligned\s*\}")
 
 
 @dataclass(frozen=True)
@@ -209,6 +211,14 @@ def build_helper() -> None:
     run(["dotnet", "build", str(HELPER_PROJECT), "-v:quiet"])
 
 
+def normalize_mathtype_latex(latex: str) -> str:
+    """Rewrite LaTeX constructs that MathType's TeX input does not support."""
+    # MathType rejects the AMS `aligned` environment, but accepts the closely
+    # related `align` environment for the same multi-line equation content.
+    text = BEGIN_ALIGNED_RE.sub(r"\\begin{align}", latex)
+    return END_ALIGNED_RE.sub(r"\\end{align}", text)
+
+
 def mathtype_tex_payload(latex: str) -> str:
     """Return TeX text in the math-delimited form accepted by MathType OLE.
 
@@ -216,7 +226,7 @@ def mathtype_tex_payload(latex: str) -> str:
     SetData path rejects bare fragments such as ``f(x)`` or ``w_i`` with
     DV_E_FORMATETC, but accepts the same TeX wrapped as ``$...$``.
     """
-    text = latex.strip()
+    text = normalize_mathtype_latex(latex.strip())
     if text.startswith("$$") and text.endswith("$$"):
         return text
     if text.startswith("$") and text.endswith("$"):

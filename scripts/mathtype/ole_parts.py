@@ -1,6 +1,7 @@
 """Generate MathType OLE bins, WMF previews, and placement metadata."""
 
 import json
+import os
 import platform
 import re
 import shutil
@@ -14,7 +15,11 @@ from .compound_file import CompoundFile
 HELPER_PROJECT = Path("scripts/mathtype_ole_helper/MathTypeOleHelper.csproj")
 HELPER_EXE = Path("scripts/mathtype_ole_helper/bin/Release/net48/MathTypeOleHelper.exe")
 MATHTYPE_PROG_ID = "Equation.DSMT4"
-MATHTYPE_DEFAULT_MT6_DLL = Path(r"C:\Program Files (x86)\MathType\System\64\MT6.dll")
+MATHTYPE_MT6_RELATIVE_PATHS = (
+    Path("System/64/MT6.dll"),
+    Path("System/32/MT6.dll"),
+    Path("MT6.dll"),
+)
 MATHTYPE_DEFAULT_PREFS_TEMPLATE = Path(r"C:\Program Files (x86)\MathType\Preferences\Times+Symbol 12.eqp")
 BEGIN_ALIGNED_RE = re.compile(r"\\begin\s*\{\s*aligned\s*\}")
 END_ALIGNED_RE = re.compile(r"\\end\s*\{\s*aligned\s*\}")
@@ -116,6 +121,42 @@ def _registry_executable_path(command: str) -> Path | None:
     return None
 
 
+def _mathtype_install_roots(server_path: Path | None = None) -> list[Path]:
+    """Return likely MathType install roots, preferring the registered OLE server."""
+    roots: list[Path] = []
+    if server_path is not None:
+        server_dir = server_path.parent
+        roots.append(server_dir)
+        if server_dir.name.lower() == "system":
+            roots.append(server_dir.parent)
+        if server_dir.name.lower() in {"64", "32"} and server_dir.parent.name.lower() == "system":
+            roots.append(server_dir.parent.parent)
+
+    for env_name in ("ProgramFiles(x86)", "ProgramFiles", "ProgramW6432"):
+        folder = os.environ.get(env_name)
+        if folder:
+            roots.append(Path(folder) / "MathType")
+
+    unique_roots: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        key = str(root).lower()
+        if key not in seen:
+            unique_roots.append(root)
+            seen.add(key)
+    return unique_roots
+
+
+def find_mathtype_mt6_dll(server_path: Path | None = None) -> Path | None:
+    """Find MT6.dll from MathType's registered server path or common install roots."""
+    for root in _mathtype_install_roots(server_path):
+        for relative_path in MATHTYPE_MT6_RELATIVE_PATHS:
+            candidate = root / relative_path
+            if candidate.exists():
+                return candidate
+    return None
+
+
 def check_mathtype_availability() -> MathTypeAvailability:
     """Check OS, MathType OLE registration, server path, and helper tooling.
 
@@ -136,6 +177,7 @@ def check_mathtype_availability() -> MathTypeAvailability:
 
     details.append("Windows detected.")
 
+    server_path_for_dll: Path | None = None
     clsid = _read_hkcr_default(fr"{MATHTYPE_PROG_ID}\CLSID")
     if not clsid:
         reasons.append(
@@ -162,6 +204,7 @@ def check_mathtype_availability() -> MathTypeAvailability:
                     "Repair or reinstall MathType."
                 )
             else:
+                server_path_for_dll = server_path
                 details.append(f"MathType OLE server found: {server_path}.")
 
     dotnet_path = shutil.which("dotnet")
@@ -186,13 +229,14 @@ def check_mathtype_availability() -> MathTypeAvailability:
         else:
             details.append(f"MathType OLE helper project found: {HELPER_PROJECT}.")
 
-    if MATHTYPE_DEFAULT_MT6_DLL.exists():
-        details.append(f"MathType metadata DLL found: {MATHTYPE_DEFAULT_MT6_DLL}.")
+    mt6_dll = find_mathtype_mt6_dll(server_path_for_dll)
+    if mt6_dll is not None:
+        details.append(f"MathType metadata DLL found: {mt6_dll}.")
     else:
-        # The helper catches this path as optional baseline metadata. Keep it as
-        # detail instead of a blocker so non-default installs can still convert.
+        # The helper treats MT6.dll as optional baseline metadata. Keep it as
+        # detail instead of a blocker so OLE conversion can still use WMF metrics.
         details.append(
-            f"Optional MathType metadata DLL not found at {MATHTYPE_DEFAULT_MT6_DLL}; "
+            "Optional MathType metadata DLL was not found from the OLE server path or common install folders; "
             "baseline placement will use the WMF fallback if conversion succeeds."
         )
 

@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text;
@@ -35,8 +37,11 @@ internal static class Program
     private const int MTDIM_HORIZ_POS = 5;
     private const double MATH_TYPE_DIMENSION_UNITS_PER_POINT = 32.0;
     private const short MT_OK = 0;
+    private const string MathTypeProgId = "Equation.DSMT4";
 
     private static readonly Guid IidIOleObject = new Guid("00000112-0000-0000-C000-000000000046");
+    private static bool mathTypeApiDllResolved;
+    private static string? mathTypeApiDllPath;
 
     [STAThread]
     public static int Main(string[] args)
@@ -67,7 +72,7 @@ internal static class Program
     {
         Log("resolve CLSID");
         var clsid = Guid.Empty;
-        OleCheck(CLSIDFromProgID("Equation.DSMT4", out clsid), "CLSIDFromProgID(Equation.DSMT4)");
+        OleCheck(CLSIDFromProgID(MathTypeProgId, out clsid), $"CLSIDFromProgID({MathTypeProgId})");
 
         if (options.PrefsFilePath is not null)
         {
@@ -201,6 +206,10 @@ internal static class Program
 
     private static void ApplyMathTypePrefs(string prefsFilePath)
     {
+        // Applying per-equation size prefs requires MT6.dll. Resolve it lazily
+        // so non-default MathType installs do not depend on one hard-coded path.
+        TryConfigureMathTypeApiDll(required: true);
+
         var fullPrefsPath = Path.GetFullPath(prefsFilePath);
         if (!File.Exists(fullPrefsPath))
         {
@@ -361,6 +370,10 @@ internal static class Program
             // MTGetLastDimension reports 1/32-point units for the most recent
             // MathType-rendered equation. If MathType has no fresh value, keep
             // this optional so the DOCX layer can fall back to preview metrics.
+            if (!TryConfigureMathTypeApiDll(required: false))
+            {
+                return null;
+            }
             MtCheck(MTAPIConnect(MTINIT_LAUNCH_NOW, 30), "MTAPIConnect(dimensions)");
             try
             {
@@ -381,6 +394,159 @@ internal static class Program
             Log($"dimension read failed: {ex.Message}");
             return null;
         }
+    }
+
+    private static bool TryConfigureMathTypeApiDll(bool required)
+    {
+        // MT6.dll is an auxiliary MathType API DLL, not the OLE server itself.
+        // Detect it from the registered OLE server first to support custom installs.
+        if (mathTypeApiDllResolved)
+        {
+            if (mathTypeApiDllPath is not null)
+            {
+                return true;
+            }
+
+            if (required)
+            {
+                throw new FileNotFoundException("Could not find MathType MT6.dll from the registered OLE server or common install folders.");
+            }
+            return false;
+        }
+
+        mathTypeApiDllResolved = true;
+        mathTypeApiDllPath = ResolveMathTypeApiDllPath();
+        if (mathTypeApiDllPath is null)
+        {
+            Log("MT6.dll not found; MathType dimension metadata will use preview metrics only");
+            if (required)
+            {
+                throw new FileNotFoundException("Could not find MathType MT6.dll from the registered OLE server or common install folders.");
+            }
+            return false;
+        }
+
+        var directory = Path.GetDirectoryName(mathTypeApiDllPath)!;
+        if (!SetDllDirectory(directory))
+        {
+            throw new InvalidOperationException(
+                $"SetDllDirectory failed for {directory}: 0x{Marshal.GetLastWin32Error():X8}");
+        }
+        Log($"MT6.dll resolved: {mathTypeApiDllPath}");
+        return true;
+    }
+
+    private static string? ResolveMathTypeApiDllPath()
+    {
+        // Return the first MT6.dll path found from MathType registry and common roots.
+        foreach (var root in CandidateMathTypeRoots().Where(root => !string.IsNullOrWhiteSpace(root)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            foreach (var relativePath in new[] { Path.Combine("System", "64", "MT6.dll"), Path.Combine("System", "32", "MT6.dll"), "MT6.dll" })
+            {
+                var candidate = Path.Combine(root, relativePath);
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static IEnumerable<string> CandidateMathTypeRoots()
+    {
+        // Yield likely MathType install roots, with registry-derived paths first.
+        var oleServerPath = ResolveMathTypeOleServerPath();
+        if (oleServerPath is not null)
+        {
+            var serverDirectory = Path.GetDirectoryName(oleServerPath);
+            if (!string.IsNullOrEmpty(serverDirectory))
+            {
+                yield return serverDirectory;
+                var directoryName = Path.GetFileName(serverDirectory);
+                var parent = Directory.GetParent(serverDirectory);
+                if (parent is not null && string.Equals(directoryName, "System", StringComparison.OrdinalIgnoreCase))
+                {
+                    yield return parent.FullName;
+                }
+                if (parent is not null && (string.Equals(directoryName, "64", StringComparison.OrdinalIgnoreCase) || string.Equals(directoryName, "32", StringComparison.OrdinalIgnoreCase)))
+                {
+                    var grandparent = parent.Parent;
+                    if (grandparent is not null && string.Equals(parent.Name, "System", StringComparison.OrdinalIgnoreCase))
+                    {
+                        yield return grandparent.FullName;
+                    }
+                }
+            }
+        }
+
+        foreach (var folder in new[]
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            Environment.GetEnvironmentVariable("ProgramW6432"),
+        })
+        {
+            if (!string.IsNullOrWhiteSpace(folder))
+            {
+                yield return Path.Combine(folder, "MathType");
+            }
+        }
+    }
+
+    private static string? ResolveMathTypeOleServerPath()
+    {
+        // Return the registered MathType OLE server executable path when available.
+        var clsid = ReadClassesRootDefault($@"{MathTypeProgId}\CLSID");
+        if (string.IsNullOrWhiteSpace(clsid))
+        {
+            return null;
+        }
+
+        var command = ReadClassesRootDefault($@"CLSID\{clsid}\LocalServer32")
+            ?? ReadClassesRootDefault($@"CLSID\{clsid}\LocalServer");
+        return command is null ? null : ParseRegistryExecutablePath(command);
+    }
+
+    private static string? ReadClassesRootDefault(string subkey)
+    {
+        // Read a default HKCR value, trying both registry views for custom installs.
+        foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+        {
+            try
+            {
+                using var root = RegistryKey.OpenBaseKey(RegistryHive.ClassesRoot, view);
+                using var key = root.OpenSubKey(subkey);
+                if (key?.GetValue(null) is string value && !string.IsNullOrWhiteSpace(value))
+                {
+                    return value.Trim();
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+        return null;
+    }
+
+    private static string? ParseRegistryExecutablePath(string command)
+    {
+        // Extract the executable path from a quoted or unquoted registry command.
+        var text = command.Trim();
+        if (text.StartsWith("\"", StringComparison.Ordinal))
+        {
+            var endQuote = text.IndexOf('"', 1);
+            if (endQuote > 1)
+            {
+                return text.Substring(1, endQuote - 1);
+            }
+        }
+
+        var exeIndex = text.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+        return exeIndex < 0 ? null : text.Substring(0, exeIndex + 4).Trim();
     }
 
     private static byte[] ReadMetaFileBits(IntPtr hMetaFile)
@@ -598,26 +764,29 @@ internal static class Program
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern ushort RegisterClipboardFormat(string lpszFormat);
 
-    [DllImport(@"C:\Program Files (x86)\MathType\System\64\MT6.dll", CharSet = CharSet.Ansi)]
+    [DllImport("MT6.dll", CharSet = CharSet.Ansi)]
     private static extern int MTAPIConnect(short options, short timeout);
 
-    [DllImport(@"C:\Program Files (x86)\MathType\System\64\MT6.dll", CharSet = CharSet.Ansi)]
+    [DllImport("MT6.dll", CharSet = CharSet.Ansi)]
     private static extern int MTAPIDisconnect();
 
-    [DllImport(@"C:\Program Files (x86)\MathType\System\64\MT6.dll", CharSet = CharSet.Ansi)]
+    [DllImport("MT6.dll", CharSet = CharSet.Ansi)]
     private static extern int MTGetPrefsFromFile(
         [MarshalAs(UnmanagedType.LPStr)] string prefFile,
         [MarshalAs(UnmanagedType.LPStr)] StringBuilder? prefs,
         short prefsLen);
 
-    [DllImport(@"C:\Program Files (x86)\MathType\System\64\MT6.dll", CharSet = CharSet.Ansi)]
+    [DllImport("MT6.dll", CharSet = CharSet.Ansi)]
     private static extern int MTSetMTPrefs(
         short mode,
         [MarshalAs(UnmanagedType.LPStr)] string prefs,
         short timeout);
 
-    [DllImport(@"C:\Program Files (x86)\MathType\System\64\MT6.dll", CharSet = CharSet.Ansi)]
+    [DllImport("MT6.dll", CharSet = CharSet.Ansi)]
     private static extern int MTGetLastDimension(int dimIndex);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool SetDllDirectory(string lpPathName);
 
     [DllImport("kernel32.dll")]
     private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);

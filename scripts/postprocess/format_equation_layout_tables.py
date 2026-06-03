@@ -28,13 +28,15 @@ if __package__ in (None, ""):
     # Allow direct execution via `uv run scripts/postprocess/<script>.py`.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from postprocess.autofit_tables import is_equation_layout_table
+from postprocess.autofit_tables import is_equation_layout_table, is_mathtype_marker_text
 
 try:
     from docx.document import Document as DocumentObject
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.table import Table, _Cell
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
+    from docx.shared import Pt
 except ImportError:
     print("Error: python-docx is not installed. Install it with: pip install python-docx")
     sys.exit(1)
@@ -79,6 +81,40 @@ def hide_table_borders(table: Table) -> None:
         set_border_hidden(get_or_add_child(tbl_borders, f'w:{side}'))
 
 
+def clear_table_style(table: Table) -> None:
+    """Remove the table style before applying equation-layout formatting.
+
+    Equation layout tables are structural helpers, so inherited table styles can
+    reintroduce borders, padding, or width rules that fight the direct XML
+    formatting below.
+    """
+    tbl_pr = get_or_add_tbl_pr(table)
+
+    tbl_style = tbl_pr.find(qn('w:tblStyle'))
+    if tbl_style is not None:
+        tbl_pr.remove(tbl_style)
+
+    tbl_look = tbl_pr.find(qn('w:tblLook'))
+    if tbl_look is not None:
+        tbl_pr.remove(tbl_look)
+
+
+def set_table_zero_cell_margins(table: Table) -> None:
+    """Set the table's default cell margins to zero on all sides."""
+    tbl_pr = get_or_add_tbl_pr(table)
+    tbl_cell_mar = get_or_add_child(tbl_pr, 'w:tblCellMar')
+
+    for side in ('top', 'left', 'bottom', 'right'):
+        margin = tbl_cell_mar.find(qn(f'w:{side}'))
+        if margin is not None:
+            tbl_cell_mar.remove(margin)
+
+        margin = OxmlElement(f'w:{side}')
+        margin.set(qn('w:w'), '0')
+        margin.set(qn('w:type'), 'dxa')
+        tbl_cell_mar.append(margin)
+
+
 def hide_cell_borders(cell: _Cell) -> None:
     """Hide direct cell borders that can otherwise override table borders."""
     tc_pr = cell._tc.get_or_add_tcPr()
@@ -104,12 +140,28 @@ def set_cell_right_margin(cell: _Cell, twips: int = 0) -> None:
     right_margin.set(qn('w:type'), 'dxa')
 
 
+def set_cell_vertical_alignment_center(cell: _Cell) -> None:
+    """Center the cell content vertically inside the equation-number column."""
+    tc_pr = cell._tc.get_or_add_tcPr()
+    v_align = get_or_add_child(tc_pr, 'w:vAlign')
+    v_align.set(qn('w:val'), 'center')
+
+
+def align_equation_number_cell(cell: _Cell) -> None:
+    """Make the number cell vertically centered and horizontally right-aligned."""
+    set_cell_vertical_alignment_center(cell)
+    for paragraph in cell.paragraphs:
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+
 def cell_visible_text(cell: _Cell) -> str:
     """Return visible text from a cell so the equation-number rule can inspect it."""
     text_parts = []
     for tag in ('w:t', 'm:t'):
         for text_element in cell._tc.findall(f".//{qn(tag)}"):
             if text_element.text:
+                if tag == 'w:t' and is_mathtype_marker_text(text_element.text):
+                    continue
                 text_parts.append(text_element.text)
     return "".join(text_parts).strip()
 
@@ -193,6 +245,61 @@ def set_cell_width(cell: _Cell, width: int) -> None:
     tc_w.set(qn('w:type'), 'dxa')
 
 
+def set_paragraph_special_indent_none(paragraph) -> None:
+    """Remove all paragraph-level first-line/hanging indent attributes.
+
+    This mirrors Word's "Special indent: None". It must be paired with a
+    paragraph style that does not itself reintroduce first-line indentation.
+    """
+    p_pr = paragraph._p.get_or_add_pPr()
+    ind = p_pr.find(qn('w:ind'))
+    if ind is None:
+        return
+
+    for attr_name in ('w:firstLine', 'w:firstLineChars', 'w:hanging', 'w:hangingChars'):
+        attr = qn(attr_name)
+        if attr in ind.attrib:
+            del ind.attrib[attr]
+
+    # Drop the whole `<w:ind>` element when it only existed to carry the
+    # special-indent attributes we just cleared.
+    if not ind.attrib:
+        p_pr.remove(ind)
+
+
+def clear_paragraph_style(paragraph) -> None:
+    """Remove a paragraph's explicit style so it stops inheriting Compact/a0.
+
+    For equation layout tables we only need direct alignment/spacing, not the
+    body-text style chain. Clearing `w:pStyle` is more reliable here than
+    asking python-docx to switch styles by name.
+    """
+    p_pr = paragraph._p.get_or_add_pPr()
+    p_style = p_pr.find(qn('w:pStyle'))
+    if p_style is not None:
+        p_pr.remove(p_style)
+
+
+def normalize_equation_layout_paragraphs(table: Table) -> None:
+    """Force equation/number paragraphs to use compact display-equation spacing.
+
+    Pandoc's layout table is structural only, so the paragraphs inside it should
+    not inherit body-text indentation or extra spacing that would shift the
+    centered formula or the right-aligned equation number.
+    """
+    for row in table.rows:
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                clear_paragraph_style(paragraph)
+                paragraph_format = paragraph.paragraph_format
+                paragraph_format.space_before = Pt(2) # 非 0 防止 Word 自带公式显示不完整
+                paragraph_format.space_after = Pt(2)
+                paragraph_format.line_spacing = 1.0
+                # After detaching from Compact/a0, remove any remaining direct
+                # special-indent override so Word shows "Special: None".
+                set_paragraph_special_indent_none(paragraph)
+
+
 def distribute_middle_widths(current_widths: list[int], remaining_width: int) -> list[int]:
     """Distribute remaining width across formula columns while preserving proportions."""
     middle_count = max(len(current_widths) - 2, 1)
@@ -260,10 +367,14 @@ def format_equation_layout_table(table: Table) -> None:
     number_cell = get_equation_number_cell(table)
     edge_width = get_equation_number_column_width(number_cell)
 
+    clear_table_style(table)
+    set_table_zero_cell_margins(table)
     hide_table_borders(table)
     hide_all_cell_borders(table)
     set_cell_right_margin(number_cell, 0)
     set_equation_layout_column_widths(table, edge_width)
+    normalize_equation_layout_paragraphs(table)
+    align_equation_number_cell(number_cell)
 
 
 def format_equation_layout_tables(doc: DocumentObject) -> int:
@@ -284,7 +395,6 @@ def format_equation_layout_tables(doc: DocumentObject) -> int:
         return processed_count
 
     print_info(f"Formatting equation layout tables among {table_count} table(s)...")
-
     for i, table in enumerate(doc.tables, start=1):
         try:
             if not is_equation_layout_table(table):

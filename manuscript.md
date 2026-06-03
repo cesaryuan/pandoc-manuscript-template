@@ -111,7 +111,7 @@ The experimental procedure consists of four main stages. First, we perform data 
 
 ## Pseudocode Example
 
-The main workflow can also be summarized as pseudocode when an explicit step-by-step procedure is useful. In this template, pseudocode is represented as a one-column table and can be cited as a normal table, as shown in @tbl:algorithm.
+The main workflow can also be summarized as pseudocode when an explicit step-by-step procedure is useful. In this template, pseudocode is represented as a one-column table and can be cited as a normal table, as shown in Algorithm 1.
 
 | **Algorithm: Dataset preparation and model evaluation workflow** |
 |---|
@@ -126,8 +126,6 @@ The main workflow can also be summarized as pseudocode when an explicit step-by-
 | 7.\ \ Select the best model $\hat{m}$ according to validation performance |
 | 8.\ \ Compute $\hat{s}$ for $\hat{m}$ on the test subset |
 | 9.\ \ **return** $\hat{m}$ and $\hat{s}$ |
-
-: Dataset preparation and model evaluation workflow. {#tbl:algorithm}
 
 # Results {#sec:results}
 

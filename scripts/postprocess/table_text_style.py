@@ -32,6 +32,7 @@ from postprocess.common import (
     print_warning,
     save_docx,
 )
+from postprocess.autofit_tables import is_equation_layout_table
 
 try:
     from docx.document import Document as DocumentObject
@@ -152,6 +153,7 @@ def process_all_tables(doc: DocumentObject) -> dict:
     table_count = len(doc.tables)
     stats = {
         'tables_processed': 0,
+        'tables_skipped_equation_layout': 0,
         'converted': 0,
         'skipped': 0
     }
@@ -164,11 +166,20 @@ def process_all_tables(doc: DocumentObject) -> dict:
 
     for i, table in enumerate(doc.tables, start=1):
         try:
+            # Keep equation layout tables untouched. Their Compact paragraphs are
+            # structural placeholders for centered equation/label alignment, not
+            # regular table body text.
+            if is_equation_layout_table(table):
+                stats['tables_skipped_equation_layout'] += 1
+                print_info(f"Skipping equation layout table {i}")
+                continue
             convert_table_text_style(table, stats)
             stats['tables_processed'] += 1
         except Exception as e:
             print_warning(f"Failed to process table {i}: {e}")
 
+    if stats['tables_skipped_equation_layout']:
+        print_info(f"Skipped {stats['tables_skipped_equation_layout']} equation layout table(s)")
     print_success(f"Processed {stats['tables_processed']} of {table_count} table(s)")
     print_info(f"  - Converted: {stats['converted']} paragraph(s) from 'Compact' to 'Table Text'")
     print_info(f"  - Skipped: {stats['skipped']} paragraph(s) (not 'Compact' style)")

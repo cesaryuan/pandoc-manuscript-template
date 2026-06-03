@@ -36,9 +36,11 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Tuple
+from typing import Any, Tuple
 
 import yaml
+from metadata import load_merged_metadata
+from mathtype.ole_parts import check_mathtype_availability
 
 # ============================================================================
 # CONFIGURATION - Customize these variables for your project
@@ -52,6 +54,8 @@ CONFIG = {
     'docx_dir': 'output/docx',
     'latex_dir': 'output/latex',
     'enable_docx_postprocess': True,
+    'mathtype_marker_filter': 'pandoc/filters/mathtype_markers.lua',
+    'mathtype_work_dir': 'tmp/mathtype-build',
 }
 
 # ============================================================================
@@ -187,6 +191,95 @@ def style_metadata_cli_args() -> list[str]:
     return ['--metadata-file', CONFIG['style_file']]
 
 
+def style_metadata_files() -> list[str]:
+    """Return existing style metadata files in the same order Pandoc receives them."""
+    if not should_use_style_metadata_file():
+        return []
+    return [CONFIG['style_file']]
+
+
+def load_build_metadata() -> dict[str, Any]:
+    """Load style defaults plus manuscript metadata for build-time feature flags."""
+    return load_merged_metadata(CONFIG['manuscript_file'], style_metadata_files())
+
+
+def metadata_bool(value: Any) -> bool:
+    """Normalize YAML feature flags such as mathtype: true or mathtype: yes."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return False
+
+
+def should_use_mathtype(metadata: dict[str, Any]) -> bool:
+    """Return True when merged metadata requests MathType DOCX equations."""
+    return metadata_bool(metadata.get('mathtype'))
+
+
+def mathtype_marked_docx_path() -> Path:
+    """Return the intermediate DOCX path that carries hidden LaTeX markers."""
+    work_dir = Path(CONFIG['mathtype_work_dir'])
+    work_dir.mkdir(parents=True, exist_ok=True)
+    # Keep the marker DOCX out of the final output directory but preserve it for
+    # debugging failed conversions.
+    return work_dir / f"{CONFIG['project_name']}.marked.docx"
+
+
+def mathtype_filter_args() -> list[str]:
+    """Return Pandoc args that insert hidden LaTeX markers before DOCX writing."""
+    marker_filter = Path(CONFIG['mathtype_marker_filter'])
+    if not marker_filter.exists():
+        raise FileNotFoundError(f"MathType marker filter not found: {marker_filter}")
+    return ['--lua-filter', to_pandoc_path(marker_filter)]
+
+
+def resolve_mathtype_build_enabled(requested: bool) -> bool:
+    """Return whether this build should actually run MathType conversion.
+
+    Users may keep `mathtype: true` in shared style metadata on machines that
+    do not have MathType installed. In that case, continue with normal
+    Pandoc/Word equations instead of failing the whole DOCX build.
+    """
+    if not requested:
+        return False
+
+    print("[INFO] MathType DOCX equations enabled by metadata: mathtype: true")
+    availability = check_mathtype_availability()
+    if availability.usable:
+        return True
+
+    print(
+        availability.format_failure(
+            "[WARN] MathType was requested by metadata, but MathType conversion will be skipped."
+        )
+    )
+    print("[WARN] Building DOCX with Pandoc/Word equations instead.\n")
+    return False
+
+
+def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
+    """Convert a marked DOCX's OMML equations into MathType OLE equations."""
+    print("\n[DOCX] Converting equations to MathType OLE objects...\n")
+    run_command(
+        [
+            sys.executable,
+            'scripts/mathtype/convert_marked_docx.py',
+            '--mode',
+            'all',
+            '--source',
+            str(marked_docx),
+            '--target',
+            str(target_docx),
+            '--work-dir',
+            str(Path(CONFIG['mathtype_work_dir']) / CONFIG['project_name']),
+        ],
+        stream_output=True,
+    )
+
+
 def run_pandoc(defaults_file: Path, output_file: Path, extra_args: list[str] | None = None) -> None:
     """Run Pandoc with a temporary defaults file for the selected markdown input."""
     extra_args = extra_args or []
@@ -217,29 +310,43 @@ def build_docx():
 
     docx_file = docx_dir / f"{CONFIG['project_name']}.docx"
     extra_args = []
+    metadata = load_build_metadata()
+    use_mathtype = resolve_mathtype_build_enabled(should_use_mathtype(metadata))
+    pandoc_output = docx_file
 
     # Add filter for older Pandoc versions
     if should_use_mathbfit_filter():
         print("[INFO] Using mathbfit filter (Pandoc <= 3.8.3.0)")
         extra_args.extend(['--filter', 'pandoc/filters/to_mathbfit.py'])
 
+    if use_mathtype:
+        pandoc_output = mathtype_marked_docx_path()
+        extra_args.extend(mathtype_filter_args())
+
     # Run pandoc
-    run_pandoc(Path('pandoc/pandoc-docx.yml'), docx_file, extra_args=extra_args)
+    run_pandoc(Path('pandoc/pandoc-docx.yml'), pandoc_output, extra_args=extra_args)
 
     # Post-process DOCX if enabled
     if CONFIG['enable_docx_postprocess']:
         print("\n[DOCX] Running Python post-processing...\n")
+        postprocess_docx = pandoc_output if use_mathtype else docx_file
+        # When MathType is enabled, post-process the marker DOCX before
+        # replacing OMML. Several DOCX fixes detect equation layout tables from
+        # OMML, which is gone after OLE conversion.
         run_command(
             [
                 'uv',
                 'run',
                 'scripts/postprocess_docx.py',
-                str(docx_file),
+                str(postprocess_docx),
                 CONFIG['manuscript_file'],
                 *style_metadata_cli_args(),
             ],
             stream_output=True,
         )
+
+    if use_mathtype:
+        run_mathtype_conversion(pandoc_output, docx_file)
 
     print(f"\n[OK] DOCX created: {CONFIG['docx_dir']}/{CONFIG['project_name']}.docx")
 

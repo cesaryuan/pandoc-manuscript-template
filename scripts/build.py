@@ -243,7 +243,6 @@ def resolve_mathtype_build_enabled(requested: bool) -> bool:
     do not have MathType installed. In that case, continue with normal
     Pandoc/Word equations instead of failing the whole DOCX build.
     """
-    return False
     if not requested:
         return False
 

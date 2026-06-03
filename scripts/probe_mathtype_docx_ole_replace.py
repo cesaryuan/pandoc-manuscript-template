@@ -36,8 +36,8 @@ REL_OLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/o
 CONTENT_OLE = "application/vnd.openxmlformats-officedocument.oleObject"
 CONTENT_WMF = "image/x-wmf"
 PLACEABLE_WMF_KEY = 0x9AC6CDD7
-INLINE_MATH_REFERENCE_HEIGHT_PT = 15.85
-INLINE_MATH_REFERENCE_POSITION_HALF_POINTS = -10
+BASELINE_REFERENCE_HEIGHT_PT = 15.85
+BASELINE_REFERENCE_POSITION_HALF_POINTS = -10
 
 
 for prefix, uri in NS.items():
@@ -126,11 +126,11 @@ def sync_shape_size_to_wmf(shape: ET.Element, wmf_bytes: bytes) -> None:
 
 
 def apply_run_position(run: ET.Element, position_half_points: int) -> None:
-    """Set the Word run baseline offset used by inline MathType objects.
+    """Set the Word run baseline offset used by MathType objects.
 
-    MathType-formatted inline OLE equations in Word commonly carry
-    w:position=-10; without it, generated objects sit visibly above the text
-    baseline even when their WMF dimensions are correct.
+    MathType OLE equations in Word commonly carry w:position=-10; without it,
+    generated objects can sit visibly above the intended baseline even when
+    their WMF dimensions are correct.
     """
     rpr = run.find("w:rPr", NS)
     if rpr is None:
@@ -144,12 +144,12 @@ def apply_run_position(run: ET.Element, position_half_points: int) -> None:
     position.set(qn("w", "val"), str(position_half_points))
 
 
-def inline_math_position_half_points(template: MathTypeTemplate) -> int:
-    """Return Word's inline MathType baseline offset in half-points.
+def mathtype_position_half_points(template: MathTypeTemplate) -> int:
+    """Return Word's MathType baseline offset in half-points.
 
     Prefer MathType's own baseline distance when available. Word's w:position
-    uses half-points, and a negative value lowers the inline object so the
-    equation baseline, not the bottom of the preview box, aligns with text.
+    uses half-points, and a negative value lowers the object so the equation
+    baseline, not the bottom of the preview box, aligns with the target line.
     """
     if template.baseline_from_bottom_pt is not None and template.baseline_from_bottom_pt > 0:
         return -max(1, round(template.baseline_from_bottom_pt * 2))
@@ -158,10 +158,10 @@ def inline_math_position_half_points(template: MathTypeTemplate) -> int:
     # MathType metadata. The real conversion path should provide the baseline.
     size = wmf_size_points(template.image_bytes)
     if size is None:
-        return INLINE_MATH_REFERENCE_POSITION_HALF_POINTS
+        return BASELINE_REFERENCE_POSITION_HALF_POINTS
 
     _width, height = size
-    scale = abs(INLINE_MATH_REFERENCE_POSITION_HALF_POINTS) / INLINE_MATH_REFERENCE_HEIGHT_PT
+    scale = abs(BASELINE_REFERENCE_POSITION_HALF_POINTS) / BASELINE_REFERENCE_HEIGHT_PT
     return -max(1, round(height * scale))
 
 
@@ -226,12 +226,12 @@ def make_object_run(
     image_rid: str,
     ole_rid: str,
     index: int,
-    is_inline_math: bool = False,
+    apply_position: bool = True,
 ) -> ET.Element:
     """Create a Word run containing a cloned MathType OLE object."""
     run = ET.Element(qn("w", "r"))
-    if is_inline_math:
-        apply_run_position(run, inline_math_position_half_points(template))
+    if apply_position:
+        apply_run_position(run, mathtype_position_half_points(template))
     obj = copy.deepcopy(template.object_element)
 
     shape = obj.find(".//v:shape", NS)
@@ -304,8 +304,7 @@ def replace_omml_with_template(source: Path, sample: Path, target: Path, limit: 
             ole_name = f"word/embeddings/mathtype_probe_{replacement_index}.bin"
 
             parent.remove(node)
-            is_inline_math = node.tag == qn("m", "oMath")
-            parent.insert(child_index, make_object_run(template, image_rid, ole_rid, replacement_index, is_inline_math))
+            parent.insert(child_index, make_object_run(template, image_rid, ole_rid, replacement_index))
             append_relationship(rels, image_rid, REL_IMAGE, image_name.removeprefix("word/"))
             append_relationship(rels, ole_rid, REL_OLE, ole_name.removeprefix("word/"))
             added_parts[image_name] = template.image_bytes

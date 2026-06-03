@@ -542,7 +542,7 @@ def replace_marked_omml_with_generated(source: Path, sample: Path, target: Path,
             parent.remove(binding.omml_node)
             parent.insert(
                 child_index,
-                make_object_run(item_template, image_rid, ole_rid, index, binding.kind == "inline"),
+                make_object_run(item_template, image_rid, ole_rid, index),
             )
             append_relationship(rels, image_rid, REL_IMAGE, image_name.removeprefix("word/"))
             append_relationship(rels, ole_rid, REL_OLE, ole_name.removeprefix("word/"))
@@ -607,7 +607,7 @@ def replace_all_omml_with_generated(source: Path, sample: Path, target: Path, eq
                 baseline_from_bottom_pt=equation.baseline_from_bottom_pt,
             )
             parent.remove(node)
-            parent.insert(child_index, make_object_run(item_template, image_rid, ole_rid, index, node.tag == qn("m", "oMath")))
+            parent.insert(child_index, make_object_run(item_template, image_rid, ole_rid, index))
             append_relationship(rels, image_rid, REL_IMAGE, image_name.removeprefix("word/"))
             append_relationship(rels, ole_rid, REL_OLE, ole_name.removeprefix("word/"))
             added_parts[image_name] = item_template.image_bytes

@@ -1,6 +1,9 @@
 """Generate MathType OLE bins, WMF previews, and placement metadata."""
 
 import json
+import platform
+import re
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +13,8 @@ from .compound_file import CompoundFile
 
 HELPER_PROJECT = Path("scripts/mathtype_ole_helper/MathTypeOleHelper.csproj")
 HELPER_EXE = Path("scripts/mathtype_ole_helper/bin/Debug/net48/MathTypeOleHelper.exe")
+MATHTYPE_PROG_ID = "Equation.DSMT4"
+MATHTYPE_DEFAULT_MT6_DLL = Path(r"C:\Program Files (x86)\MathType\System\64\MT6.dll")
 
 
 @dataclass
@@ -34,6 +39,141 @@ class GeneratedEquation:
         if isinstance(value, (int, float)) and value > 0:
             return float(value)
         return None
+
+
+@dataclass(frozen=True)
+class MathTypeAvailability:
+    """Human-readable result of checking whether MathType conversion can run."""
+
+    reasons: tuple[str, ...]
+    details: tuple[str, ...]
+
+    @property
+    def usable(self) -> bool:
+        """Return True when no blocking MathType environment problem was found."""
+        return not self.reasons
+
+    def format_failure(self, heading: str = "MathType cannot be used") -> str:
+        """Return a multi-line explanation suitable for build error output."""
+        lines = [heading]
+        if self.reasons:
+            lines.append("Blocking reason(s):")
+            lines.extend(f"  - {reason}" for reason in self.reasons)
+        if self.details:
+            lines.append("Detected detail(s):")
+            lines.extend(f"  - {detail}" for detail in self.details)
+        return "\n".join(lines)
+
+
+def _read_hkcr_default(subkey: str) -> str | None:
+    """Read a default HKCR value, preferring the 64-bit registry view."""
+    if platform.system() != "Windows":
+        return None
+
+    try:
+        import winreg
+    except ImportError:
+        return None
+
+    flags = [getattr(winreg, "KEY_WOW64_64KEY", 0), 0]
+    seen_flags: set[int] = set()
+    for flag in flags:
+        if flag in seen_flags:
+            continue
+        seen_flags.add(flag)
+        try:
+            with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, subkey, 0, winreg.KEY_READ | flag) as key:
+                value, _value_type = winreg.QueryValueEx(key, "")
+        except OSError:
+            continue
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _registry_executable_path(command: str) -> Path | None:
+    """Extract the executable path from a registry command value."""
+    text = command.strip()
+    match = re.match(r'^"([^"]+\.exe)"', text, flags=re.IGNORECASE)
+    if match:
+        return Path(match.group(1))
+
+    # Registry command values are often unquoted even under Program Files.
+    match = re.match(r"^(.+?\.exe)(?:\s|$)", text, flags=re.IGNORECASE)
+    if match:
+        return Path(match.group(1))
+    return None
+
+
+def check_mathtype_availability() -> MathTypeAvailability:
+    """Check OS, MathType OLE registration, server path, and helper tooling.
+
+    This is intentionally a lightweight preflight for build.py. It catches the
+    common hard failures before Pandoc does any work, while the actual converter
+    still performs the real OLE generation for each equation.
+    """
+    reasons: list[str] = []
+    details: list[str] = []
+
+    system = platform.system()
+    if system != "Windows":
+        reasons.append(
+            "MathType OLE conversion requires Windows because it uses COM/OLE "
+            f"({MATHTYPE_PROG_ID}); detected system: {system or 'unknown'}."
+        )
+        return MathTypeAvailability(tuple(reasons), tuple(details))
+
+    details.append("Windows detected.")
+
+    clsid = _read_hkcr_default(fr"{MATHTYPE_PROG_ID}\CLSID")
+    if not clsid:
+        reasons.append(
+            f"MathType OLE class is not registered: HKCR\\{MATHTYPE_PROG_ID}\\CLSID "
+            "was not found. Install MathType, or repair the MathType installation."
+        )
+    else:
+        details.append(f"{MATHTYPE_PROG_ID} resolves to CLSID {clsid}.")
+        server_value = _read_hkcr_default(fr"CLSID\{clsid}\LocalServer32") or _read_hkcr_default(
+            fr"CLSID\{clsid}\LocalServer"
+        )
+        if not server_value:
+            reasons.append(
+                f"MathType CLSID {clsid} has no LocalServer32/LocalServer value. "
+                "Repair or reinstall MathType so the OLE server is registered."
+            )
+        else:
+            server_path = _registry_executable_path(server_value)
+            if server_path is None:
+                reasons.append(f"Could not parse MathType OLE server registry value: {server_value}")
+            elif not server_path.exists():
+                reasons.append(
+                    f"MathType OLE server is registered but the executable is missing: {server_path}. "
+                    "Repair or reinstall MathType."
+                )
+            else:
+                details.append(f"MathType OLE server found: {server_path}.")
+
+    if shutil.which("dotnet") is None:
+        reasons.append("The `dotnet` command was not found; install the .NET SDK so the OLE helper can build.")
+    else:
+        details.append("dotnet command found.")
+
+    if not HELPER_PROJECT.exists():
+        reasons.append(f"MathType OLE helper project is missing: {HELPER_PROJECT}.")
+    else:
+        details.append(f"MathType OLE helper project found: {HELPER_PROJECT}.")
+
+    if MATHTYPE_DEFAULT_MT6_DLL.exists():
+        details.append(f"MathType metadata DLL found: {MATHTYPE_DEFAULT_MT6_DLL}.")
+    else:
+        # The helper catches this path as optional baseline metadata. Keep it as
+        # detail instead of a blocker so non-default installs can still convert.
+        details.append(
+            f"Optional MathType metadata DLL not found at {MATHTYPE_DEFAULT_MT6_DLL}; "
+            "baseline placement will use the WMF fallback if conversion succeeds."
+        )
+
+    return MathTypeAvailability(tuple(reasons), tuple(details))
 
 
 def run(command: list[str], echo_stdout: bool = True) -> subprocess.CompletedProcess:

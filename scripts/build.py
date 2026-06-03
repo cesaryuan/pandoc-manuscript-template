@@ -40,6 +40,7 @@ from typing import Any, Tuple
 
 import yaml
 from metadata import load_merged_metadata
+from mathtype.ole_parts import MathTypeAvailability, check_mathtype_availability
 
 # ============================================================================
 # CONFIGURATION - Customize these variables for your project
@@ -236,6 +237,31 @@ def mathtype_filter_args() -> list[str]:
     return ['--lua-filter', to_pandoc_path(marker_filter)]
 
 
+def ensure_mathtype_build_available() -> None:
+    """Fail early with actionable reasons when MathType output is requested."""
+    availability = check_mathtype_availability()
+    reasons = list(availability.reasons)
+    details = list(availability.details)
+
+    sample_docx = Path(CONFIG['mathtype_sample_docx'])
+    if not sample_docx.exists():
+        reasons.append(
+            f"MathType sample DOCX not found: {sample_docx}. "
+            "Create or copy a DOCX containing one MathType OLE equation there."
+        )
+    else:
+        details.append(f"MathType sample DOCX found: {sample_docx}.")
+
+    if reasons:
+        report = MathTypeAvailability(tuple(reasons), tuple(details)).format_failure(
+            "MathType DOCX equations were requested by metadata (`mathtype: true`), but MathType cannot be used."
+        )
+        raise RuntimeError(
+            report
+            + "\nSet `mathtype: false` in style.yml to build with Pandoc/Word equations instead."
+        )
+
+
 def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
     """Convert a marked DOCX's OMML equations into MathType OLE equations."""
     sample_docx = Path(CONFIG['mathtype_sample_docx'])
@@ -306,6 +332,7 @@ def build_docx():
 
     if use_mathtype:
         print("[INFO] MathType DOCX equations enabled by metadata: mathtype: true")
+        ensure_mathtype_build_available()
         pandoc_output = mathtype_marked_docx_path()
         extra_args.extend(mathtype_filter_args())
 

@@ -12,7 +12,7 @@ from .compound_file import CompoundFile
 
 
 HELPER_PROJECT = Path("scripts/mathtype_ole_helper/MathTypeOleHelper.csproj")
-HELPER_EXE = Path("scripts/mathtype_ole_helper/bin/Debug/net48/MathTypeOleHelper.exe")
+HELPER_EXE = Path("scripts/mathtype_ole_helper/bin/Release/net48/MathTypeOleHelper.exe")
 MATHTYPE_PROG_ID = "Equation.DSMT4"
 MATHTYPE_DEFAULT_MT6_DLL = Path(r"C:\Program Files (x86)\MathType\System\64\MT6.dll")
 MATHTYPE_DEFAULT_PREFS_TEMPLATE = Path(r"C:\Program Files (x86)\MathType\Preferences\Times+Symbol 12.eqp")
@@ -164,15 +164,27 @@ def check_mathtype_availability() -> MathTypeAvailability:
             else:
                 details.append(f"MathType OLE server found: {server_path}.")
 
-    if shutil.which("dotnet") is None:
-        reasons.append("The `dotnet` command was not found; install the .NET SDK so the OLE helper can build.")
+    dotnet_path = shutil.which("dotnet")
+    helper_exists = HELPER_EXE.exists()
+    if helper_exists:
+        details.append(f"MathType OLE helper executable found: {HELPER_EXE}.")
     else:
-        details.append("dotnet command found.")
+        details.append(f"MathType OLE helper executable not found: {HELPER_EXE}.")
 
-    if not HELPER_PROJECT.exists():
-        reasons.append(f"MathType OLE helper project is missing: {HELPER_PROJECT}.")
+    if dotnet_path is not None:
+        details.append("dotnet command found.")
     else:
-        details.append(f"MathType OLE helper project found: {HELPER_PROJECT}.")
+        details.append("dotnet command not found.")
+
+    if dotnet_path is None and not helper_exists:
+        reasons.append(
+            f"The `dotnet` command was not found and no prebuilt MathType OLE helper exists at {HELPER_EXE}."
+        )
+    elif dotnet_path is not None and not helper_exists:
+        if not HELPER_PROJECT.exists():
+            reasons.append(f"MathType OLE helper project is missing: {HELPER_PROJECT}.")
+        else:
+            details.append(f"MathType OLE helper project found: {HELPER_PROJECT}.")
 
     if MATHTYPE_DEFAULT_MT6_DLL.exists():
         details.append(f"MathType metadata DLL found: {MATHTYPE_DEFAULT_MT6_DLL}.")
@@ -207,8 +219,20 @@ def run(command: list[str], echo_stdout: bool = True) -> subprocess.CompletedPro
 
 
 def build_helper() -> None:
-    """Build the small .NET OLE helper used by MathType conversion."""
-    run(["dotnet", "build", str(HELPER_PROJECT), "-v:quiet"])
+    """Ensure the small .NET OLE helper exists for MathType conversion."""
+    if HELPER_EXE.exists():
+        print(f"[mathtype] helper executable found, skipping build: {HELPER_EXE}")
+        return
+    if shutil.which("dotnet") is None:
+        raise RuntimeError(
+            f"MathType OLE helper is missing and `dotnet` is unavailable; expected helper at {HELPER_EXE}"
+        )
+    if not HELPER_PROJECT.exists():
+        raise FileNotFoundError(f"MathType OLE helper project is missing: {HELPER_PROJECT}")
+
+    run(["dotnet", "build", str(HELPER_PROJECT), "-c", "Release", "-v:quiet"])
+    if not HELPER_EXE.exists():
+        raise FileNotFoundError(f"Release build did not create expected helper executable: {HELPER_EXE}")
 
 
 def normalize_mathtype_latex(latex: str) -> str:

@@ -269,10 +269,18 @@ output/docx/
 mathtype.docx
 
 # .NET helper build outputs
-scripts/mathtype_ole_helper/bin/
+scripts/mathtype_ole_helper/bin/*
 scripts/mathtype_ole_helper/obj/
 
 # Generated binaries / docs
 *.exe
 *.pdb
 *.docx
+
+# Keep the prebuilt MathType helper used when dotnet is unavailable.
+!scripts/mathtype_ole_helper/bin/
+!scripts/mathtype_ole_helper/bin/Release/
+scripts/mathtype_ole_helper/bin/Release/*
+!scripts/mathtype_ole_helper/bin/Release/net48/
+scripts/mathtype_ole_helper/bin/Release/net48/*
+!scripts/mathtype_ole_helper/bin/Release/net48/MathTypeOleHelper.exe

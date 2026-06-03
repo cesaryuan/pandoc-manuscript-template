@@ -35,6 +35,7 @@ try:
     from docx.table import Table, _Cell
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
+    from docx.shared import Pt
 except ImportError:
     print("Error: python-docx is not installed. Install it with: pip install python-docx")
     sys.exit(1)
@@ -195,6 +196,47 @@ def set_cell_width(cell: _Cell, width: int) -> None:
     tc_w.set(qn('w:type'), 'dxa')
 
 
+def set_paragraph_special_indent_none(paragraph) -> None:
+    """Force Word's paragraph "Special indent" setting to behave like "None".
+
+    The surrounding Body Text style can use `w:firstLineChars`, so setting only
+    python-docx's point-based `first_line_indent = 0` is not enough to cancel
+    that inherited character indent in Word. We therefore clear all first-line
+    and hanging indent attributes, then keep an explicit zero-char override so
+    the paragraph does not fall back to the base style's special indent.
+    """
+    p_pr = paragraph._p.get_or_add_pPr()
+    ind = p_pr.find(qn('w:ind'))
+    if ind is None:
+        ind = OxmlElement('w:ind')
+        p_pr.append(ind)
+
+    for attr_name in ('w:firstLine', 'w:firstLineChars', 'w:hanging', 'w:hangingChars'):
+        attr = qn(attr_name)
+        if attr in ind.attrib:
+            del ind.attrib[attr]
+    ind.set(qn('w:firstLineChars'), '0')
+
+
+def normalize_equation_layout_paragraphs(table: Table) -> None:
+    """Force equation/number paragraphs to use compact display-equation spacing.
+
+    Pandoc's layout table is structural only, so the paragraphs inside it should
+    not inherit body-text indentation or extra spacing that would shift the
+    centered formula or the right-aligned equation number.
+    """
+    for row in table.rows:
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                paragraph_format = paragraph.paragraph_format
+                paragraph_format.space_before = Pt(0)
+                paragraph_format.space_after = Pt(0)
+                paragraph_format.line_spacing = 1.0
+                # Explicitly clear special-indent behavior inherited from body
+                # text styles such as `a0`.
+                set_paragraph_special_indent_none(paragraph)
+
+
 def distribute_middle_widths(current_widths: list[int], remaining_width: int) -> list[int]:
     """Distribute remaining width across formula columns while preserving proportions."""
     middle_count = max(len(current_widths) - 2, 1)
@@ -266,6 +308,7 @@ def format_equation_layout_table(table: Table) -> None:
     hide_all_cell_borders(table)
     set_cell_right_margin(number_cell, 0)
     set_equation_layout_column_widths(table, edge_width)
+    normalize_equation_layout_paragraphs(table)
 
 
 def format_equation_layout_tables(doc: DocumentObject) -> int:

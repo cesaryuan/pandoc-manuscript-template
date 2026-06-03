@@ -249,7 +249,7 @@ def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
     run_command(
         [
             sys.executable,
-            'scripts/probe_mathtype_latex_to_olebin.py',
+            'scripts/mathtype/convert_marked_docx.py',
             '--mode',
             'all',
             '--source',

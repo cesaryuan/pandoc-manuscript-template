@@ -204,10 +204,30 @@ def build_helper() -> None:
     run(["dotnet", "build", str(HELPER_PROJECT), "-v:quiet"])
 
 
+def mathtype_tex_payload(latex: str) -> str:
+    """Return TeX text in the math-delimited form accepted by MathType OLE.
+
+    Pandoc's JSON AST gives math content without the surrounding delimiters.
+    MathType's OLE SetData path rejects bare fragments such as ``f(x)`` or
+    ``w_i`` with DV_E_FORMATETC, but accepts the same TeX when wrapped as
+    ``$...$``.
+    """
+    text = latex.strip()
+    if text.startswith("$$") and text.endswith("$$"):
+        return text
+    if text.startswith("$") and text.endswith("$"):
+        return text
+    if text.startswith(r"\(") and text.endswith(r"\)"):
+        return "$" + text[2:-2].strip() + "$"
+    if text.startswith(r"\[") and text.endswith(r"\]"):
+        return "$$" + text[2:-2].strip() + "$$"
+    return "$" + text + "$"
+
+
 def write_latex_input(path: Path, latex: str) -> None:
-    """Write LaTeX as UTF-8; the helper converts to UTF-16LE for MathType."""
+    """Write MathType-ready TeX as UTF-8; the helper converts it to UTF-16LE."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(latex, encoding="utf-8")
+    path.write_text(mathtype_tex_payload(latex), encoding="utf-8")
 
 
 def make_ole_from_format(

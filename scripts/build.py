@@ -55,7 +55,6 @@ CONFIG = {
     'latex_dir': 'output/latex',
     'enable_docx_postprocess': True,
     'mathtype_marker_filter': 'pandoc/filters/mathtype_markers.lua',
-    'mathtype_sample_docx': 'tmp/mathtype.docx',
     'mathtype_work_dir': 'tmp/mathtype-build',
 }
 
@@ -240,20 +239,8 @@ def mathtype_filter_args() -> list[str]:
 def ensure_mathtype_build_available() -> None:
     """Fail early with actionable reasons when MathType output is requested."""
     availability = check_mathtype_availability()
-    reasons = list(availability.reasons)
-    details = list(availability.details)
-
-    sample_docx = Path(CONFIG['mathtype_sample_docx'])
-    if not sample_docx.exists():
-        reasons.append(
-            f"MathType sample DOCX not found: {sample_docx}. "
-            "Create or copy a DOCX containing one MathType OLE equation there."
-        )
-    else:
-        details.append(f"MathType sample DOCX found: {sample_docx}.")
-
-    if reasons:
-        report = MathTypeAvailability(tuple(reasons), tuple(details)).format_failure(
+    if availability.reasons:
+        report = MathTypeAvailability(availability.reasons, availability.details).format_failure(
             "MathType DOCX equations were requested by metadata (`mathtype: true`), but MathType cannot be used."
         )
         raise RuntimeError(
@@ -264,13 +251,6 @@ def ensure_mathtype_build_available() -> None:
 
 def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
     """Convert a marked DOCX's OMML equations into MathType OLE equations."""
-    sample_docx = Path(CONFIG['mathtype_sample_docx'])
-    if not sample_docx.exists():
-        raise FileNotFoundError(
-            f"MathType sample DOCX not found: {sample_docx}. "
-            "Create or copy a DOCX containing one MathType OLE equation there."
-        )
-
     print("\n[DOCX] Converting equations to MathType OLE objects...\n")
     run_command(
         [
@@ -280,8 +260,6 @@ def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
             'all',
             '--source',
             str(marked_docx),
-            '--sample',
-            str(sample_docx),
             '--target',
             str(target_docx),
             '--work-dir',

@@ -37,12 +37,62 @@ for prefix, uri in NS.items():
 
 @dataclass
 class MathTypeTemplate:
-    """Package parts copied from a known-good MathType DOCX object."""
+    """Package parts needed to build a Word MathType OLE object."""
 
     object_element: ET.Element
     ole_bytes: bytes
     image_bytes: bytes
     baseline_from_bottom_pt: float | None = None
+
+
+MATHTYPE_OBJECT_TEMPLATE_XML = f"""
+<w:object
+    xmlns:w="{NS['w']}"
+    xmlns:r="{NS['r']}"
+    xmlns:v="{NS['v']}"
+    xmlns:o="{NS['o']}"
+    xmlns:w14="{NS['w14']}"
+    w:dxaOrig="240"
+    w:dyaOrig="620"
+    w14:anchorId="5FA61A83">
+  <v:shapetype
+      id="_x0000_t75"
+      coordsize="21600,21600"
+      o:spt="75"
+      o:preferrelative="t"
+      path="m@4@5l@4@11@9@11@9@5xe"
+      filled="f"
+      stroked="f">
+    <v:stroke joinstyle="miter" />
+    <v:formulas>
+      <v:f eqn="if lineDrawn pixelLineWidth 0" />
+      <v:f eqn="sum @0 1 0" />
+      <v:f eqn="sum 0 0 @1" />
+      <v:f eqn="prod @2 1 2" />
+      <v:f eqn="prod @3 21600 pixelWidth" />
+      <v:f eqn="prod @3 21600 pixelHeight" />
+      <v:f eqn="sum @0 0 1" />
+      <v:f eqn="prod @6 1 2" />
+      <v:f eqn="prod @7 21600 pixelWidth" />
+      <v:f eqn="sum @8 21600 0" />
+      <v:f eqn="prod @7 21600 pixelHeight" />
+      <v:f eqn="sum @10 21600 0" />
+    </v:formulas>
+    <v:path o:extrusionok="f" gradientshapeok="t" o:connecttype="rect" />
+    <o:lock v:ext="edit" aspectratio="t" />
+  </v:shapetype>
+  <v:shape id="_x0000_i1027" type="#_x0000_t75" style="width:18.85pt;height:15.85pt" o:ole="">
+    <v:imagedata r:id="rIdPreview" o:title="" />
+  </v:shape>
+  <o:OLEObject
+      Type="Embed"
+      ProgID="Equation.DSMT4"
+      ShapeID="_x0000_i1027"
+      DrawAspect="Content"
+      ObjectID="_1841993762"
+      r:id="rIdObject" />
+</w:object>
+""".strip()
 
 
 def qn(prefix: str, local: str) -> str:
@@ -164,6 +214,20 @@ def find_next_numeric_id(existing: list[str], prefix: str) -> itertools.count:
         if match:
             max_id = max(max_id, int(match.group(1)))
     return itertools.count(max_id + 1)
+
+
+def build_mathtype_template() -> MathTypeTemplate:
+    """Build a minimal MathType Word object template without a sample DOCX.
+
+    Word only needs a valid `w:object` shell with VML preview plumbing plus the
+    later-added relationship IDs. The actual equation payload and preview WMF
+    bytes come from MathType's generated outputs for each formula.
+    """
+    return MathTypeTemplate(
+        object_element=ET.fromstring(MATHTYPE_OBJECT_TEMPLATE_XML),
+        ole_bytes=b"",
+        image_bytes=b"",
+    )
 
 
 def extract_mathtype_template(sample_docx: Path) -> MathTypeTemplate:

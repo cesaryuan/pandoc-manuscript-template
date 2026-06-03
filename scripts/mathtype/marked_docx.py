@@ -9,9 +9,9 @@ from pathlib import Path
 from .docx_ole import (
     MathTypeTemplate,
     append_relationship,
+    build_mathtype_template,
     collect_parent_map,
     ensure_default_content_type,
-    extract_mathtype_template,
     find_next_numeric_id,
     make_object_run,
     qn,
@@ -125,9 +125,11 @@ def remove_marker_run(parent_map: dict[ET.Element, ET.Element], marker_run: ET.E
                 paragraph_parent.remove(marker_parent)
 
 
-def replace_marked_omml_with_generated(source: Path, sample: Path, target: Path, equations: list[GeneratedEquation]) -> int:
+def replace_marked_omml_with_generated(source: Path, target: Path, equations: list[GeneratedEquation]) -> int:
     """Replace marker-bound OMML nodes with generated MathType OLE objects."""
-    template = extract_mathtype_template(sample)
+    # Build the Word-side object shell in code so the real converter no longer
+    # depends on a hand-made sample DOCX being present on disk.
+    template = build_mathtype_template()
     target.parent.mkdir(parents=True, exist_ok=True)
 
     with zipfile.ZipFile(source) as in_zip:

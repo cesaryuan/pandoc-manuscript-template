@@ -50,6 +50,14 @@ class StyleFontContext:
     table_style_sizes: dict[str, int | None]
 
 
+@dataclass(frozen=True)
+class FontSizeResolution:
+    """Resolved font size plus the winning source in the lookup chain."""
+
+    font_size_pt: float | None
+    source: str
+
+
 def marker_from_run(run: ET.Element) -> tuple[str, str] | None:
     """Return (kind, latex) from a hidden MathType marker run, if present."""
     text = "".join(node.text or "" for node in run.findall(".//w:t", NS))
@@ -219,11 +227,19 @@ def paragraph_neighbor_size_half_points(paragraph: ET.Element, marker_run: ET.El
     return None
 
 
-def binding_font_size_pt(
+def truncate_latex_for_log(latex: str, limit: int = 48) -> str:
+    """Shorten LaTeX in logs so one line still stays readable."""
+    compact = " ".join(latex.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3] + "..."
+
+
+def binding_font_size_resolution(
     binding: MarkedFormulaBinding,
     parent_map: dict[ET.Element, ET.Element],
     font_context: StyleFontContext,
-) -> float | None:
+) -> FontSizeResolution:
     """Infer the surrounding Word font size for a formula binding.
 
     This intentionally mirrors the most common body-vs-table cases in the
@@ -231,31 +247,57 @@ def binding_font_size_pt(
     style, then document defaults.
     """
     size_half_points = half_points_from_rpr(binding.marker_run.find("w:rPr", NS))
+    source = "marker_run.rPr"
 
     paragraph = ancestor_with_tag(parent_map, binding.marker_run, qn("w", "p"))
     if size_half_points is None and paragraph is not None:
         size_half_points = paragraph_neighbor_size_half_points(paragraph, binding.marker_run)
+        if size_half_points is not None:
+            source = "neighbor_run.rPr"
     if size_half_points is None and paragraph is not None:
         size_half_points = half_points_from_rpr(paragraph.find("w:pPr/w:rPr", NS))
+        if size_half_points is not None:
+            source = "paragraph.pPr.rPr"
     if size_half_points is None and paragraph is not None:
         p_style = paragraph.find("w:pPr/w:pStyle", NS)
         if p_style is not None:
-            size_half_points = font_context.paragraph_style_sizes.get(p_style.get(qn("w", "val")))
+            p_style_id = p_style.get(qn("w", "val"))
+            size_half_points = font_context.paragraph_style_sizes.get(p_style_id)
+            if size_half_points is not None:
+                source = f"paragraph_style:{p_style_id}"
 
     if size_half_points is None:
         table = ancestor_with_tag(parent_map, binding.marker_run, qn("w", "tbl"))
         if table is not None:
             tbl_style = table.find("w:tblPr/w:tblStyle", NS)
             if tbl_style is not None:
-                size_half_points = font_context.table_style_sizes.get(tbl_style.get(qn("w", "val")))
+                tbl_style_id = tbl_style.get(qn("w", "val"))
+                size_half_points = font_context.table_style_sizes.get(tbl_style_id)
+                if size_half_points is not None:
+                    source = f"table_style:{tbl_style_id}"
 
     if size_half_points is None:
         size_half_points = font_context.doc_default_half_points
+        if size_half_points is not None:
+            source = "docDefaults.rPrDefault"
 
     if size_half_points is None or size_half_points <= 0:
-        return None
+        return FontSizeResolution(font_size_pt=None, source="unresolved")
     # Word stores font size in half-points, so 21 means 10.5 pt.
-    return size_half_points / 2.0
+    return FontSizeResolution(font_size_pt=size_half_points / 2.0, source=source)
+
+
+def log_font_size_resolution(index: int, binding: MarkedFormulaBinding, resolution: FontSizeResolution) -> None:
+    """Print one concise line showing where a formula's final font size came from."""
+    size_text = f"{resolution.font_size_pt:g}pt" if resolution.font_size_pt is not None else "None"
+    print(
+        "[mathtype] font-size"
+        f" eq={index}"
+        f" kind={binding.kind}"
+        f" size={size_text}"
+        f" source={resolution.source}"
+        f" latex={truncate_latex_for_log(binding.latex)!r}"
+    )
 
 
 def extract_marked_equation_requests(source: Path) -> list[EquationRequest]:
@@ -267,13 +309,17 @@ def extract_marked_equation_requests(source: Path) -> list[EquationRequest]:
     bindings = find_marked_formula_bindings(document)
     parent_map = collect_parent_map(document)
     font_context = build_style_font_context(styles)
-    return [
-        EquationRequest(
-            latex=binding.latex,
-            font_size_pt=binding_font_size_pt(binding, parent_map, font_context),
+    requests: list[EquationRequest] = []
+    for index, binding in enumerate(bindings, start=1):
+        resolution = binding_font_size_resolution(binding, parent_map, font_context)
+        log_font_size_resolution(index, binding, resolution)
+        requests.append(
+            EquationRequest(
+                latex=binding.latex,
+                font_size_pt=resolution.font_size_pt,
+            )
         )
-        for binding in bindings
-    ]
+    return requests
 
 
 def extract_marked_latex_values(source: Path) -> list[str]:

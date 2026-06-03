@@ -197,25 +197,38 @@ def set_cell_width(cell: _Cell, width: int) -> None:
 
 
 def set_paragraph_special_indent_none(paragraph) -> None:
-    """Force Word's paragraph "Special indent" setting to behave like "None".
+    """Remove all paragraph-level first-line/hanging indent attributes.
 
-    The surrounding Body Text style can use `w:firstLineChars`, so setting only
-    python-docx's point-based `first_line_indent = 0` is not enough to cancel
-    that inherited character indent in Word. We therefore clear all first-line
-    and hanging indent attributes, then keep an explicit zero-char override so
-    the paragraph does not fall back to the base style's special indent.
+    This mirrors Word's "Special indent: None". It must be paired with a
+    paragraph style that does not itself reintroduce first-line indentation.
     """
     p_pr = paragraph._p.get_or_add_pPr()
     ind = p_pr.find(qn('w:ind'))
     if ind is None:
-        ind = OxmlElement('w:ind')
-        p_pr.append(ind)
+        return
 
     for attr_name in ('w:firstLine', 'w:firstLineChars', 'w:hanging', 'w:hangingChars'):
         attr = qn(attr_name)
         if attr in ind.attrib:
             del ind.attrib[attr]
-    ind.set(qn('w:firstLineChars'), '0')
+
+    # Drop the whole `<w:ind>` element when it only existed to carry the
+    # special-indent attributes we just cleared.
+    if not ind.attrib:
+        p_pr.remove(ind)
+
+
+def clear_paragraph_style(paragraph) -> None:
+    """Remove a paragraph's explicit style so it stops inheriting Compact/a0.
+
+    For equation layout tables we only need direct alignment/spacing, not the
+    body-text style chain. Clearing `w:pStyle` is more reliable here than
+    asking python-docx to switch styles by name.
+    """
+    p_pr = paragraph._p.get_or_add_pPr()
+    p_style = p_pr.find(qn('w:pStyle'))
+    if p_style is not None:
+        p_pr.remove(p_style)
 
 
 def normalize_equation_layout_paragraphs(table: Table) -> None:
@@ -228,12 +241,13 @@ def normalize_equation_layout_paragraphs(table: Table) -> None:
     for row in table.rows:
         for cell in row.cells:
             for paragraph in cell.paragraphs:
+                clear_paragraph_style(paragraph)
                 paragraph_format = paragraph.paragraph_format
                 paragraph_format.space_before = Pt(0)
                 paragraph_format.space_after = Pt(0)
                 paragraph_format.line_spacing = 1.0
-                # Explicitly clear special-indent behavior inherited from body
-                # text styles such as `a0`.
+                # After detaching from Compact/a0, remove any remaining direct
+                # special-indent override so Word shows "Special: None".
                 set_paragraph_special_indent_none(paragraph)
 
 
@@ -329,7 +343,6 @@ def format_equation_layout_tables(doc: DocumentObject) -> int:
         return processed_count
 
     print_info(f"Formatting equation layout tables among {table_count} table(s)...")
-
     for i, table in enumerate(doc.tables, start=1):
         try:
             if not is_equation_layout_table(table):

@@ -25,7 +25,7 @@ from .docx_ole import (
     NS,
 )
 
-from .ole_parts import GeneratedEquation
+from .ole_parts import EquationRequest, GeneratedEquation
 
 
 MATH_TYPE_MARKER_PREFIX = "MTLATEX:"
@@ -39,6 +39,15 @@ class MarkedFormulaBinding:
     kind: str
     marker_run: ET.Element
     omml_node: ET.Element
+
+
+@dataclass(frozen=True)
+class StyleFontContext:
+    """Resolved DOCX font-size hints needed for MathType generation."""
+
+    doc_default_half_points: int | None
+    paragraph_style_sizes: dict[str, int | None]
+    table_style_sizes: dict[str, int | None]
 
 
 def marker_from_run(run: ET.Element) -> tuple[str, str] | None:
@@ -101,11 +110,175 @@ def find_marked_formula_bindings(root: ET.Element) -> list[MarkedFormulaBinding]
     return bindings
 
 
-def extract_marked_latex_values(source: Path) -> list[str]:
-    """Read LaTeX values from hidden marker runs in a DOCX document part."""
+def half_points_from_rpr(rpr: ET.Element | None) -> int | None:
+    """Read Word's half-point font size from a run-properties element."""
+    if rpr is None:
+        return None
+    for tag_name in ("sz", "szCs"):
+        node = rpr.find(f"w:{tag_name}", NS)
+        if node is None:
+            continue
+        value = node.get(qn("w", "val"))
+        if value is None:
+            continue
+        try:
+            return int(value)
+        except ValueError:
+            continue
+    return None
+
+
+def build_style_font_context(styles_root: ET.Element) -> StyleFontContext:
+    """Resolve explicit font sizes from DOCX style definitions.
+
+    The goal is pragmatic rather than a full Word style engine: detect the
+    explicit size contributed by paragraph/table styles, and fall back to
+    docDefaults only after table styles are checked. That order matters because
+    table body text often inherits a smaller size from the table style itself.
+    """
+    styles_by_id = {
+        style.get(qn("w", "styleId")): style
+        for style in styles_root.findall("w:style", NS)
+        if style.get(qn("w", "styleId"))
+    }
+    cache: dict[str, int | None] = {}
+
+    def resolve_style_size(style_id: str | None, seen: set[str] | None = None) -> int | None:
+        if not style_id:
+            return None
+        if style_id in cache:
+            return cache[style_id]
+        if seen is None:
+            seen = set()
+        if style_id in seen:
+            return None
+        seen.add(style_id)
+
+        style = styles_by_id.get(style_id)
+        if style is None:
+            cache[style_id] = None
+            return None
+
+        size = half_points_from_rpr(style.find("w:rPr", NS))
+        if size is not None:
+            cache[style_id] = size
+            return size
+
+        based_on = style.find("w:basedOn", NS)
+        resolved = resolve_style_size(based_on.get(qn("w", "val")) if based_on is not None else None, seen)
+        cache[style_id] = resolved
+        return resolved
+
+    paragraph_style_sizes: dict[str, int | None] = {}
+    table_style_sizes: dict[str, int | None] = {}
+    for style_id, style in styles_by_id.items():
+        style_type = style.get(qn("w", "type"))
+        if style_type == "paragraph":
+            paragraph_style_sizes[style_id] = resolve_style_size(style_id)
+        elif style_type == "table":
+            table_style_sizes[style_id] = resolve_style_size(style_id)
+
+    doc_default_half_points = half_points_from_rpr(styles_root.find("w:docDefaults/w:rPrDefault/w:rPr", NS))
+    return StyleFontContext(
+        doc_default_half_points=doc_default_half_points,
+        paragraph_style_sizes=paragraph_style_sizes,
+        table_style_sizes=table_style_sizes,
+    )
+
+
+def ancestor_with_tag(parent_map: dict[ET.Element, ET.Element], node: ET.Element, tag: str) -> ET.Element | None:
+    """Walk upward until an ancestor with the requested tag is found."""
+    current = node
+    while True:
+        current = parent_map.get(current)
+        if current is None:
+            return None
+        if current.tag == tag:
+            return current
+
+
+def paragraph_neighbor_size_half_points(paragraph: ET.Element, marker_run: ET.Element) -> int | None:
+    """Look for explicit run font sizes next to the hidden marker run."""
+    children = list(paragraph)
+    try:
+        marker_index = children.index(marker_run)
+    except ValueError:
+        return None
+
+    offsets = range(1, len(children))
+    for offset in offsets:
+        for index in (marker_index - offset, marker_index + offset):
+            if index < 0 or index >= len(children):
+                continue
+            child = children[index]
+            if child.tag != qn("w", "r"):
+                continue
+            size = half_points_from_rpr(child.find("w:rPr", NS))
+            if size is not None:
+                return size
+    return None
+
+
+def binding_font_size_pt(
+    binding: MarkedFormulaBinding,
+    parent_map: dict[ET.Element, ET.Element],
+    font_context: StyleFontContext,
+) -> float | None:
+    """Infer the surrounding Word font size for a formula binding.
+
+    This intentionally mirrors the most common body-vs-table cases in the
+    generated DOCX: direct formatting first, then paragraph style, then table
+    style, then document defaults.
+    """
+    size_half_points = half_points_from_rpr(binding.marker_run.find("w:rPr", NS))
+
+    paragraph = ancestor_with_tag(parent_map, binding.marker_run, qn("w", "p"))
+    if size_half_points is None and paragraph is not None:
+        size_half_points = paragraph_neighbor_size_half_points(paragraph, binding.marker_run)
+    if size_half_points is None and paragraph is not None:
+        size_half_points = half_points_from_rpr(paragraph.find("w:pPr/w:rPr", NS))
+    if size_half_points is None and paragraph is not None:
+        p_style = paragraph.find("w:pPr/w:pStyle", NS)
+        if p_style is not None:
+            size_half_points = font_context.paragraph_style_sizes.get(p_style.get(qn("w", "val")))
+
+    if size_half_points is None:
+        table = ancestor_with_tag(parent_map, binding.marker_run, qn("w", "tbl"))
+        if table is not None:
+            tbl_style = table.find("w:tblPr/w:tblStyle", NS)
+            if tbl_style is not None:
+                size_half_points = font_context.table_style_sizes.get(tbl_style.get(qn("w", "val")))
+
+    if size_half_points is None:
+        size_half_points = font_context.doc_default_half_points
+
+    if size_half_points is None or size_half_points <= 0:
+        return None
+    # Word stores font size in half-points, so 21 means 10.5 pt.
+    return size_half_points / 2.0
+
+
+def extract_marked_equation_requests(source: Path) -> list[EquationRequest]:
+    """Read LaTeX plus surrounding font-size hints from a marker-bearing DOCX."""
     with zipfile.ZipFile(source) as archive:
         document = read_xml(archive, "word/document.xml")
-    return [binding.latex for binding in find_marked_formula_bindings(document)]
+        styles = read_xml(archive, "word/styles.xml")
+
+    bindings = find_marked_formula_bindings(document)
+    parent_map = collect_parent_map(document)
+    font_context = build_style_font_context(styles)
+    return [
+        EquationRequest(
+            latex=binding.latex,
+            font_size_pt=binding_font_size_pt(binding, parent_map, font_context),
+        )
+        for binding in bindings
+    ]
+
+
+def extract_marked_latex_values(source: Path) -> list[str]:
+    """Read LaTeX values from hidden marker runs in a DOCX document part."""
+    return [request.latex for request in extract_marked_equation_requests(source)]
 
 
 def remove_marker_run(parent_map: dict[ET.Element, ET.Element], marker_run: ET.Element, index: int) -> None:

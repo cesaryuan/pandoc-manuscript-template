@@ -15,6 +15,15 @@ HELPER_PROJECT = Path("scripts/mathtype_ole_helper/MathTypeOleHelper.csproj")
 HELPER_EXE = Path("scripts/mathtype_ole_helper/bin/Debug/net48/MathTypeOleHelper.exe")
 MATHTYPE_PROG_ID = "Equation.DSMT4"
 MATHTYPE_DEFAULT_MT6_DLL = Path(r"C:\Program Files (x86)\MathType\System\64\MT6.dll")
+MATHTYPE_DEFAULT_PREFS_TEMPLATE = Path(r"C:\Program Files (x86)\MathType\Preferences\Times+Symbol 12.eqp")
+
+
+@dataclass(frozen=True)
+class EquationRequest:
+    """MathType generation inputs extracted from a marker-bound DOCX formula."""
+
+    latex: str
+    font_size_pt: float | None = None
 
 
 @dataclass
@@ -225,6 +234,39 @@ def write_latex_input(path: Path, latex: str) -> None:
     path.write_text(mathtype_tex_payload(latex), encoding="utf-8")
 
 
+def format_font_size_pt(value: float) -> str:
+    """Format a point size for MathType preference files."""
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def write_sized_prefs_file(template_path: Path, output_path: Path, full_size_pt: float) -> None:
+    """Clone a MathType `.eqp` file and patch only the Full size setting.
+
+    The built-in MathType size model expresses most other sizes as percentages,
+    so adjusting `Full` is enough to keep script/symbol sizes proportional when
+    we need equations in tables to match smaller surrounding Word text.
+    """
+    text = template_path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+    inside_sizes = False
+    updated = False
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            inside_sizes = stripped.casefold() == "[sizes]"
+            continue
+        if inside_sizes and stripped.startswith("Full="):
+            lines[index] = f"Full={format_font_size_pt(full_size_pt)} pt"
+            updated = True
+            break
+
+    if not updated:
+        raise ValueError(f"Could not find [Sizes]/Full entry in MathType preferences template: {template_path}")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def make_ole_from_format(
     format_name: str,
     input_path: Path,
@@ -232,6 +274,7 @@ def make_ole_from_format(
     binary: bool = False,
     preview_output: Path | None = None,
     metadata_output: Path | None = None,
+    prefs_file: Path | None = None,
 ) -> None:
     """Ask MathType OLE to create an Equation.DSMT4 compound file without Word."""
     command = [
@@ -252,6 +295,8 @@ def make_ole_from_format(
     ]
     if binary:
         command.append("--binary")
+    if prefs_file is not None:
+        command.extend(["--prefs-file", str(prefs_file)])
     if preview_output is not None:
         command.extend(["--preview-output", str(preview_output)])
     if metadata_output is not None:
@@ -269,15 +314,35 @@ def inspect_ole(path: Path) -> CompoundFile:
     return compound
 
 
-def generate_equation_parts(latex_values: list[str], output_dir: Path) -> list[GeneratedEquation]:
-    """Generate OLE bins and WMF previews for all marker-bound LaTeX formulas."""
+def generate_equation_parts(requests: list[EquationRequest], output_dir: Path) -> list[GeneratedEquation]:
+    """Generate OLE bins and WMF previews for all marker-bound formulas."""
     output_dir.mkdir(parents=True, exist_ok=True)
     equations: list[GeneratedEquation] = []
-    for index, latex in enumerate(latex_values, start=1):
+    prefs_template = MATHTYPE_DEFAULT_PREFS_TEMPLATE if MATHTYPE_DEFAULT_PREFS_TEMPLATE.exists() else None
+    prefs_cache: dict[float, Path] = {}
+    needs_variable_sizes = any(request.font_size_pt is not None for request in requests)
+    if needs_variable_sizes and prefs_template is None:
+        print(
+            "[mathtype] warning: MathType preference template not found; "
+            "equations will fall back to MathType's current default size"
+        )
+
+    for index, request in enumerate(requests, start=1):
+        latex = request.latex
         input_path = output_dir / f"eq_{index:03d}.tex"
         ole_path = output_dir / f"eq_{index:03d}.ole.bin"
         wmf_path = output_dir / f"eq_{index:03d}.wmf"
         metadata_path = output_dir / f"eq_{index:03d}.json"
+        prefs_path: Path | None = None
+
+        if request.font_size_pt is not None and prefs_template is not None:
+            font_size_key = round(request.font_size_pt * 2) / 2
+            prefs_path = prefs_cache.get(font_size_key)
+            if prefs_path is None:
+                prefs_path = output_dir / "prefs" / f"full-{format_font_size_pt(font_size_key).replace('.', '_')}pt.eqp"
+                write_sized_prefs_file(prefs_template, prefs_path, font_size_key)
+                prefs_cache[font_size_key] = prefs_path
+
         write_latex_input(input_path, latex)
         try:
             make_ole_from_format(
@@ -286,6 +351,7 @@ def generate_equation_parts(latex_values: list[str], output_dir: Path) -> list[G
                 ole_path,
                 preview_output=wmf_path,
                 metadata_output=metadata_path,
+                prefs_file=prefs_path,
             )
         except RuntimeError as exc:
             raise RuntimeError(

@@ -27,6 +27,7 @@ internal static class Program
     private const int STGM_READWRITE = 0x00000002;
     private const int STGM_SHARE_EXCLUSIVE = 0x00000010;
     private const short MTINIT_LAUNCH_NOW = 1;
+    private const short MTPRF_MODE_NEXT_EQN = 1;
     private const int MTDIM_WIDTH = 1;
     private const int MTDIM_HEIGHT = 2;
     private const int MTDIM_BASELINE = 3;
@@ -67,6 +68,12 @@ internal static class Program
         Log("resolve CLSID");
         var clsid = Guid.Empty;
         OleCheck(CLSIDFromProgID("Equation.DSMT4", out clsid), "CLSIDFromProgID(Equation.DSMT4)");
+
+        if (options.PrefsFilePath is not null)
+        {
+            Log($"ApplyMathTypePrefs({options.PrefsFilePath})");
+            ApplyMathTypePrefs(options.PrefsFilePath);
+        }
 
         Log("create storage");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(options.OutputPath))!);
@@ -190,6 +197,33 @@ internal static class Program
 
         Console.WriteLine($"[ole-helper] wrote {options.OutputPath}");
         Console.WriteLine($"[ole-helper] format={options.Format}, bytes={new FileInfo(options.OutputPath).Length}");
+    }
+
+    private static void ApplyMathTypePrefs(string prefsFilePath)
+    {
+        var fullPrefsPath = Path.GetFullPath(prefsFilePath);
+        if (!File.Exists(fullPrefsPath))
+        {
+            throw new FileNotFoundException($"MathType preferences file was not found: {fullPrefsPath}", fullPrefsPath);
+        }
+
+        MtCheck(MTAPIConnect(MTINIT_LAUNCH_NOW, 30), "MTAPIConnect(prefs)");
+        try
+        {
+            var prefLength = MTGetPrefsFromFile(fullPrefsPath, null, 0);
+            if (prefLength <= 0)
+            {
+                throw new InvalidOperationException($"MTGetPrefsFromFile returned invalid length {prefLength} for {fullPrefsPath}");
+            }
+
+            var prefs = new StringBuilder(prefLength);
+            MtCheck(MTGetPrefsFromFile(fullPrefsPath, prefs, checked((short)prefLength)), "MTGetPrefsFromFile");
+            MtCheck(MTSetMTPrefs(MTPRF_MODE_NEXT_EQN, prefs.ToString(), -1), "MTSetMTPrefs");
+        }
+        finally
+        {
+            MTAPIDisconnect();
+        }
     }
 
     private static void SetEquationData(object created, Options options)
@@ -571,6 +605,18 @@ internal static class Program
     private static extern int MTAPIDisconnect();
 
     [DllImport(@"C:\Program Files (x86)\MathType\System\64\MT6.dll", CharSet = CharSet.Ansi)]
+    private static extern int MTGetPrefsFromFile(
+        [MarshalAs(UnmanagedType.LPStr)] string prefFile,
+        [MarshalAs(UnmanagedType.LPStr)] StringBuilder? prefs,
+        short prefsLen);
+
+    [DllImport(@"C:\Program Files (x86)\MathType\System\64\MT6.dll", CharSet = CharSet.Ansi)]
+    private static extern int MTSetMTPrefs(
+        short mode,
+        [MarshalAs(UnmanagedType.LPStr)] string prefs,
+        short timeout);
+
+    [DllImport(@"C:\Program Files (x86)\MathType\System\64\MT6.dll", CharSet = CharSet.Ansi)]
     private static extern int MTGetLastDimension(int dimIndex);
 
     [DllImport("kernel32.dll")]
@@ -596,6 +642,7 @@ internal static class Program
             bool doVerb,
             string method,
             int? preVerb,
+            string? prefsFilePath,
             string? previewOutputPath,
             string? metadataOutputPath)
         {
@@ -607,6 +654,7 @@ internal static class Program
             DoVerb = doVerb;
             Method = method;
             PreVerb = preVerb;
+            PrefsFilePath = prefsFilePath;
             PreviewOutputPath = previewOutputPath;
             MetadataOutputPath = metadataOutputPath;
         }
@@ -619,6 +667,7 @@ internal static class Program
         public bool DoVerb { get; }
         public string Method { get; }
         public int? PreVerb { get; }
+        public string? PrefsFilePath { get; }
         public string? PreviewOutputPath { get; }
         public string? MetadataOutputPath { get; }
 
@@ -632,6 +681,7 @@ internal static class Program
             var doVerb = true;
             var method = "create-from-data";
             int? preVerb = null;
+            string? prefsFilePath = null;
             string? previewOutput = null;
             string? metadataOutput = null;
 
@@ -663,6 +713,9 @@ internal static class Program
                     case "--pre-verb":
                         preVerb = int.Parse(args[++i]);
                         break;
+                    case "--prefs-file":
+                        prefsFilePath = args[++i];
+                        break;
                     case "--preview-output":
                         previewOutput = args[++i];
                         break;
@@ -676,7 +729,7 @@ internal static class Program
 
             if (format is null || input is null || output is null)
             {
-                throw new ArgumentException("Usage: MathTypeOleHelper --format <clipboard format> --input <file> --output <ole.bin> [--encoding utf8|utf16le] [--binary] [--no-verb] [--method create-from-data|init-from-data|set-data] [--pre-verb N] [--preview-output <wmf>] [--metadata-output <json>]");
+                throw new ArgumentException("Usage: MathTypeOleHelper --format <clipboard format> --input <file> --output <ole.bin> [--encoding utf8|utf16le] [--binary] [--no-verb] [--method create-from-data|init-from-data|set-data] [--pre-verb N] [--prefs-file <eqp>] [--preview-output <wmf>] [--metadata-output <json>]");
             }
 
             return new Options(
@@ -688,6 +741,7 @@ internal static class Program
                 doVerb,
                 method,
                 preVerb,
+                prefsFilePath,
                 previewOutput,
                 metadataOutput);
         }

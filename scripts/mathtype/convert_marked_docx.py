@@ -10,21 +10,24 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     __package__ = "mathtype"
 
-from .marked_docx import extract_marked_latex_values, inspect_docx, replace_marked_omml_with_generated
+from .marked_docx import extract_marked_equation_requests, inspect_docx, replace_marked_omml_with_generated
 from .ole_parts import build_helper, generate_equation_parts
 
 
 def convert_marked_docx(source: Path, target: Path, work_dir: Path) -> int:
     """Convert all hidden-marker-bound OMML nodes in a DOCX to MathType OLE."""
-    formulas = extract_marked_latex_values(source)
-    if not formulas:
+    requests = extract_marked_equation_requests(source)
+    if not requests:
         raise ValueError(
             f"No hidden MathType markers found in {source}; "
             "build the DOCX with pandoc/filters/mathtype_markers.lua first"
         )
 
-    print(f"[mathtype] marked DOCX math nodes: {len(formulas)}")
-    equations = generate_equation_parts(formulas, work_dir)
+    size_summary = sorted({request.font_size_pt for request in requests if request.font_size_pt is not None})
+    print(f"[mathtype] marked DOCX math nodes: {len(requests)}")
+    if size_summary:
+        print(f"[mathtype] detected Word font sizes (pt): {', '.join(f'{size:g}' for size in size_summary)}")
+    equations = generate_equation_parts(requests, work_dir)
     replaced = replace_marked_omml_with_generated(source, target, equations)
     print(f"[mathtype] replaced top-level OMML nodes: {replaced}")
     inspect_docx(target)

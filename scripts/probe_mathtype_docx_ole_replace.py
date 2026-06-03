@@ -13,6 +13,7 @@ import copy
 import itertools
 import re
 import shutil
+import struct
 import zipfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -34,6 +35,7 @@ REL_IMAGE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships
 REL_OLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject"
 CONTENT_OLE = "application/vnd.openxmlformats-officedocument.oleObject"
 CONTENT_WMF = "image/x-wmf"
+PLACEABLE_WMF_KEY = 0x9AC6CDD7
 
 
 for prefix, uri in NS.items():
@@ -63,6 +65,61 @@ def read_xml(archive: zipfile.ZipFile, name: str) -> ET.Element:
 def serialize_xml(root: ET.Element) -> bytes:
     """Serialize an XML element with declaration."""
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
+def wmf_size_points(wmf_bytes: bytes) -> tuple[float, float] | None:
+    """Return a placeable WMF preview size in points, or None if unavailable."""
+    if len(wmf_bytes) < 22:
+        return None
+
+    key, _handle, left, top, right, bottom, inch, _reserved, _checksum = struct.unpack(
+        "<I H h h h h H I H",
+        wmf_bytes[:22],
+    )
+    if key != PLACEABLE_WMF_KEY or inch == 0:
+        return None
+
+    width = max(0, right - left) * 72 / inch
+    height = max(0, bottom - top) * 72 / inch
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def format_point_size(value: float) -> str:
+    """Format a point value for a VML style declaration."""
+    return f"{value:.2f}".rstrip("0").rstrip(".") + "pt"
+
+
+def set_style_property(style: str, name: str, value: str) -> str:
+    """Set one semicolon-separated VML style property while preserving others."""
+    parts = [part.strip() for part in style.split(";") if part.strip()]
+    prefix = f"{name}:"
+    for index, part in enumerate(parts):
+        if part.lower().startswith(prefix.lower()):
+            parts[index] = f"{name}:{value}"
+            break
+    else:
+        parts.append(f"{name}:{value}")
+    return ";".join(parts)
+
+
+def sync_shape_size_to_wmf(shape: ET.Element, wmf_bytes: bytes) -> None:
+    """Update a cloned OLE shape to match its WMF preview size.
+
+    This fixes the MathType probe bug where every inserted equation inherited
+    the sample equation's VML display box, which squeezed valid WMF previews
+    into a tiny fixed width in Word.
+    """
+    size = wmf_size_points(wmf_bytes)
+    if size is None:
+        return
+
+    width, height = size
+    style = shape.get("style", "")
+    style = set_style_property(style, "width", format_point_size(width))
+    style = set_style_property(style, "height", format_point_size(height))
+    shape.set("style", style)
 
 
 def find_next_numeric_id(existing: list[str], prefix: str) -> itertools.count:
@@ -134,6 +191,7 @@ def make_object_run(template: MathTypeTemplate, image_rid: str, ole_rid: str, in
 
     shape_id = f"_x0000_i{3000 + index}"
     shape.set("id", shape_id)
+    sync_shape_size_to_wmf(shape, template.image_bytes)
     image.set(qn("r", "id"), image_rid)
     ole.set(qn("r", "id"), ole_rid)
     ole.set("ShapeID", shape_id)

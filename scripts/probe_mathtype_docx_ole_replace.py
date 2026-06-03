@@ -36,6 +36,8 @@ REL_OLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/o
 CONTENT_OLE = "application/vnd.openxmlformats-officedocument.oleObject"
 CONTENT_WMF = "image/x-wmf"
 PLACEABLE_WMF_KEY = 0x9AC6CDD7
+INLINE_MATH_REFERENCE_HEIGHT_PT = 15.85
+INLINE_MATH_REFERENCE_POSITION_HALF_POINTS = -10
 
 
 for prefix, uri in NS.items():
@@ -50,6 +52,7 @@ class MathTypeTemplate:
     object_element: ET.Element
     ole_bytes: bytes
     image_bytes: bytes
+    baseline_from_bottom_pt: float | None = None
 
 
 def qn(prefix: str, local: str) -> str:
@@ -122,6 +125,46 @@ def sync_shape_size_to_wmf(shape: ET.Element, wmf_bytes: bytes) -> None:
     shape.set("style", style)
 
 
+def apply_run_position(run: ET.Element, position_half_points: int) -> None:
+    """Set the Word run baseline offset used by inline MathType objects.
+
+    MathType-formatted inline OLE equations in Word commonly carry
+    w:position=-10; without it, generated objects sit visibly above the text
+    baseline even when their WMF dimensions are correct.
+    """
+    rpr = run.find("w:rPr", NS)
+    if rpr is None:
+        rpr = ET.Element(qn("w", "rPr"))
+        run.insert(0, rpr)
+
+    position = rpr.find("w:position", NS)
+    if position is None:
+        position = ET.Element(qn("w", "position"))
+        rpr.append(position)
+    position.set(qn("w", "val"), str(position_half_points))
+
+
+def inline_math_position_half_points(template: MathTypeTemplate) -> int:
+    """Return Word's inline MathType baseline offset in half-points.
+
+    Prefer MathType's own baseline distance when available. Word's w:position
+    uses half-points, and a negative value lowers the inline object so the
+    equation baseline, not the bottom of the preview box, aligns with text.
+    """
+    if template.baseline_from_bottom_pt is not None and template.baseline_from_bottom_pt > 0:
+        return -max(1, round(template.baseline_from_bottom_pt * 2))
+
+    # Fallback for structural probes that clone a sample object without fresh
+    # MathType metadata. The real conversion path should provide the baseline.
+    size = wmf_size_points(template.image_bytes)
+    if size is None:
+        return INLINE_MATH_REFERENCE_POSITION_HALF_POINTS
+
+    _width, height = size
+    scale = abs(INLINE_MATH_REFERENCE_POSITION_HALF_POINTS) / INLINE_MATH_REFERENCE_HEIGHT_PT
+    return -max(1, round(height * scale))
+
+
 def find_next_numeric_id(existing: list[str], prefix: str) -> itertools.count:
     """Return a counter starting after the highest numeric suffix in existing IDs."""
     max_id = 0
@@ -178,9 +221,17 @@ def top_level_omml_nodes(root: ET.Element) -> list[ET.Element]:
     return result
 
 
-def make_object_run(template: MathTypeTemplate, image_rid: str, ole_rid: str, index: int) -> ET.Element:
+def make_object_run(
+    template: MathTypeTemplate,
+    image_rid: str,
+    ole_rid: str,
+    index: int,
+    is_inline_math: bool = False,
+) -> ET.Element:
     """Create a Word run containing a cloned MathType OLE object."""
     run = ET.Element(qn("w", "r"))
+    if is_inline_math:
+        apply_run_position(run, inline_math_position_half_points(template))
     obj = copy.deepcopy(template.object_element)
 
     shape = obj.find(".//v:shape", NS)
@@ -253,7 +304,8 @@ def replace_omml_with_template(source: Path, sample: Path, target: Path, limit: 
             ole_name = f"word/embeddings/mathtype_probe_{replacement_index}.bin"
 
             parent.remove(node)
-            parent.insert(child_index, make_object_run(template, image_rid, ole_rid, replacement_index))
+            is_inline_math = node.tag == qn("m", "oMath")
+            parent.insert(child_index, make_object_run(template, image_rid, ole_rid, replacement_index, is_inline_math))
             append_relationship(rels, image_rid, REL_IMAGE, image_name.removeprefix("word/"))
             append_relationship(rels, ole_rid, REL_OLE, ole_name.removeprefix("word/"))
             added_parts[image_name] = template.image_bytes

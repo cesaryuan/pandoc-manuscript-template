@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text;
@@ -10,11 +11,26 @@ internal static class Program
     private const int OLECLOSE_SAVEIFDIRTY = 0;
     private const int CF_METAFILEPICT = 3;
     private const int DVASPECT_CONTENT = 1;
+    private const int MM_LOMETRIC = 2;
+    private const int MM_HIMETRIC = 3;
+    private const int MM_LOENGLISH = 4;
+    private const int MM_HIENGLISH = 5;
+    private const int MM_TWIPS = 6;
+    private const int MM_ISOTROPIC = 7;
+    private const int MM_ANISOTROPIC = 8;
     private const int TYMED_HGLOBAL = 1;
     private const int TYMED_MFPICT = 32;
     private const int STGM_CREATE = 0x00001000;
     private const int STGM_READWRITE = 0x00000002;
     private const int STGM_SHARE_EXCLUSIVE = 0x00000010;
+    private const short MTINIT_LAUNCH_NOW = 1;
+    private const int MTDIM_WIDTH = 1;
+    private const int MTDIM_HEIGHT = 2;
+    private const int MTDIM_BASELINE = 3;
+    private const int MTDIM_HORIZ_POS_TYPE = 4;
+    private const int MTDIM_HORIZ_POS = 5;
+    private const double MATH_TYPE_DIMENSION_UNITS_PER_POINT = 32.0;
+    private const short MT_OK = 0;
 
     private static readonly Guid IidIOleObject = new("00000112-0000-0000-C000-000000000046");
 
@@ -145,7 +161,12 @@ internal static class Program
             if (options.PreviewOutputPath is not null)
             {
                 Log("Write WMF preview");
-                WriteWmfPreview(created, options.PreviewOutputPath);
+                var preview = WriteWmfPreview(created, options.PreviewOutputPath);
+                if (options.MetadataOutputPath is not null)
+                {
+                    Log("Write metadata");
+                    WriteMetadata(options.MetadataOutputPath, preview);
+                }
             }
             oleObject.Close(OLECLOSE_SAVEIFDIRTY);
         }
@@ -221,7 +242,7 @@ internal static class Program
         return new Payload(formatId, bytes);
     }
 
-    private static void WriteWmfPreview(object created, string outputPath)
+    private static PreviewMetadata WriteWmfPreview(object created, string outputPath)
     {
         var dataObject = (System.Runtime.InteropServices.ComTypes.IDataObject)created;
         var format = new FORMATETC
@@ -246,11 +267,13 @@ internal static class Program
                 throw new InvalidOperationException("GlobalLock failed for METAFILEPICT");
             }
 
+            int mapMode;
             int xExt;
             int yExt;
             IntPtr hMetaFile;
             try
             {
+                mapMode = Marshal.ReadInt32(pictPtr, 0);
                 xExt = Marshal.ReadInt32(pictPtr, 4);
                 yExt = Marshal.ReadInt32(pictPtr, 8);
                 hMetaFile = Marshal.ReadIntPtr(pictPtr, IntPtr.Size == 8 ? 16 : 12);
@@ -261,18 +284,65 @@ internal static class Program
             }
 
             var bytes = ReadMetaFileBits(hMetaFile);
+            var unitsPerInch = UnitsPerInchForMapMode(mapMode);
             if (!HasPlaceableHeader(bytes))
             {
-                bytes = AddPlaceableHeader(bytes, xExt, yExt);
+                bytes = AddPlaceableHeader(bytes, mapMode, xExt, yExt);
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
             File.WriteAllBytes(outputPath, bytes);
             Console.WriteLine($"[ole-helper] wrote preview {outputPath}, bytes={bytes.Length}");
+            return new PreviewMetadata(
+                mapMode,
+                xExt,
+                yExt,
+                unitsPerInch,
+                Math.Abs(xExt) * 72.0 / unitsPerInch,
+                Math.Abs(yExt) * 72.0 / unitsPerInch,
+                TryReadMathTypeLastDimensions());
         }
         finally
         {
             ReleaseStgMedium(ref medium);
+        }
+    }
+
+    private static void WriteMetadata(string outputPath, PreviewMetadata preview)
+    {
+        // The metadata is intentionally tiny JSON so Python can drive Word XML
+        // placement without depending on MathType COM at DOCX injection time.
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
+        File.WriteAllText(outputPath, preview.ToJson(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        Console.WriteLine($"[ole-helper] wrote metadata {outputPath}");
+    }
+
+    private static MathTypeLastDimensions? TryReadMathTypeLastDimensions()
+    {
+        try
+        {
+            // MTGetLastDimension reports 1/32-point units for the most recent
+            // MathType-rendered equation. If MathType has no fresh value, keep
+            // this optional so the DOCX layer can fall back to preview metrics.
+            MtCheck(MTAPIConnect(MTINIT_LAUNCH_NOW, 30), "MTAPIConnect(dimensions)");
+            try
+            {
+                return new MathTypeLastDimensions(
+                    MTGetLastDimension(MTDIM_WIDTH),
+                    MTGetLastDimension(MTDIM_HEIGHT),
+                    MTGetLastDimension(MTDIM_BASELINE),
+                    MTGetLastDimension(MTDIM_HORIZ_POS_TYPE),
+                    MTGetLastDimension(MTDIM_HORIZ_POS));
+            }
+            finally
+            {
+                MTAPIDisconnect();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"dimension read failed: {ex.Message}");
+            return null;
         }
     }
 
@@ -306,10 +376,30 @@ internal static class Program
         return bytes.Length >= 4 && bytes[0] == 0xD7 && bytes[1] == 0xCD && bytes[2] == 0xC6 && bytes[3] == 0x9A;
     }
 
-    private static byte[] AddPlaceableHeader(byte[] wmfBytes, int xExt, int yExt)
+    private static ushort UnitsPerInchForMapMode(int mapMode)
+    {
+        // METAFILEPICT extents carry their own map-mode units. Treat isotropic
+        // and anisotropic OLE previews as HIMETRIC; using twips here made
+        // MathType previews about 1.76x too large in Word.
+        return mapMode switch
+        {
+            MM_LOMETRIC => 254,
+            MM_HIMETRIC => 2540,
+            MM_LOENGLISH => 100,
+            MM_HIENGLISH => 1000,
+            MM_TWIPS => 1440,
+            MM_ISOTROPIC => 2540,
+            MM_ANISOTROPIC => 2540,
+            _ => 2540,
+        };
+    }
+
+    private static byte[] AddPlaceableHeader(byte[] wmfBytes, int mapMode, int xExt, int yExt)
     {
         var right = (short)Math.Clamp(Math.Abs(xExt), 1, short.MaxValue);
         var bottom = (short)Math.Clamp(Math.Abs(yExt), 1, short.MaxValue);
+        var unitsPerInch = UnitsPerInchForMapMode(mapMode);
+        Console.Error.WriteLine($"[ole-helper] METAFILEPICT mapMode={mapMode}, xExt={xExt}, yExt={yExt}, unitsPerInch={unitsPerInch}");
         var header = new byte[22];
         using var stream = new MemoryStream(header);
         using var writer = new BinaryWriter(stream);
@@ -319,7 +409,7 @@ internal static class Program
         writer.Write((short)0);
         writer.Write(right);
         writer.Write(bottom);
-        writer.Write((ushort)1440);
+        writer.Write(unitsPerInch);
         writer.Write(0u);
         writer.Write((ushort)0);
         var checksum = ComputePlaceableChecksum(header);
@@ -393,6 +483,14 @@ internal static class Program
         Console.Error.Flush();
     }
 
+    private static void MtCheck(int status, string call)
+    {
+        if (status != MT_OK)
+        {
+            throw new InvalidOperationException($"{call} returned MathType status {status}");
+        }
+    }
+
     [DllImport("ole32.dll")]
     private static extern int OleInitialize(IntPtr pvReserved);
 
@@ -447,6 +545,15 @@ internal static class Program
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern ushort RegisterClipboardFormat(string lpszFormat);
 
+    [DllImport(@"C:\Program Files (x86)\MathType\System\64\MT6.dll", CharSet = CharSet.Ansi)]
+    private static extern int MTAPIConnect(short options, short timeout);
+
+    [DllImport(@"C:\Program Files (x86)\MathType\System\64\MT6.dll", CharSet = CharSet.Ansi)]
+    private static extern int MTAPIDisconnect();
+
+    [DllImport(@"C:\Program Files (x86)\MathType\System\64\MT6.dll", CharSet = CharSet.Ansi)]
+    private static extern int MTGetLastDimension(int dimIndex);
+
     [DllImport("kernel32.dll")]
     private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
 
@@ -468,7 +575,8 @@ internal static class Program
         bool DoVerb,
         string Method,
         int? PreVerb,
-        string? PreviewOutputPath)
+        string? PreviewOutputPath,
+        string? MetadataOutputPath)
     {
         public static Options Parse(string[] args)
         {
@@ -481,6 +589,7 @@ internal static class Program
             var method = "create-from-data";
             int? preVerb = null;
             string? previewOutput = null;
+            string? metadataOutput = null;
 
             for (var i = 0; i < args.Length; i++)
             {
@@ -513,6 +622,9 @@ internal static class Program
                     case "--preview-output":
                         previewOutput = args[++i];
                         break;
+                    case "--metadata-output":
+                        metadataOutput = args[++i];
+                        break;
                     default:
                         throw new ArgumentException($"Unknown argument: {args[i]}");
                 }
@@ -520,14 +632,54 @@ internal static class Program
 
             if (format is null || input is null || output is null)
             {
-                throw new ArgumentException("Usage: MathTypeOleHelper --format <clipboard format> --input <file> --output <ole.bin> [--encoding utf8|utf16le] [--binary] [--no-verb] [--method create-from-data|init-from-data|set-data] [--pre-verb N] [--preview-output <wmf>]");
+                throw new ArgumentException("Usage: MathTypeOleHelper --format <clipboard format> --input <file> --output <ole.bin> [--encoding utf8|utf16le] [--binary] [--no-verb] [--method create-from-data|init-from-data|set-data] [--pre-verb N] [--preview-output <wmf>] [--metadata-output <json>]");
             }
 
-            return new Options(format, input, output, encoding, binary, doVerb, method, preVerb, previewOutput);
+            return new Options(
+                format ?? "",
+                input ?? "",
+                output ?? "",
+                encoding,
+                binary,
+                doVerb,
+                method,
+                preVerb,
+                previewOutput,
+                metadataOutput);
         }
     }
 
     private sealed record Payload(ushort FormatId, byte[] Bytes);
+
+    private sealed record MathTypeLastDimensions(
+        int WidthRaw,
+        int HeightRaw,
+        int BaselineRaw,
+        int HorizPosType,
+        int HorizPos)
+    {
+        private static double ToPoints(int value) => value / MATH_TYPE_DIMENSION_UNITS_PER_POINT;
+
+        public string ToJson() => FormattableString.Invariant(
+            $"{{\"width_raw\":{WidthRaw},\"height_raw\":{HeightRaw},\"baseline_from_bottom_raw\":{BaselineRaw},\"width_pt\":{ToPoints(WidthRaw):F4},\"height_pt\":{ToPoints(HeightRaw):F4},\"baseline_from_bottom_pt\":{ToPoints(BaselineRaw):F4},\"horiz_pos_type\":{HorizPosType},\"horiz_pos\":{HorizPos}}}");
+    }
+
+    private sealed record PreviewMetadata(
+        int MapMode,
+        int XExt,
+        int YExt,
+        ushort UnitsPerInch,
+        double WidthPt,
+        double HeightPt,
+        MathTypeLastDimensions? MathType)
+    {
+        public string ToJson()
+        {
+            var mathTypeJson = MathType is null ? "null" : MathType.ToJson();
+            return FormattableString.Invariant(
+                $"{{\"map_mode\":{MapMode},\"x_ext\":{XExt},\"y_ext\":{YExt},\"units_per_inch\":{UnitsPerInch},\"width_pt\":{WidthPt:F4},\"height_pt\":{HeightPt:F4},\"mathtype\":{mathTypeJson}}}");
+        }
+    }
 }
 
 [ComVisible(true)]

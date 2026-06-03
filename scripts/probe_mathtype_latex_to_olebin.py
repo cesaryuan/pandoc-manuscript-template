@@ -62,6 +62,25 @@ class GeneratedEquation:
     latex: str
     ole_path: Path
     wmf_path: Path
+    metadata_path: Path | None = None
+
+    @property
+    def baseline_from_bottom_pt(self) -> float | None:
+        """Return MathType's baseline distance from the preview bottom.
+
+        The helper records this in a sidecar JSON file because Word XML needs
+        the value later when placing inline OLE equations.
+        """
+        if self.metadata_path is None or not self.metadata_path.exists():
+            return None
+        data = json.loads(self.metadata_path.read_text(encoding="utf-8-sig"))
+        mathtype = data.get("mathtype")
+        if not isinstance(mathtype, dict):
+            return None
+        value = mathtype.get("baseline_from_bottom_pt")
+        if isinstance(value, (int, float)) and value > 0:
+            return float(value)
+        return None
 
 
 class CompoundFile:
@@ -197,6 +216,7 @@ def make_ole_from_format(
     output_path: Path,
     binary: bool = False,
     preview_output: Path | None = None,
+    metadata_output: Path | None = None,
 ) -> None:
     """Ask MathType OLE to create an Equation.DSMT4 compound file without Word."""
     command = [
@@ -219,6 +239,8 @@ def make_ole_from_format(
         command.append("--binary")
     if preview_output is not None:
         command.extend(["--preview-output", str(preview_output)])
+    if metadata_output is not None:
+        command.extend(["--metadata-output", str(metadata_output)])
     run(command)
 
 
@@ -296,7 +318,10 @@ def extract_markdown_math(markdown: Path, metadata_file: Path | None = None) -> 
             for child in value:
                 walk(child)
 
-    walk(ast)
+    # Pandoc includes metadata in the JSON AST. Restrict extraction to document
+    # blocks so crossref/style metadata math snippets are not paired with DOCX
+    # OMML nodes that only exist in the manuscript body.
+    walk(ast.get("blocks", ast))
     return formulas
 
 
@@ -309,19 +334,32 @@ def generate_equation_parts(latex_values: list[str], output_dir: Path) -> list[G
         mathml_path = output_dir / f"eq_{index:03d}.mathml"
         ole_path = output_dir / f"eq_{index:03d}.ole.bin"
         wmf_path = output_dir / f"eq_{index:03d}.wmf"
+        metadata_path = output_dir / f"eq_{index:03d}.json"
         write_latex_input(input_path, latex)
         try:
-            make_ole_from_format("TeX Input Language", input_path, ole_path, preview_output=wmf_path)
+            make_ole_from_format(
+                "TeX Input Language",
+                input_path,
+                ole_path,
+                preview_output=wmf_path,
+                metadata_output=metadata_path,
+            )
         except RuntimeError as exc:
             print(f"[probe] TeX input failed for equation {index}; falling back to MathML: {exc}")
             latex_to_mathml(latex, mathml_path)
-            make_ole_from_format("application/mathml+xml", mathml_path, ole_path, preview_output=wmf_path)
+            make_ole_from_format(
+                "application/mathml+xml",
+                mathml_path,
+                ole_path,
+                preview_output=wmf_path,
+                metadata_output=metadata_path,
+            )
         compound = inspect_ole(ole_path)
         if compound.read_stream("Equation Native").find(b"DSMT") < 0:
             raise ValueError(f"generated OLE lacks DSMT marker: {ole_path}")
         if not wmf_path.exists() or wmf_path.read_bytes()[:4] != bytes.fromhex("d7cdc69a"):
             raise ValueError(f"generated WMF preview is missing placeable header: {wmf_path}")
-        equations.append(GeneratedEquation(latex=latex, ole_path=ole_path, wmf_path=wmf_path))
+        equations.append(GeneratedEquation(latex=latex, ole_path=ole_path, wmf_path=wmf_path, metadata_path=metadata_path))
     return equations
 
 
@@ -357,9 +395,10 @@ def replace_all_omml_with_generated(source: Path, sample: Path, target: Path, eq
                 object_element=copy.deepcopy(template.object_element),
                 ole_bytes=equation.ole_path.read_bytes(),
                 image_bytes=equation.wmf_path.read_bytes(),
+                baseline_from_bottom_pt=equation.baseline_from_bottom_pt,
             )
             parent.remove(node)
-            parent.insert(child_index, make_object_run(item_template, image_rid, ole_rid, index))
+            parent.insert(child_index, make_object_run(item_template, image_rid, ole_rid, index, node.tag == qn("m", "oMath")))
             append_relationship(rels, image_rid, REL_IMAGE, image_name.removeprefix("word/"))
             append_relationship(rels, ole_rid, REL_OLE, ole_name.removeprefix("word/"))
             added_parts[image_name] = item_template.image_bytes
@@ -435,7 +474,12 @@ def main() -> int:
         return 0
 
     write_latex_input(latex_path, args.latex)
-    make_ole_from_format("TeX Input Language", latex_path, tex_ole, preview_output=tmp / "mathtype-latex-preview.wmf")
+    make_ole_from_format(
+        "TeX Input Language",
+        latex_path,
+        tex_ole,
+        preview_output=tmp / "mathtype-latex-preview.wmf",
+    )
     tex_compound = inspect_ole(tex_ole)
 
     native = tex_compound.read_stream("Equation Native")

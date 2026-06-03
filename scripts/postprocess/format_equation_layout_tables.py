@@ -28,7 +28,7 @@ if __package__ in (None, ""):
     # Allow direct execution via `uv run scripts/postprocess/<script>.py`.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from postprocess.autofit_tables import is_equation_layout_table
+from postprocess.autofit_tables import is_equation_layout_table, is_mathtype_marker_text
 
 try:
     from docx.document import Document as DocumentObject
@@ -110,6 +110,8 @@ def cell_visible_text(cell: _Cell) -> str:
     for tag in ('w:t', 'm:t'):
         for text_element in cell._tc.findall(f".//{qn(tag)}"):
             if text_element.text:
+                if tag == 'w:t' and is_mathtype_marker_text(text_element.text):
+                    continue
                 text_parts.append(text_element.text)
     return "".join(text_parts).strip()
 

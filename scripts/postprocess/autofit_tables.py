@@ -46,6 +46,7 @@ except ImportError:
 
 
 EQUATION_LAYOUT_TEXT_PATTERN = re.compile(r"^[\s\t\r\n()（）\[\]【】0-9ivxlcdmIVXLCDM.\-–—]*$")
+MATH_TYPE_MARKER_PREFIX = "MTLATEX:"
 
 
 def set_table_autofit_window(table: Table):
@@ -96,6 +97,11 @@ def table_contains_math(table: Table) -> bool:
     return bool(element.findall(f".//{qn('m:oMath')}") or element.findall(f".//{qn('m:oMathPara')}"))
 
 
+def is_mathtype_marker_text(text: str) -> bool:
+    """Return whether a text node is a hidden MathType binding marker."""
+    return text.startswith(MATH_TYPE_MARKER_PREFIX)
+
+
 def table_non_math_text(table: Table) -> str:
     """Return visible table text outside Word math elements."""
     element = table._element
@@ -106,6 +112,11 @@ def table_non_math_text(table: Table) -> str:
         if any(parent in math_elements for parent in text_element.iterancestors()):
             continue
         if text_element.text:
+            # Marker runs carry source LaTeX for the later MathType conversion;
+            # they are hidden and should not make an equation layout table look
+            # like a regular content table.
+            if is_mathtype_marker_text(text_element.text):
+                continue
             text_parts.append(text_element.text)
 
     return "".join(text_parts)

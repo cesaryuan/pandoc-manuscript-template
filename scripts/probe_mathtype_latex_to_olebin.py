@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-Probe a no-Word MathType OLE path from LaTeX text to DOCX injection.
+Convert a marker-bearing DOCX from OMML equations to MathType OLE equations.
 
-This intentionally stays outside the normal build path. It drives MathType's
-OLE server directly, saves a DOCX-embeddable OLE compound file, then reuses the
-existing low-level DOCX object injection code.
+The build script is responsible for producing the DOCX with hidden LaTeX
+markers. This converter only reads those markers, generates MathType OLE parts,
+and swaps the marker-bound OMML nodes in the DOCX package.
 """
 
 import argparse
 import copy
 import json
 import struct
-import subprocess
 import zipfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
+import subprocess
 
 from probe_mathtype_docx_ole_replace import (
     MathTypeTemplate,
@@ -27,7 +27,6 @@ from probe_mathtype_docx_ole_replace import (
     make_object_run,
     qn,
     read_xml,
-    replace_omml_with_template,
     serialize_xml,
     top_level_omml_nodes,
     CONTENT_OLE,
@@ -40,9 +39,6 @@ from probe_mathtype_docx_ole_replace import (
 
 HELPER_PROJECT = Path("scripts/mathtype_ole_helper/MathTypeOleHelper.csproj")
 HELPER_EXE = Path("scripts/mathtype_ole_helper/bin/Debug/net48/MathTypeOleHelper.exe")
-MARKER_FILTER = Path("pandoc/filters/mathtype_markers.lua")
-REFERENCE_DOC = Path("pandoc/manuscript-template/reference-doc.docx")
-DOCX_TEMPLATE = Path("pandoc/templates/default.xml")
 MATH_TYPE_MARKER_PREFIX = "MTLATEX:"
 END_OF_CHAIN = 0xFFFFFFFE
 FREE_SECTOR = 0xFFFFFFFF
@@ -219,31 +215,6 @@ def build_helper() -> None:
     run(["dotnet", "build", str(HELPER_PROJECT), "-v:quiet"])
 
 
-def build_marked_source_docx(markdown: Path, metadata_file: Path | None, output: Path) -> Path:
-    """Build a DOCX whose OMML formulas are preceded by hidden LaTeX markers."""
-    output.parent.mkdir(parents=True, exist_ok=True)
-    command = [
-        "pandoc",
-        str(markdown),
-        "--standalone",
-        "--reference-doc",
-        str(REFERENCE_DOC),
-        "--template",
-        str(DOCX_TEMPLATE),
-        "--filter",
-        "pandoc-crossref",
-        "--citeproc",
-        "--lua-filter",
-        str(MARKER_FILTER),
-        "-o",
-        str(output),
-    ]
-    if metadata_file is not None and metadata_file.exists():
-        command.extend(["--metadata-file", str(metadata_file)])
-    run(command)
-    return output
-
-
 def mathtype_tex_payload(latex: str) -> str:
     """Return TeX text in the math-delimited form accepted by MathType OLE.
 
@@ -304,25 +275,6 @@ def make_ole_from_format(
     run(command)
 
 
-def latex_to_mathml(latex: str, output_path: Path) -> Path:
-    """Convert one LaTeX math fragment to MathML using Pandoc."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    markdown_path = output_path.with_suffix(".md")
-    markdown_path.write_text("$$\n" + latex.strip() + "\n$$\n", encoding="utf-8")
-    result = run(
-        ["pandoc", str(markdown_path), "-f", "markdown", "-t", "html", "--mathml", "--wrap=none"],
-        echo_stdout=False,
-    )
-    html = result.stdout
-    start = html.find("<math")
-    end = html.find("</math>", start)
-    if start < 0 or end < 0:
-        raise ValueError(f"Pandoc did not produce MathML for {markdown_path}")
-    mathml = html[start : end + len("</math>")]
-    output_path.write_text(mathml, encoding="utf-8")
-    return output_path
-
-
 def inspect_ole(path: Path) -> CompoundFile:
     """Print the key MathType OLE stream evidence."""
     compound = CompoundFile(path.read_bytes())
@@ -333,65 +285,12 @@ def inspect_ole(path: Path) -> CompoundFile:
     return compound
 
 
-def inject_generated_ole(source: Path, sample: Path, generated_ole: Path, generated_wmf: Path, target: Path) -> int:
-    """Inject one generated OLE object and WMF preview."""
-    template = extract_mathtype_template(sample)
-    replacement_template = MathTypeTemplate(
-        object_element=template.object_element,
-        ole_bytes=generated_ole.read_bytes(),
-        image_bytes=generated_wmf.read_bytes(),
-    )
-
-    # Monkey-patching the extracted template keeps this probe isolated from the
-    # existing structural replacement implementation.
-    original_extract = extract_mathtype_template
-    try:
-        import probe_mathtype_docx_ole_replace as replace_module
-
-        replace_module.extract_mathtype_template = lambda _: replacement_template
-        return replace_omml_with_template(source, sample, target, 1)
-    finally:
-        import probe_mathtype_docx_ole_replace as replace_module
-
-        replace_module.extract_mathtype_template = original_extract
-
-
-def extract_markdown_math(markdown: Path, metadata_file: Path | None = None) -> list[str]:
-    """Extract math strings from Markdown using Pandoc's parser order."""
-    command = ["pandoc", str(markdown), "-t", "json"]
-    if metadata_file is not None and metadata_file.exists():
-        command.extend(["--metadata-file", str(metadata_file)])
-    result = run(command, echo_stdout=False)
-    ast = json.loads(result.stdout)
-    formulas: list[str] = []
-
-    def walk(value: object) -> None:
-        if isinstance(value, dict):
-            if value.get("t") == "Math":
-                content = value.get("c", [])
-                if isinstance(content, list) and len(content) == 2:
-                    formulas.append(str(content[1]))
-                return
-            for child in value.values():
-                walk(child)
-        elif isinstance(value, list):
-            for child in value:
-                walk(child)
-
-    # Pandoc includes metadata in the JSON AST. Restrict extraction to document
-    # blocks so crossref/style metadata math snippets are not paired with DOCX
-    # OMML nodes that only exist in the manuscript body.
-    walk(ast.get("blocks", ast))
-    return formulas
-
-
 def generate_equation_parts(latex_values: list[str], output_dir: Path) -> list[GeneratedEquation]:
     """Generate OLE bins and WMF previews for all extracted LaTeX formulas."""
     output_dir.mkdir(parents=True, exist_ok=True)
     equations: list[GeneratedEquation] = []
     for index, latex in enumerate(latex_values, start=1):
         input_path = output_dir / f"eq_{index:03d}.tex"
-        mathml_path = output_dir / f"eq_{index:03d}.mathml"
         ole_path = output_dir / f"eq_{index:03d}.ole.bin"
         wmf_path = output_dir / f"eq_{index:03d}.wmf"
         metadata_path = output_dir / f"eq_{index:03d}.json"
@@ -405,15 +304,10 @@ def generate_equation_parts(latex_values: list[str], output_dir: Path) -> list[G
                 metadata_output=metadata_path,
             )
         except RuntimeError as exc:
-            print(f"[probe] TeX input failed for equation {index}; falling back to MathML: {exc}")
-            latex_to_mathml(latex, mathml_path)
-            make_ole_from_format(
-                "application/mathml+xml",
-                mathml_path,
-                ole_path,
-                preview_output=wmf_path,
-                metadata_output=metadata_path,
-            )
+            raise RuntimeError(
+                f"TeX input failed for equation {index}; "
+                "the MathType converter no longer calls Pandoc for fallback MathML"
+            ) from exc
         compound = inspect_ole(ole_path)
         if compound.read_stream("Equation Native").find(b"DSMT") < 0:
             raise ValueError(f"generated OLE lacks DSMT marker: {ole_path}")
@@ -572,70 +466,6 @@ def replace_marked_omml_with_generated(source: Path, sample: Path, target: Path,
     return len(equations)
 
 
-def replace_all_omml_with_generated(source: Path, sample: Path, target: Path, equations: list[GeneratedEquation]) -> int:
-    """Replace top-level OMML nodes with generated MathType OLE objects."""
-    template = extract_mathtype_template(sample)
-    target.parent.mkdir(parents=True, exist_ok=True)
-
-    with zipfile.ZipFile(source) as in_zip:
-        document = read_xml(in_zip, "word/document.xml")
-        rels = read_xml(in_zip, "word/_rels/document.xml.rels")
-        content_types = read_xml(in_zip, "[Content_Types].xml")
-        existing_names = set(in_zip.namelist())
-
-        nodes = top_level_omml_nodes(document)
-        if len(nodes) != len(equations):
-            raise ValueError(f"math count mismatch: markdown={len(equations)}, docx_omml={len(nodes)}")
-
-        existing_rids = [rel.get("Id", "") for rel in rels.findall("rel:Relationship", NS)]
-        rid_counter = find_next_numeric_id(existing_rids, "rId")
-        parent_map = collect_parent_map(document)
-        added_parts: dict[str, bytes] = {}
-
-        for index, (node, equation) in enumerate(zip(nodes, equations), start=1):
-            parent = parent_map[node]
-            child_index = list(parent).index(node)
-            image_rid = f"rId{next(rid_counter)}"
-            ole_rid = f"rId{next(rid_counter)}"
-            image_name = f"word/media/mathtype_formula_{index}.wmf"
-            ole_name = f"word/embeddings/mathtype_formula_{index}.bin"
-
-            item_template = MathTypeTemplate(
-                object_element=copy.deepcopy(template.object_element),
-                ole_bytes=equation.ole_path.read_bytes(),
-                image_bytes=equation.wmf_path.read_bytes(),
-                baseline_from_bottom_pt=equation.baseline_from_bottom_pt,
-            )
-            parent.remove(node)
-            parent.insert(child_index, make_object_run(item_template, image_rid, ole_rid, index))
-            append_relationship(rels, image_rid, REL_IMAGE, image_name.removeprefix("word/"))
-            append_relationship(rels, ole_rid, REL_OLE, ole_name.removeprefix("word/"))
-            added_parts[image_name] = item_template.image_bytes
-            added_parts[ole_name] = item_template.ole_bytes
-
-        ensure_default_content_type(content_types, "bin", CONTENT_OLE)
-        ensure_default_content_type(content_types, "wmf", CONTENT_WMF)
-        replacements = {
-            "word/document.xml": serialize_xml(document),
-            "word/_rels/document.xml.rels": serialize_xml(rels),
-            "[Content_Types].xml": serialize_xml(content_types),
-        }
-
-        with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as out_zip:
-            for item in in_zip.infolist():
-                if item.filename in replacements or item.filename in added_parts:
-                    continue
-                out_zip.writestr(item, in_zip.read(item.filename))
-            for name, data in replacements.items():
-                out_zip.writestr(name, data)
-            for name, data in added_parts.items():
-                if name in existing_names:
-                    raise ValueError(f"Generated part already exists: {name}")
-                out_zip.writestr(name, data)
-
-    return len(equations)
-
-
 def inspect_docx(path: Path) -> None:
     """Report DOCX package markers after injection."""
     with zipfile.ZipFile(path) as archive:
@@ -653,75 +483,30 @@ def inspect_docx(path: Path) -> None:
 
 
 def main() -> int:
-    """Run the no-Word LaTeX-to-OLE feasibility probe."""
+    """Run marker-bound DOCX conversion to MathType OLE objects."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--latex", default=r"x^2 + y^2 = z^2", help="LaTeX equation text")
-    parser.add_argument("--source", default="output/docx/manuscript.docx", help="DOCX containing OMML")
-    parser.add_argument("--markdown", default="manuscript.md", help="Markdown source for full replacement")
-    parser.add_argument("--metadata-file", default=None, help="Optional Pandoc metadata file for parsing")
-    parser.add_argument("--sample", default="mathtype.docx", help="DOCX containing one MathType OLE object")
-    parser.add_argument("--target", default="tmp/mathtype-latex-native-ole-probe.docx", help="Output DOCX")
-    parser.add_argument("--mode", choices=["single", "all"], default="single", help="Probe one formula or all Markdown math")
-    parser.add_argument("--mark-source", action="store_true", help="Build a temporary source DOCX with hidden LaTeX markers")
-    parser.add_argument("--marked-source", default="tmp/mathtype-marker-source.docx", help="Temporary source DOCX used with --mark-source")
+    parser.add_argument("--source", default="tmp/mathtype-marker-source.docx", help="DOCX containing hidden MathType markers")
+    parser.add_argument("--sample", default="tmp/mathtype.docx", help="DOCX containing one MathType OLE object")
+    parser.add_argument("--target", default="tmp/mathtype-marker-ole-probe.docx", help="Output DOCX")
+    parser.add_argument("--mode", choices=["all"], default="all", help="Convert all marker-bound formulas")
+    parser.add_argument("--work-dir", default="tmp/mathtype-all", help="Directory for generated OLE and WMF parts")
     args = parser.parse_args()
 
     build_helper()
 
-    tmp = Path("tmp")
-    latex_path = tmp / "mathtype-latex-input.txt"
-    tex_ole = tmp / "mathtype-latex-texinput.ole.bin"
-    native_path = tmp / "mathtype-latex-equation-native.mtef"
-    native_ole = tmp / "mathtype-latex-native.ole.bin"
+    source = Path(args.source)
+    sample = Path(args.sample)
     target = Path(args.target)
+    formulas = extract_marked_latex_values(source)
+    if not formulas:
+        raise ValueError(
+            f"No hidden MathType markers found in {source}; "
+            "build the DOCX with pandoc/filters/mathtype_markers.lua first"
+        )
 
-    if args.mode == "all":
-        metadata_file = Path(args.metadata_file) if args.metadata_file else None
-        source = Path(args.source)
-        if args.mark_source:
-            source = build_marked_source_docx(Path(args.markdown), metadata_file, Path(args.marked_source))
-
-        formulas = extract_marked_latex_values(source)
-        use_markers = bool(formulas)
-        if use_markers:
-            print(f"[probe] marked DOCX math nodes: {len(formulas)}")
-        else:
-            formulas = extract_markdown_math(Path(args.markdown), metadata_file)
-            print(f"[probe] Markdown math nodes: {len(formulas)}")
-            print("[probe] no MathType markers found; falling back to order-based OMML replacement")
-        equations = generate_equation_parts(formulas, tmp / "mathtype-all")
-        if use_markers:
-            replaced = replace_marked_omml_with_generated(source, Path(args.sample), target, equations)
-        else:
-            replaced = replace_all_omml_with_generated(source, Path(args.sample), target, equations)
-        print(f"[probe] replaced top-level OMML nodes: {replaced}")
-        inspect_docx(target)
-        return 0
-
-    write_latex_input(latex_path, args.latex)
-    make_ole_from_format(
-        "TeX Input Language",
-        latex_path,
-        tex_ole,
-        preview_output=tmp / "mathtype-latex-preview.wmf",
-    )
-    tex_compound = inspect_ole(tex_ole)
-
-    native = tex_compound.read_stream("Equation Native")
-    native_path.write_bytes(native)
-    print(f"[probe] wrote native MTEF stream: {native_path}")
-
-    final_ole = tex_ole
-    try:
-        make_ole_from_format("Native", native_path, native_ole, binary=True)
-        inspect_ole(native_ole)
-        final_ole = native_ole
-    except RuntimeError as exc:
-        # MathType's OLE server accepts TeX/MathML as custom input formats, but
-        # the registry's "Native" label does not map to a simple SetData name.
-        print(f"[probe] Native SetData round-trip failed; using TeX-generated OLE bin: {exc}")
-
-    replaced = inject_generated_ole(Path(args.source), Path(args.sample), final_ole, tmp / "mathtype-latex-preview.wmf", target)
+    print(f"[probe] marked DOCX math nodes: {len(formulas)}")
+    equations = generate_equation_parts(formulas, Path(args.work_dir))
+    replaced = replace_marked_omml_with_generated(source, sample, target, equations)
     print(f"[probe] replaced top-level OMML nodes: {replaced}")
     inspect_docx(target)
     return 0

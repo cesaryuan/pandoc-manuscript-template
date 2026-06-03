@@ -13,6 +13,9 @@ link-citations: true
 #   - Or download from https://www.zotero.org/styles
 csl: pandoc/csl/elsevier-vancouver.csl
 
+# Set to true to convert DOCX equations to MathType OLE objects during build.
+mathtype: false
+
 # DOCX body text formatting (applied to the Body Text style in post-processing)
 bodyText:
   firstLineIndentChars: 2

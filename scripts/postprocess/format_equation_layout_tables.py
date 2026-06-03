@@ -292,8 +292,8 @@ def normalize_equation_layout_paragraphs(table: Table) -> None:
             for paragraph in cell.paragraphs:
                 clear_paragraph_style(paragraph)
                 paragraph_format = paragraph.paragraph_format
-                paragraph_format.space_before = Pt(0)
-                paragraph_format.space_after = Pt(0)
+                paragraph_format.space_before = Pt(2) # 非 0 防止 Word 自带公式显示不完整
+                paragraph_format.space_after = Pt(2)
                 paragraph_format.line_spacing = 1.0
                 # After detaching from Compact/a0, remove any remaining direct
                 # special-indent override so Word shows "Special: None".

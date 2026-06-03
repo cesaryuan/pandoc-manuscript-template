@@ -20,7 +20,8 @@ MATHTYPE_MT6_RELATIVE_PATHS = (
     Path("System/32/MT6.dll"),
     Path("MT6.dll"),
 )
-MATHTYPE_DEFAULT_PREFS_TEMPLATE = Path(r"C:\Program Files (x86)\MathType\Preferences\Times+Symbol 12.eqp")
+# Keep the sizing template in-repo so builds do not depend on a local MathType preferences path.
+MATHTYPE_DEFAULT_PREFS_TEMPLATE = Path("scripts/mathtype/Times+Symbol 12.eqp")
 BEGIN_ALIGNED_RE = re.compile(r"\\begin\s*\{\s*aligned\s*\}")
 END_ALIGNED_RE = re.compile(r"\\end\s*\{\s*aligned\s*\}")
 

@@ -1,4 +1,7 @@
+using System;
 using System.Globalization;
+using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text;
@@ -32,7 +35,7 @@ internal static class Program
     private const double MATH_TYPE_DIMENSION_UNITS_PER_POINT = 32.0;
     private const short MT_OK = 0;
 
-    private static readonly Guid IidIOleObject = new("00000112-0000-0000-C000-000000000046");
+    private static readonly Guid IidIOleObject = new Guid("00000112-0000-0000-C000-000000000046");
 
     [STAThread]
     public static int Main(string[] args)
@@ -396,8 +399,8 @@ internal static class Program
 
     private static byte[] AddPlaceableHeader(byte[] wmfBytes, int mapMode, int xExt, int yExt)
     {
-        var right = (short)Math.Clamp(Math.Abs(xExt), 1, short.MaxValue);
-        var bottom = (short)Math.Clamp(Math.Abs(yExt), 1, short.MaxValue);
+        var right = ClampPositiveInt16(xExt);
+        var bottom = ClampPositiveInt16(yExt);
         var unitsPerInch = UnitsPerInchForMapMode(mapMode);
         Console.Error.WriteLine($"[ole-helper] METAFILEPICT mapMode={mapMode}, xExt={xExt}, yExt={yExt}, unitsPerInch={unitsPerInch}");
         var header = new byte[22];
@@ -415,6 +418,22 @@ internal static class Program
         var checksum = ComputePlaceableChecksum(header);
         BitConverter.GetBytes(checksum).CopyTo(header, 20);
         return header.Concat(wmfBytes).ToArray();
+    }
+
+    private static short ClampPositiveInt16(int value)
+    {
+        // .NET Framework does not provide Math.Clamp. Keep the placeable WMF
+        // bounds valid while preserving the previous clamping behavior.
+        var magnitude = Math.Abs((long)value);
+        if (magnitude < 1)
+        {
+            return 1;
+        }
+        if (magnitude > short.MaxValue)
+        {
+            return short.MaxValue;
+        }
+        return (short)magnitude;
     }
 
     private static ushort ComputePlaceableChecksum(byte[] header)
@@ -566,18 +585,43 @@ internal static class Program
     [DllImport("kernel32.dll")]
     private static extern IntPtr GlobalFree(IntPtr hMem);
 
-    private sealed record Options(
-        string Format,
-        string InputPath,
-        string OutputPath,
-        string EncodingName,
-        bool BinaryInput,
-        bool DoVerb,
-        string Method,
-        int? PreVerb,
-        string? PreviewOutputPath,
-        string? MetadataOutputPath)
+    private sealed class Options
     {
+        public Options(
+            string format,
+            string inputPath,
+            string outputPath,
+            string encodingName,
+            bool binaryInput,
+            bool doVerb,
+            string method,
+            int? preVerb,
+            string? previewOutputPath,
+            string? metadataOutputPath)
+        {
+            Format = format;
+            InputPath = inputPath;
+            OutputPath = outputPath;
+            EncodingName = encodingName;
+            BinaryInput = binaryInput;
+            DoVerb = doVerb;
+            Method = method;
+            PreVerb = preVerb;
+            PreviewOutputPath = previewOutputPath;
+            MetadataOutputPath = metadataOutputPath;
+        }
+
+        public string Format { get; }
+        public string InputPath { get; }
+        public string OutputPath { get; }
+        public string EncodingName { get; }
+        public bool BinaryInput { get; }
+        public bool DoVerb { get; }
+        public string Method { get; }
+        public int? PreVerb { get; }
+        public string? PreviewOutputPath { get; }
+        public string? MetadataOutputPath { get; }
+
         public static Options Parse(string[] args)
         {
             string? format = null;
@@ -649,30 +693,74 @@ internal static class Program
         }
     }
 
-    private sealed record Payload(ushort FormatId, byte[] Bytes);
-
-    private sealed record MathTypeLastDimensions(
-        int WidthRaw,
-        int HeightRaw,
-        int BaselineRaw,
-        int HorizPosType,
-        int HorizPos)
+    private sealed class Payload
     {
+        public Payload(ushort formatId, byte[] bytes)
+        {
+            FormatId = formatId;
+            Bytes = bytes;
+        }
+
+        public ushort FormatId { get; }
+        public byte[] Bytes { get; }
+    }
+
+    private sealed class MathTypeLastDimensions
+    {
+        public MathTypeLastDimensions(
+            int widthRaw,
+            int heightRaw,
+            int baselineRaw,
+            int horizPosType,
+            int horizPos)
+        {
+            WidthRaw = widthRaw;
+            HeightRaw = heightRaw;
+            BaselineRaw = baselineRaw;
+            HorizPosType = horizPosType;
+            HorizPos = horizPos;
+        }
+
+        public int WidthRaw { get; }
+        public int HeightRaw { get; }
+        public int BaselineRaw { get; }
+        public int HorizPosType { get; }
+        public int HorizPos { get; }
+
         private static double ToPoints(int value) => value / MATH_TYPE_DIMENSION_UNITS_PER_POINT;
 
         public string ToJson() => FormattableString.Invariant(
             $"{{\"width_raw\":{WidthRaw},\"height_raw\":{HeightRaw},\"baseline_from_bottom_raw\":{BaselineRaw},\"width_pt\":{ToPoints(WidthRaw):F4},\"height_pt\":{ToPoints(HeightRaw):F4},\"baseline_from_bottom_pt\":{ToPoints(BaselineRaw):F4},\"horiz_pos_type\":{HorizPosType},\"horiz_pos\":{HorizPos}}}");
     }
 
-    private sealed record PreviewMetadata(
-        int MapMode,
-        int XExt,
-        int YExt,
-        ushort UnitsPerInch,
-        double WidthPt,
-        double HeightPt,
-        MathTypeLastDimensions? MathType)
+    private sealed class PreviewMetadata
     {
+        public PreviewMetadata(
+            int mapMode,
+            int xExt,
+            int yExt,
+            ushort unitsPerInch,
+            double widthPt,
+            double heightPt,
+            MathTypeLastDimensions? mathType)
+        {
+            MapMode = mapMode;
+            XExt = xExt;
+            YExt = yExt;
+            UnitsPerInch = unitsPerInch;
+            WidthPt = widthPt;
+            HeightPt = heightPt;
+            MathType = mathType;
+        }
+
+        public int MapMode { get; }
+        public int XExt { get; }
+        public int YExt { get; }
+        public ushort UnitsPerInch { get; }
+        public double WidthPt { get; }
+        public double HeightPt { get; }
+        public MathTypeLastDimensions? MathType { get; }
+
         public string ToJson()
         {
             var mathTypeJson = MathType is null ? "null" : MathType.ToJson();
@@ -915,7 +1003,7 @@ internal interface IStorage
     [PreserveSig]
     int SetStateBits(int grfStateBits, int grfMask);
     [PreserveSig]
-    int Stat(out STATSTG pstatstg, int grfStatFlag);
+    int Stat(out System.Runtime.InteropServices.ComTypes.STATSTG pstatstg, int grfStatFlag);
 }
 
 [ComImport]

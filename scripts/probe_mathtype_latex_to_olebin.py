@@ -38,7 +38,7 @@ from probe_mathtype_docx_ole_replace import (
 
 
 HELPER_PROJECT = Path("scripts/mathtype_ole_helper/MathTypeOleHelper.csproj")
-HELPER_EXE = Path("scripts/mathtype_ole_helper/bin/Debug/net9.0-windows/MathTypeOleHelper.exe")
+HELPER_EXE = Path("scripts/mathtype_ole_helper/bin/Debug/net48/MathTypeOleHelper.exe")
 END_OF_CHAIN = 0xFFFFFFFE
 FREE_SECTOR = 0xFFFFFFFF
 FAT_SECTOR = 0xFFFFFFFD

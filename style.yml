@@ -14,7 +14,7 @@ link-citations: true
 csl: pandoc/csl/elsevier-vancouver.csl
 
 # Set to true to convert DOCX equations to MathType OLE objects during build.
-mathtype: false
+mathtype: true
 
 # DOCX body text formatting (applied to the Body Text style in post-processing)
 bodyText:

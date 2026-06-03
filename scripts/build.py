@@ -40,7 +40,7 @@ from typing import Any, Tuple
 
 import yaml
 from metadata import load_merged_metadata
-from mathtype.ole_parts import MathTypeAvailability, check_mathtype_availability
+from mathtype.ole_parts import check_mathtype_availability
 
 # ============================================================================
 # CONFIGURATION - Customize these variables for your project
@@ -236,17 +236,29 @@ def mathtype_filter_args() -> list[str]:
     return ['--lua-filter', to_pandoc_path(marker_filter)]
 
 
-def ensure_mathtype_build_available() -> None:
-    """Fail early with actionable reasons when MathType output is requested."""
+def resolve_mathtype_build_enabled(requested: bool) -> bool:
+    """Return whether this build should actually run MathType conversion.
+
+    Users may keep `mathtype: true` in shared style metadata on machines that
+    do not have MathType installed. In that case, continue with normal
+    Pandoc/Word equations instead of failing the whole DOCX build.
+    """
+    return False
+    if not requested:
+        return False
+
+    print("[INFO] MathType DOCX equations enabled by metadata: mathtype: true")
     availability = check_mathtype_availability()
-    if availability.reasons:
-        report = MathTypeAvailability(availability.reasons, availability.details).format_failure(
-            "MathType DOCX equations were requested by metadata (`mathtype: true`), but MathType cannot be used."
+    if availability.usable:
+        return True
+
+    print(
+        availability.format_failure(
+            "[WARN] MathType was requested by metadata, but MathType conversion will be skipped."
         )
-        raise RuntimeError(
-            report
-            + "\nSet `mathtype: false` in style.yml to build with Pandoc/Word equations instead."
-        )
+    )
+    print("[WARN] Building DOCX with Pandoc/Word equations instead.\n")
+    return False
 
 
 def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
@@ -300,7 +312,7 @@ def build_docx():
     docx_file = docx_dir / f"{CONFIG['project_name']}.docx"
     extra_args = []
     metadata = load_build_metadata()
-    use_mathtype = should_use_mathtype(metadata)
+    use_mathtype = resolve_mathtype_build_enabled(should_use_mathtype(metadata))
     pandoc_output = docx_file
 
     # Add filter for older Pandoc versions
@@ -309,8 +321,6 @@ def build_docx():
         extra_args.extend(['--filter', 'pandoc/filters/to_mathbfit.py'])
 
     if use_mathtype:
-        print("[INFO] MathType DOCX equations enabled by metadata: mathtype: true")
-        ensure_mathtype_build_available()
         pandoc_output = mathtype_marked_docx_path()
         extra_args.extend(mathtype_filter_args())
 

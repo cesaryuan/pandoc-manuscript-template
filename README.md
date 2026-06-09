@@ -167,6 +167,20 @@ Collapsed numeric citation ranges can use a journal-specific delimiter after Pan
 citation-number-range-delimiter: "-"  # [1-3]
 ```
 
+To add a space after commas between non-consecutive numeric citations, edit the active CSL file's citation layout delimiter. For example, in `pandoc/csl/elsevier-vancouver.csl`, change:
+
+```xml
+<layout prefix="[" suffix="]" delimiter=",">
+```
+
+to:
+
+```xml
+<layout prefix="[" suffix="]" delimiter=", ">
+```
+
+This changes citations such as `[1,3]` to `[1, 3]`. It does not control collapsed ranges such as `[1-3]`, which are handled by `citation-number-range-delimiter`.
+
 The DOCX post-processing step can update the `Body Text` paragraph style from the merged YAML metadata. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
 
 ```yaml

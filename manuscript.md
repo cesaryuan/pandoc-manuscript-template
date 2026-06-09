@@ -15,7 +15,7 @@ authors:
     corresponding: true
 
 abstract: |
-  This is a template for academic manuscripts using Pandoc. Replace this abstract with your own summary of the research. The abstract should concisely describe the research problem, methodology, key results, and conclusions. Aim for 150-250 words depending on journal requirements. This template demonstrates proper formatting for figures, tables, citations, cross-references, and equations using Pandoc Markdown syntax.
+  This is a template for academic manuscripts using Pandoc. Replace this abstract with your own summary of the research. The abstract should concisely describe the research problem, methodology, key results, and conclusions. Aim for 150-250 words depending on journal requirements. This template demonstrates proper formatting for figures, tables, citations, cross-references, and equations like $E=mc^2$ using Pandoc Markdown syntax.
 
 keywords: [Keyword 1, Keyword 2, Keyword 3, Keyword 4, Keyword 5]
 

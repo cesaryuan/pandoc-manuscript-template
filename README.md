@@ -161,6 +161,12 @@ Style-oriented metadata lives in `style.yml` so the manuscript YAML header can s
 
 If you want to change style-related content, edit `style.yml`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
 
+Collapsed numeric citation ranges can use a journal-specific delimiter after Pandoc citeproc renders them. Set `citation-number-range-delimiter` in `style.yml`, or override it in the manuscript YAML header:
+
+```yaml
+citation-number-range-delimiter: "-"  # [1-3]
+```
+
 The DOCX post-processing step can update the `Body Text` paragraph style from the merged YAML metadata. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
 
 ```yaml

@@ -12,6 +12,9 @@ link-citations: true
 #   - pandoc/csl/engineering-applications-of-artificial-intelligence.csl (EA-AI journal)
 #   - Or download from https://www.zotero.org/styles
 csl: pandoc/csl/elsevier-vancouver.csl
+# Override citeproc's fixed en dash in collapsed numeric citation ranges.
+# Set "-" for hyphen ranges such as [1-3], or "–" to keep the CSL default.
+citation-number-range-delimiter: "–"
 
 # Set to true to convert DOCX equations to MathType OLE objects during build.
 mathtype: true

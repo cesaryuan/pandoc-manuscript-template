@@ -159,7 +159,7 @@ def find_mathtype_mt6_dll(server_path: Path | None = None) -> Path | None:
 
 
 def check_mathtype_availability() -> MathTypeAvailability:
-    """Check OS, MathType OLE registration, server path, and helper tooling.
+    """Check OS, MathType OLE registration, and helper tooling.
 
     This is intentionally a lightweight preflight for build.py. It catches the
     common hard failures before Pandoc does any work, while the actual converter
@@ -191,18 +191,18 @@ def check_mathtype_availability() -> MathTypeAvailability:
             fr"CLSID\{clsid}\LocalServer"
         )
         if not server_value:
-            reasons.append(
-                f"MathType CLSID {clsid} has no LocalServer32/LocalServer value. "
-                "Repair or reinstall MathType so the OLE server is registered."
+            details.append(
+                f"MathType CLSID {clsid} has no LocalServer32/LocalServer value; "
+                "continuing because COM activation can still work through other registry entries."
             )
         else:
             server_path = _registry_executable_path(server_value)
             if server_path is None:
-                reasons.append(f"Could not parse MathType OLE server registry value: {server_value}")
+                details.append(f"Could not parse optional MathType OLE server registry value: {server_value}")
             elif not server_path.exists():
-                reasons.append(
-                    f"MathType OLE server is registered but the executable is missing: {server_path}. "
-                    "Repair or reinstall MathType."
+                details.append(
+                    f"Optional MathType OLE server path from registry does not exist: {server_path}; "
+                    "continuing with COM availability checks."
                 )
             else:
                 server_path_for_dll = server_path

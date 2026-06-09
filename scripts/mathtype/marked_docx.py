@@ -118,11 +118,17 @@ def find_marked_formula_bindings(root: ET.Element) -> list[MarkedFormulaBinding]
     return bindings
 
 
-def half_points_from_rpr(rpr: ET.Element | None) -> int | None:
-    """Read Word's half-point font size from a run-properties element."""
+def half_points_from_rpr(rpr: ET.Element | None, *, include_complex_script: bool = True) -> int | None:
+    """Read Word's half-point font size from a run-properties element.
+
+    MathType formulas are generated from Latin math text, so callers can ignore
+    `w:szCs` when a complex-script-only style should not override inherited
+    Western text size.
+    """
     if rpr is None:
         return None
-    for tag_name in ("sz", "szCs"):
+    tag_names = ("sz", "szCs") if include_complex_script else ("sz",)
+    for tag_name in tag_names:
         node = rpr.find(f"w:{tag_name}", NS)
         if node is None:
             continue
@@ -167,7 +173,7 @@ def build_style_font_context(styles_root: ET.Element) -> StyleFontContext:
             cache[style_id] = None
             return None
 
-        size = half_points_from_rpr(style.find("w:rPr", NS))
+        size = half_points_from_rpr(style.find("w:rPr", NS), include_complex_script=False)
         if size is not None:
             cache[style_id] = size
             return size
@@ -221,7 +227,7 @@ def paragraph_neighbor_size_half_points(paragraph: ET.Element, marker_run: ET.El
             child = children[index]
             if child.tag != qn("w", "r"):
                 continue
-            size = half_points_from_rpr(child.find("w:rPr", NS))
+            size = half_points_from_rpr(child.find("w:rPr", NS), include_complex_script=False)
             if size is not None:
                 return size
     return None
@@ -246,7 +252,7 @@ def binding_font_size_resolution(
     generated DOCX: direct formatting first, then paragraph style, then table
     style, then document defaults.
     """
-    size_half_points = half_points_from_rpr(binding.marker_run.find("w:rPr", NS))
+    size_half_points = half_points_from_rpr(binding.marker_run.find("w:rPr", NS), include_complex_script=False)
     source = "marker_run.rPr"
 
     paragraph = ancestor_with_tag(parent_map, binding.marker_run, qn("w", "p"))
@@ -255,7 +261,7 @@ def binding_font_size_resolution(
         if size_half_points is not None:
             source = "neighbor_run.rPr"
     if size_half_points is None and paragraph is not None:
-        size_half_points = half_points_from_rpr(paragraph.find("w:pPr/w:rPr", NS))
+        size_half_points = half_points_from_rpr(paragraph.find("w:pPr/w:rPr", NS), include_complex_script=False)
         if size_half_points is not None:
             source = "paragraph.pPr.rPr"
     if size_half_points is None and paragraph is not None:

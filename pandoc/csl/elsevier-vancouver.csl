@@ -15,6 +15,13 @@
     <updated>2025-05-18T00:55:38+00:00</updated>
     <rights license="http://creativecommons.org/licenses/by-sa/3.0/">This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License</rights>
   </info>
+  <!-- number-range-delimiter 当前在 pandoc 中并不生效，Zotero 不清楚 -->
+  <!-- <locale>
+    <terms>
+      <term name="number-range-delimiter">-</term> 
+      <term name="page-range-delimiter">-</term>
+    </terms>
+  </locale> -->
   <macro name="author">
     <names variable="author">
       <name initialize-with="" delimiter=", " delimiter-precedes-last="always" name-as-sort-order="all" sort-separator=" "/>

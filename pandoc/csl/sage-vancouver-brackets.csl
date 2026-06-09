@@ -22,11 +22,13 @@
     <updated>2018-05-13T20:38:51+00:00</updated>
     <rights license="http://creativecommons.org/licenses/by-sa/3.0/">This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License</rights>
   </info>
-  <locale>
+  <!-- number-range-delimiter 当前在 pandoc 中并不生效，Zotero 不清楚 -->
+  <!-- <locale>
     <terms>
-      <term name="number-range-delimiter">-</term>
+      <term name="number-range-delimiter">-</term> 
+      <term name="page-range-delimiter">-</term>
     </terms>
-  </locale>
+  </locale> -->
   <macro name="author">
     <names variable="author" suffix=". ">
       <name sort-separator=" " initialize-with="" name-as-sort-order="all" delimiter=", " delimiter-precedes-last="always"/>

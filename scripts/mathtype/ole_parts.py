@@ -191,6 +191,7 @@ def check_mathtype_availability() -> MathTypeAvailability:
             fr"CLSID\{clsid}\LocalServer"
         )
         if not server_value:
+            # Some MathType installs activate through COM even without these path hints.
             details.append(
                 f"MathType CLSID {clsid} has no LocalServer32/LocalServer value; "
                 "continuing because COM activation can still work through other registry entries."

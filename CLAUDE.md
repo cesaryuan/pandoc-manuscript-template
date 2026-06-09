@@ -1,20 +1,16 @@
----
-version: 2.0.0
-last_updated: 2026-03-03
----
-
-# CLAUDE.md
-
-Guidance for helping users write academic papers using this Pandoc manuscript template.
-
-## Project Overview
-
 This template converts Pandoc Markdown manuscripts to DOCX, with optional LaTeX source generation for advanced users.
 
 - Main file: `manuscript.md` — edit this to write the paper
+- Style file: `style.yml` — edit this for style-related metadata, including citation style, cross-reference wording/numbering, subfigure behavior, and DOCX body text settings
 - Build: `make docx` / `make latex` / `make help`
 - Images: place in `images/` directory
 - References: `.bib` file specified in YAML header
+
+For any syntax, formatting pattern, or writing fragment not covered in this file, consult `README.md` first and follow its more detailed guidance.
+
+## Style Metadata
+
+If the user wants to change style-related content, update `style.yml` rather than the YAML header in `manuscript.md`. The build loads `style.yml` first and then overlays the manuscript YAML metadata, so any field explicitly present in `manuscript.md` still takes precedence for that manuscript.
 
 ## Pandoc Markdown Syntax
 
@@ -25,7 +21,7 @@ This template converts Pandoc Markdown manuscripts to DOCX, with optional LaTeX 
 - Sections: `# Title {#sec:label}` → `[@sec:label]`
 - Citations: `[@key]` (parenthetical), `[@key1; @key2]` (multiple)
 
-**Tables:**
+**Tables:** Please prefer to use pipe_tables which is identical to PHP Markdown Extra tables.
 ```markdown
 | **Method** | **Accuracy (%)** |
 |:----------:|:----------------:|
@@ -38,7 +34,7 @@ This template converts Pandoc Markdown manuscripts to DOCX, with optional LaTeX 
 - Alignment: `:--` left, `:--:` center, `--:` right
 - For advanced DOCX table formatting (cell merging, metadata), see README.md
 
-**Subfigures** (requires `subfigGrid: true` in YAML):
+**Subfigures** (requires `subfigGrid: true` in `style.yml` or merged YAML metadata):
 ```markdown
 <div id="fig:results">
 ![caption of a](a.png){#fig:a width=50%} # Only percent allowed in subfigure width
@@ -46,11 +42,32 @@ This template converts Pandoc Markdown manuscripts to DOCX, with optional LaTeX 
 
 ![caption of c](c.png){#fig:c width=50%}
 ![caption of d](d.png){#fig:d width=50%}
-
+<!-- here should be a blank line -->
 Main caption ( 2x2 grid of subfigures, change line by adding a blank line between images).
 </div>
+
+**Pseudocode/Algorithms:**
+```markdown
+Write pseudocode as a one-column pipe table. Use bold control words such as `**for**` and `**if**`. This template does not currently support cross references.
+
+| **Algorithm: Library borrowing workflow** |
+|---|
+| **Input:** Request list $R$ |
+| **for** each request **do** |
+| \ \ Check availability |
+| **end for** |
+
+: Library borrowing workflow. {#tbl:algorithm}
 ```
 
+## If User want to Change Citation Styles
+
+1. Visit [Zotero Style Repository](https://www.zotero.org/styles) and find a CSL file for user required target journal or preferred citation style.
+2. Download CSL file and save to `pandoc/` directory
+3. **Update `style.yml`**:
+   ```yaml
+   csl: pandoc/csl-style-downloaded.csl
+   ```
 ## Academic Writing Rules
 
 **Critical Don'ts:**
@@ -84,12 +101,7 @@ Main caption ( 2x2 grid of subfigures, change line by adding a blank line betwee
 - **Methods** (subsections allowed)
 - **Results** (subsections allowed)
 - **Discussion** (subsections allowed)
-- **Conclusion** (usually no subsections)
-
-## Skills
-
-- **`/manuscript-review`** — Detailed writing style guidelines with examples for reviewing and improving manuscript quality
-- **`/revision`** — Guidance for handling reviewer comments and writing response letters
+- **Conclusions** (usually no subsections)
 
 ## Reminders
 

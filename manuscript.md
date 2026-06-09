@@ -27,9 +27,9 @@ bibliography: examples/references/sample-references.bib
 
 This template demonstrates the structure and features of an academic manuscript written in Pandoc Markdown. Replace this content with your own research introduction.
 
-The introduction should provide a coherent narrative that guides readers from the general context to your specific research. Start by establishing the broader research area and its importance. You can cite previous work to provide context [@smith2023machine], cite multiple works together [@johnson2022data; @chen2024neural], or refer to specific pages [@garcia2022open, p. 237].
+The introduction should provide a coherent narrative that guides readers from the general context to your specific research. Start by establishing the broader research area and its importance. You can cite previous work to provide context [@smith2023machine], cite multiple works together [@johnson2022data; @chen2024neural; @williams2023dataset], or refer to specific pages [@garcia2022open, p. 237].
 
-Previous research has shown interesting results [@williams2023dataset], which motivates the current investigation. For a comprehensive review of the field, see @miller2023survey. While significant progress has been made, several challenges remain unaddressed.
+Previous research has shown interesting results [@williams2023dataset; @miller2023survey], which motivates the current investigation. For a comprehensive review of the field, see @miller2023survey. While significant progress has been made, several challenges remain unaddressed.
 
 This study addresses three key research questions: (1) What is the primary research question? (2) What secondary questions support the main investigation? (3) What practical implications can be derived from the findings?
 

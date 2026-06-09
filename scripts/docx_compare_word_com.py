@@ -14,6 +14,7 @@ using Word's Review > Compare UI by hand.
 """
 
 import argparse
+import hashlib
 import sys
 import tempfile
 import zipfile
@@ -47,6 +48,7 @@ class MathTypeObject:
 
     run: etree._Element
     source_rels: dict[str, tuple[str, str]]
+    index: int
 
 
 def print_info(message: str) -> None:
@@ -114,14 +116,6 @@ def parse_args() -> argparse.Namespace:
         "--keep-word-open",
         action="store_true",
         help="Leave Word open after saving the result for manual inspection",
-    )
-    parser.add_argument(
-        "--ignore-mathtype-objects",
-        action="store_true",
-        help=(
-            "Compare temporary copies where MathType OLE equations are replaced "
-            "by stable placeholders, then restore the revised document's equations"
-        ),
     )
     return parser.parse_args()
 
@@ -230,6 +224,17 @@ def placeholder_text(index: int) -> str:
     return f"{MATH_PLACEHOLDER_PREFIX}{index:05d}{MATH_PLACEHOLDER_SUFFIX}"
 
 
+def placeholder_index(text: str) -> int | None:
+    """Return a MathType placeholder's formula index, if the text is a placeholder."""
+    if not text.startswith(MATH_PLACEHOLDER_PREFIX) or not text.endswith(MATH_PLACEHOLDER_SUFFIX):
+        return None
+    value = text[len(MATH_PLACEHOLDER_PREFIX) : -len(MATH_PLACEHOLDER_SUFFIX)]
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
 def make_placeholder_run(original_run: etree._Element, index: int) -> etree._Element:
     """Create a text run that temporarily stands in for a MathType object."""
     run = etree.Element(qn("w", "r"))
@@ -262,10 +267,17 @@ def collect_mathtype_objects(docx_path: Path) -> list[MathTypeObject]:
     """Collect MathType object runs from a DOCX in document order."""
     root = load_xml_part(docx_path, "word/document.xml")
     rels = document_relationships(docx_path)
-    return [MathTypeObject(run=deepcopy(run), source_rels=rels) for run in root.findall(".//w:r", NS) if is_mathtype_run(run)]
+    objects = []
+    for index, run in enumerate((run for run in root.findall(".//w:r", NS) if is_mathtype_run(run)), start=1):
+        objects.append(MathTypeObject(run=deepcopy(run), source_rels=rels, index=index))
+    return objects
 
 
-def replace_mathtype_objects_with_placeholders(source_docx: Path, target_docx: Path) -> int:
+def replace_mathtype_objects_with_placeholders(
+    source_docx: Path,
+    target_docx: Path,
+    replace_indices: set[int] | None = None,
+) -> int:
     """Write a temporary DOCX where MathType object runs are stable text placeholders.
 
     This avoids a Word Compare edge case where every regenerated MathType OLE
@@ -273,19 +285,120 @@ def replace_mathtype_objects_with_placeholders(source_docx: Path, target_docx: P
     """
     root = load_xml_part(source_docx, "word/document.xml")
     replacements = 0
+    formula_index = 0
     for run in root.findall(".//w:r", NS):
         if not is_mathtype_run(run):
+            continue
+        formula_index += 1
+        if replace_indices is not None and formula_index not in replace_indices:
             continue
         parent = run.getparent()
         if parent is None:
             continue
         child_index = parent.index(run)
         parent.remove(run)
-        parent.insert(child_index, make_placeholder_run(run, replacements + 1))
+        parent.insert(child_index, make_placeholder_run(run, formula_index))
         replacements += 1
 
     write_docx_copy_with_overrides(target_docx=target_docx, source_docx=source_docx, overrides={"word/document.xml": serialize_xml(root)})
     return replacements
+
+
+def is_ole_relationship(rel_type: str, target: str) -> bool:
+    """Return True when a relationship points to a MathType OLE payload."""
+    source_part = source_part_name_from_target(target)
+    return rel_type.endswith("/oleObject") or "embeddings/" in source_part or source_part.lower().endswith(".bin")
+
+
+def mathtype_mtef_hashes(
+    docx_path: Path,
+    formula: MathTypeObject,
+) -> tuple[tuple[str, str], ...]:
+    """Return stable hashes for a formula's MTEF payloads.
+
+    MathType OLE wrappers contain volatile header bytes. Hashing only the MTEF
+    payload keeps unchanged formulas from appearing as object replacements.
+    """
+    hashes: list[tuple[str, str]] = []
+    rid_attrs = formula.run.xpath(".//@r:id", namespaces=NS)
+    for rid in rid_attrs:
+        rel_info = formula.source_rels.get(rid)
+        if rel_info is None:
+            continue
+        rel_type, target = rel_info
+        if not is_ole_relationship(rel_type, target):
+            continue
+        source_part = source_part_name_from_target(target)
+        try:
+            data = read_zip_part(docx_path, source_part)
+            data = mathtype_mtef_payload(mathtype_native_stream(data))
+        except KeyError:
+            digest = "<missing>"
+        except ValueError as exc:
+            print_warning(f"Formula {formula.index}: could not read MathType MTEF payload ({exc})")
+            digest = "<missing-mtef>"
+        else:
+            digest = hashlib.sha256(data).hexdigest()
+        hashes.append(("mtef", digest))
+    return tuple(sorted(hashes))
+
+
+def mathtype_native_stream(ole_bytes: bytes) -> bytes:
+    """Return MathType's Equation Native stream from an OLE compound file.
+
+    The outer OLE compound-file bytes can change even when the formula is the
+    same, so this stream is a better binary proxy for the equation payload.
+    """
+    from mathtype.compound_file import CompoundFile
+
+    return CompoundFile(ole_bytes).read_stream("Equation Native")
+
+
+def mathtype_mtef_payload(native_stream: bytes) -> bytes:
+    """Return the MTEF payload after MathType's 28-byte OLE native header.
+
+    MathType stores Equation Native as a small OLE header followed by MTEF. The
+    header contains reserved bytes that can change between generated objects, so
+    formula-content comparisons should hash the payload after that header.
+    """
+    if len(native_stream) < 28:
+        raise ValueError("Equation Native stream is shorter than the 28-byte MathType OLE header")
+    header_size = int.from_bytes(native_stream[:2], byteorder="little")
+    if header_size != 28:
+        raise ValueError(f"unexpected MathType OLE header size: {header_size}")
+    return native_stream[header_size:]
+
+
+def unchanged_mathtype_indices(old_docx: Path, new_docx: Path) -> set[int]:
+    """Return formula positions whose MTEF payloads are identical."""
+    old_formulas = collect_mathtype_objects(old_docx)
+    new_formulas = collect_mathtype_objects(new_docx)
+    if len(old_formulas) != len(new_formulas):
+        print_warning(
+            "Old and new DOCX contain different MathType object counts; "
+            "only matching formula positions can be binary-compared"
+        )
+
+    unchanged: set[int] = set()
+    compared = 0
+    changed = 0
+    for old_formula, new_formula in zip(old_formulas, new_formulas):
+        compared += 1
+        old_hashes = mathtype_mtef_hashes(old_docx, old_formula)
+        new_hashes = mathtype_mtef_hashes(new_docx, new_formula)
+        if not old_hashes or not new_hashes:
+            print_warning(f"Formula {old_formula.index}: MathType MTEF payload was not found")
+            changed += 1
+            continue
+        if old_hashes == new_hashes:
+            unchanged.add(old_formula.index)
+        else:
+            changed += 1
+    print_info(
+        "MathType MTEF comparison: "
+        f"compared={compared}, unchanged={len(unchanged)}, changed_or_unknown={changed}"
+    )
+    return unchanged
 
 
 def next_relationship_id(rels_root: etree._Element) -> int:
@@ -371,8 +484,8 @@ def copy_related_parts_for_run(
 
 def restore_mathtype_objects_from_revised_docx(output_docx: Path, revised_docx: Path) -> int:
     """Replace comparison placeholders with MathType objects from the revised DOCX."""
-    formulas = collect_mathtype_objects(revised_docx)
-    if not formulas:
+    formula_by_index = {formula.index: formula for formula in collect_mathtype_objects(revised_docx)}
+    if not formula_by_index:
         print_warning("No MathType objects found in revised DOCX for restoration")
         return 0
 
@@ -385,22 +498,21 @@ def restore_mathtype_objects_from_revised_docx(output_docx: Path, revised_docx: 
     with zipfile.ZipFile(output_docx, "r") as package:
         existing_names = set(package.namelist())
 
-    placeholders = []
+    placeholders: list[tuple[int, etree._Element]] = []
     for run in document_root.findall(".//w:r", NS):
         text = "".join(node.text or "" for node in run.findall(".//w:t", NS))
-        if text.startswith(MATH_PLACEHOLDER_PREFIX) and text.endswith(MATH_PLACEHOLDER_SUFFIX):
-            placeholders.append(run)
-
-    if len(placeholders) != len(formulas):
-        print_warning(
-            "MathType placeholder count differs from revised formulas "
-            f"({len(placeholders)} placeholders, {len(formulas)} formulas); restoring matching positions only"
-        )
+        index = placeholder_index(text)
+        if index is not None:
+            placeholders.append((index, run))
 
     next_rid = next_relationship_id(rels_root)
     extra_parts: dict[str, bytes] = {}
     restored = 0
-    for placeholder_run, formula in zip(placeholders, formulas):
+    for index, placeholder_run in placeholders:
+        formula = formula_by_index.get(index)
+        if formula is None:
+            print_warning(f"Could not restore MathType placeholder {index}: no revised formula at that position")
+            continue
         restored_run, copied_parts, next_rid = copy_related_parts_for_run(
             run=formula.run,
             formula=formula,
@@ -481,7 +593,6 @@ def compare_documents_with_word(
     compare_moves: bool,
     allow_overwrite: bool,
     keep_word_open: bool,
-    ignore_mathtype_objects: bool,
 ) -> None:
     """Use Word COM to compare two DOCX files and save the comparison document."""
     win32com_client = import_word_com()
@@ -494,19 +605,22 @@ def compare_documents_with_word(
     with tempfile.TemporaryDirectory(prefix="docx-word-compare-") as temp_dir:
         compare_old_docx = old_docx
         compare_new_docx = new_docx
-        if ignore_mathtype_objects:
+        restore_mathtype_placeholders = False
+        replace_indices = unchanged_mathtype_indices(old_docx, new_docx)
+        if replace_indices:
             temp_path = Path(temp_dir)
-            compare_old_docx = temp_path / "old_without_mathtype.docx"
-            compare_new_docx = temp_path / "new_without_mathtype.docx"
-            print_info("Replacing MathType objects with stable comparison placeholders...")
-            old_count = replace_mathtype_objects_with_placeholders(old_docx, compare_old_docx)
-            new_count = replace_mathtype_objects_with_placeholders(new_docx, compare_new_docx)
+            compare_old_docx = temp_path / "old_without_unchanged_mathtype.docx"
+            compare_new_docx = temp_path / "new_without_unchanged_mathtype.docx"
+            print_info(f"Replacing unchanged MathType objects with stable placeholders: {len(replace_indices)}")
+            old_count = replace_mathtype_objects_with_placeholders(old_docx, compare_old_docx, replace_indices)
+            new_count = replace_mathtype_objects_with_placeholders(new_docx, compare_new_docx, replace_indices)
             print_info(f"MathType placeholders: old={old_count}, new={new_count}")
             if old_count != new_count:
                 print_warning(
                     "Old and new DOCX contain different MathType object counts; "
                     "formula restoration will use matching positions only"
                 )
+            restore_mathtype_placeholders = old_count > 0 or new_count > 0
 
         try:
             print_info("Starting Microsoft Word COM instance...")
@@ -545,7 +659,7 @@ def compare_documents_with_word(
             compared_doc.SaveAs2(FileName=str(output_docx), FileFormat=WD_FORMAT_XML_DOCUMENT)
             print_info("Comparison document saved")
 
-            if ignore_mathtype_objects:
+            if restore_mathtype_placeholders:
                 # Word keeps the saved comparison file locked while the document
                 # is open. Close it before rewriting placeholders back to OLE.
                 compared_doc.Close(SaveChanges=WD_DO_NOT_SAVE_CHANGES)
@@ -581,7 +695,6 @@ def main() -> int:
             raise ValueError("Old and new DOCX paths must be different files")
         if output_docx in {old_docx, new_docx}:
             raise ValueError("Output DOCX must be different from both inputs")
-
         compare_documents_with_word(
             old_docx=old_docx,
             new_docx=new_docx,
@@ -593,7 +706,6 @@ def main() -> int:
             compare_moves=not args.ignore_moves,
             allow_overwrite=args.allow_overwrite,
             keep_word_open=args.keep_word_open,
-            ignore_mathtype_objects=args.ignore_mathtype_objects,
         )
         print_info(f"Output written: {output_docx}")
         return 0

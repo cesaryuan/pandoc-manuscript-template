@@ -12,6 +12,7 @@ This directory contains Python scripts for post-processing generated DOCX files.
 - `body_text_style.py` - Apply Body Text style settings from merged YAML metadata
 - `inline_math_spacing.py` - Keep standalone inline math from rendering as display math in Word
 - `where_paragraph_style.py` - Apply `Where Paragraph` style to where clauses after equation paragraphs or layout tables
+- `docx_compare_word_com.py` - Use Microsoft Word COM to run Word's own document comparison and save tracked changes
 
 ## Quick Start
 
@@ -37,6 +38,15 @@ uv run scripts/autofit_tables.py output/docx/manuscript.docx
 uv run scripts/postprocess/format_equation_layout_tables.py output/docx/manuscript.docx
 ```
 
+On Windows with Microsoft Word installed, use Word's own Compare engine:
+```bash
+uv run scripts/docx_compare_word_com.py old.docx new.docx output/docx/changes.docx
+```
+
+The Word COM comparison automatically suppresses unchanged MathType equations by
+comparing their MTEF payloads before running Word Compare. Changed equations
+remain visible to Word Compare.
+
 ## How It Works
 
 The Python scripts use the `python-docx` library to manipulate DOCX files directly:
@@ -56,6 +66,19 @@ The Python scripts use the `python-docx` library to manipulate DOCX files direct
 **Limitations:**
 - Cannot update fields/cross-references (must be done manually in Word)
 - Limited table style support compared to Word COM API
+- `docx_tracked_diff.py` is a conservative OOXML diff helper, not a full Word
+  Compare clone. It marks simple changed text in matching paragraph positions
+  with real `w:ins`/`w:del` tracked-change markup, but leaves complex changed
+  paragraphs such as equations, drawings, fields, and rich hyperlinks as the
+  newer text and reports warnings.
+- `docx_compare_word_com.py` requires Windows, Microsoft Word, and pywin32. It
+  is not cross-platform, but it delegates to Word's own Compare engine and is
+  the preferred option when Word is available and comparison quality matters.
+- `docx_compare_word_com.py` automatically suppresses unchanged MathType OLE
+  object differences by hashing old/new MTEF payloads by formula position. It
+  compares the MTEF payload after MathType's 28-byte OLE native header, avoiding
+  volatile bytes in the generated OLE wrapper while leaving changed or unknown
+  formulas visible to Word Compare.
 
 **Advantages:**
 - ✅ Cross-platform (Windows, macOS, Linux)

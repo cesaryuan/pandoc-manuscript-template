@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -46,6 +47,7 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        var existingMathTypeProcessIds = SnapshotMathTypeProcessIds();
         try
         {
             var options = Options.Parse(args);
@@ -57,6 +59,7 @@ internal static class Program
             finally
             {
                 OleUninitialize();
+                CloseMathTypeProcessesOpenedByHelper(existingMathTypeProcessIds);
             }
             return 0;
         }
@@ -67,7 +70,71 @@ internal static class Program
             {
                 Console.Error.WriteLine(ex);
             }
+            CloseMathTypeProcessesOpenedByHelper(existingMathTypeProcessIds);
             return 1;
+        }
+    }
+
+    /// <summary>
+    /// Capture currently running MathType processes so cleanup can avoid user-opened windows.
+    /// </summary>
+    private static HashSet<int> SnapshotMathTypeProcessIds()
+    {
+        try
+        {
+            return new HashSet<int>(Process.GetProcessesByName("MathType").Select(process => process.Id));
+        }
+        catch (Exception ex)
+        {
+            Log($"MathType process snapshot failed: {ex.Message}");
+            return new HashSet<int>();
+        }
+    }
+
+    /// <summary>
+    /// Close MathType processes started by this OLE run after COM has been released.
+    /// </summary>
+    private static void CloseMathTypeProcessesOpenedByHelper(HashSet<int> existingProcessIds)
+    {
+        Process[] processes;
+        try
+        {
+            processes = Process.GetProcessesByName("MathType");
+        }
+        catch (Exception ex)
+        {
+            Log($"MathType process lookup failed during cleanup: {ex.Message}");
+            return;
+        }
+
+        foreach (var process in processes)
+        {
+            using (process)
+            {
+                if (existingProcessIds.Contains(process.Id))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    Log($"closing MathType process {process.Id}");
+                    if (process.CloseMainWindow() && process.WaitForExit(5000))
+                    {
+                        continue;
+                    }
+
+                    // MathType can remain hidden as an OLE server with no main window;
+                    // kill only the process created during this helper invocation.
+                    Log($"killing MathType process {process.Id}");
+                    process.Kill();
+                    process.WaitForExit(5000);
+                }
+                catch (Exception ex)
+                {
+                    Log($"MathType process cleanup failed for {process.Id}: {ex.Message}");
+                }
+            }
         }
     }
 

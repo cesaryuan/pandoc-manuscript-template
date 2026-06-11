@@ -58,6 +58,18 @@ scripts\mathtype-rust\target\debug\mathtype-rust.exe `
 `--latex` 和 `--input` 必须二选一。PowerShell 中建议用单引号包住 LaTeX，
 避免 `$` 被当成变量展开。
 
+## Source Layout
+
+`src` 目录按功能拆分：
+
+- `main.rs`: 二进制入口，只负责挂载模块并调用 CLI。
+- `cli.rs`: 命令行参数解析、输入读取、输出写入。
+- `ast.rs`: LaTeX 子集解析后使用的表达式 AST。
+- `parser.rs`: LaTeX 公式解析和定界符归一化。
+- `mtef.rs`: MTEF 字节流生成，包括 MathType 字体定义、模板和符号记录。
+- `ole.rs`: 最小 CFB/OLE 容器写入，用于生成 MathType `.ole.bin`。
+- `tests.rs`: 递归扫描 `samples`，并与 MathType 参考 OLE 做 byte-for-byte 回归比对。
+
 ## Run Tests
 
 运行 Rust 测试：

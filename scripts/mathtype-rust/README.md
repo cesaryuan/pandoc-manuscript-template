@@ -72,8 +72,31 @@ cargo test
 cargo test --manifest-path scripts\mathtype-rust\Cargo.toml
 ```
 
-当前 crate 还没有单元测试，`cargo test` 主要用于确认项目能正常编译并通过
-Rust 测试入口。更关键的回归测试是下面的 manuscript 样本字节比对。
+`cargo test` 会运行样本回归测试：递归读取 `samples` 下所有子目录里的
+`eq_*.tex`，用 Rust 生成 MTEF，再从同一目录中对应的 `mt_eq_*.ole.bin`
+读取 `Equation Native` stream，并跳过前 28 字节 OLE native header 后做
+byte-for-byte 比对。
+
+当前期望结果是：
+
+```text
+test tests::all_samples_match_mathtype_mtef ... ok
+```
+
+Rust 默认会捕获通过测试的 stdout。如果想看到样本数量汇总，运行：
+
+```powershell
+cargo test -- --show-output
+```
+
+期望输出中会包含：
+
+```text
+MTEF comparison samples: <passed>/<total> passed
+```
+
+如果某个样本不一致，测试会报告样本编号、MathType/Rust MTEF 长度、第一个不同
+字节的位置，以及对应的 TeX 内容。
 
 ## Manuscript Samples
 

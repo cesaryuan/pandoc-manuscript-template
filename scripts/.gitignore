@@ -1,0 +1,17 @@
+
+# .NET helper build outputs
+mathtype_ole_helper/bin/*
+mathtype_ole_helper/obj/
+
+# Generated binaries / docs
+*.exe
+*.pdb
+*.docx
+
+# Keep the prebuilt MathType helper used when dotnet is unavailable.
+!mathtype_ole_helper/bin/
+!mathtype_ole_helper/bin/Release/
+mathtype_ole_helper/bin/Release/*
+!mathtype_ole_helper/bin/Release/net48/
+mathtype_ole_helper/bin/Release/net48/*
+!mathtype_ole_helper/bin/Release/net48/MathTypeOleHelper.exe

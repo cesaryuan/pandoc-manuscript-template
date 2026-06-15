@@ -1,5 +1,6 @@
 """Generate MathType OLE bins, WMF previews, and placement metadata."""
 
+import hashlib
 import json
 import os
 import platform
@@ -22,6 +23,8 @@ MATHTYPE_MT6_RELATIVE_PATHS = (
 )
 # Keep the sizing template in-repo so builds do not depend on a local MathType preferences path.
 MATHTYPE_DEFAULT_PREFS_TEMPLATE = Path("scripts/mathtype/Times+Symbol 12.eqp")
+MATHTYPE_CACHE_DIR = Path(".pandoc-cache/mathtype")
+MATHTYPE_CACHE_VERSION = 1
 BEGIN_ALIGNED_RE = re.compile(r"\\begin\s*\{\s*aligned\s*\}")
 END_ALIGNED_RE = re.compile(r"\\end\s*\{\s*aligned\s*\}")
 
@@ -314,6 +317,17 @@ def write_latex_input(path: Path, latex: str) -> None:
     path.write_text(mathtype_tex_payload(latex), encoding="utf-8")
 
 
+def file_sha256(path: Path) -> str | None:
+    """Return a file digest for cache invalidation, or None when the file is absent."""
+    if not path.exists():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def format_font_size_pt(value: float) -> str:
     """Format a point size for MathType preference files."""
     return f"{value:.2f}".rstrip("0").rstrip(".")
@@ -345,6 +359,91 @@ def write_sized_prefs_file(template_path: Path, output_path: Path, full_size_pt:
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def cache_font_size_key(font_size_pt: float | None, prefs_template: Path | None) -> float | None:
+    """Return the MathType preference size that affects generated object bytes."""
+    if font_size_pt is None or prefs_template is None:
+        return None
+    return round(font_size_pt * 2) / 2
+
+
+def mathtype_cache_key(
+    latex: str,
+    font_size_key: float | None,
+    prefs_digest: str | None,
+    helper_digest: str | None,
+) -> str:
+    """Build a stable cache key from the exact MathType inputs.
+
+    The key uses the normalized TeX payload and generated preference contents,
+    because those are the values passed to the MathType OLE helper. This avoids
+    reusing a body-text equation for a table equation that has a smaller size.
+    """
+    payload = {
+        "version": MATHTYPE_CACHE_VERSION,
+        "tex_payload": mathtype_tex_payload(latex),
+        "font_size_pt": font_size_key,
+        "prefs_sha256": prefs_digest,
+        "helper_sha256": helper_digest,
+    }
+    data = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
+
+
+def cache_paths(cache_key: str) -> tuple[Path, Path, Path]:
+    """Return the cache file paths for one generated MathType equation."""
+    folder = MATHTYPE_CACHE_DIR / cache_key[:2] / cache_key
+    return folder / "equation.ole.bin", folder / "preview.wmf", folder / "metadata.json"
+
+
+def valid_cached_parts(ole_path: Path, wmf_path: Path) -> bool:
+    """Return True when cached MathType OLE and WMF files look usable."""
+    if not ole_path.exists() or not wmf_path.exists():
+        return False
+    try:
+        compound = CompoundFile(ole_path.read_bytes())
+        has_mathtype_payload = compound.read_stream("Equation Native").find(b"DSMT") >= 0
+        has_placeable_preview = wmf_path.read_bytes()[:4] == bytes.fromhex("d7cdc69a")
+        return has_mathtype_payload and has_placeable_preview
+    except Exception as exc:
+        print(f"[mathtype] warning: ignoring invalid cached equation {ole_path}: {exc}")
+        return False
+
+
+def restore_cached_equation(
+    cache_key: str,
+    ole_path: Path,
+    wmf_path: Path,
+    metadata_path: Path,
+) -> bool:
+    """Copy cached MathType parts into the current build work directory."""
+    cached_ole, cached_wmf, cached_metadata = cache_paths(cache_key)
+    if not valid_cached_parts(cached_ole, cached_wmf):
+        return False
+
+    shutil.copy2(cached_ole, ole_path)
+    shutil.copy2(cached_wmf, wmf_path)
+    if cached_metadata.exists():
+        shutil.copy2(cached_metadata, metadata_path)
+    elif metadata_path.exists():
+        metadata_path.unlink()
+    return True
+
+
+def store_cached_equation(
+    cache_key: str,
+    ole_path: Path,
+    wmf_path: Path,
+    metadata_path: Path,
+) -> None:
+    """Save generated MathType parts so later builds can skip MathType COM."""
+    cached_ole, cached_wmf, cached_metadata = cache_paths(cache_key)
+    cached_ole.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ole_path, cached_ole)
+    shutil.copy2(wmf_path, cached_wmf)
+    if metadata_path.exists():
+        shutil.copy2(metadata_path, cached_metadata)
 
 
 def make_ole_from_format(
@@ -401,6 +500,9 @@ def generate_equation_parts(requests: list[EquationRequest], output_dir: Path) -
     prefs_template = MATHTYPE_DEFAULT_PREFS_TEMPLATE if MATHTYPE_DEFAULT_PREFS_TEMPLATE.exists() else None
     prefs_cache: dict[float, Path] = {}
     needs_variable_sizes = any(request.font_size_pt is not None for request in requests)
+    cache_hits = 0
+    cache_misses = 0
+    helper_digest = file_sha256(HELPER_EXE)
     if needs_variable_sizes and prefs_template is None:
         print(
             "[mathtype] warning: MathType preference template not found; "
@@ -414,9 +516,9 @@ def generate_equation_parts(requests: list[EquationRequest], output_dir: Path) -
         wmf_path = output_dir / f"eq_{index:03d}.wmf"
         metadata_path = output_dir / f"eq_{index:03d}.json"
         prefs_path: Path | None = None
+        font_size_key = cache_font_size_key(request.font_size_pt, prefs_template)
 
-        if request.font_size_pt is not None and prefs_template is not None:
-            font_size_key = round(request.font_size_pt * 2) / 2
+        if font_size_key is not None and prefs_template is not None:
             prefs_path = prefs_cache.get(font_size_key)
             if prefs_path is None:
                 prefs_path = output_dir / "prefs" / f"full-{format_font_size_pt(font_size_key).replace('.', '_')}pt.eqp"
@@ -424,24 +526,38 @@ def generate_equation_parts(requests: list[EquationRequest], output_dir: Path) -
                 prefs_cache[font_size_key] = prefs_path
 
         write_latex_input(input_path, latex)
-        try:
-            make_ole_from_format(
-                "TeX Input Language",
-                input_path,
-                ole_path,
-                preview_output=wmf_path,
-                metadata_output=metadata_path,
-                prefs_file=prefs_path,
-            )
-        except RuntimeError as exc:
-            raise RuntimeError(
-                f"TeX input failed for equation {index}; "
-                "the MathType converter no longer calls Pandoc for fallback MathML"
-            ) from exc
+        cache_key = mathtype_cache_key(
+            latex,
+            font_size_key,
+            file_sha256(prefs_path) if prefs_path is not None else None,
+            helper_digest,
+        )
+        if restore_cached_equation(cache_key, ole_path, wmf_path, metadata_path):
+            cache_hits += 1
+            print(f"[mathtype] cache hit eq={index} key={cache_key[:12]}")
+        else:
+            cache_misses += 1
+            print(f"[mathtype] cache miss eq={index} key={cache_key[:12]}")
+            try:
+                make_ole_from_format(
+                    "TeX Input Language",
+                    input_path,
+                    ole_path,
+                    preview_output=wmf_path,
+                    metadata_output=metadata_path,
+                    prefs_file=prefs_path,
+                )
+            except RuntimeError as exc:
+                raise RuntimeError(
+                    f"TeX input failed for equation {index}; "
+                    "the MathType converter no longer calls Pandoc for fallback MathML"
+                ) from exc
+            store_cached_equation(cache_key, ole_path, wmf_path, metadata_path)
         compound = inspect_ole(ole_path)
         if compound.read_stream("Equation Native").find(b"DSMT") < 0:
             raise ValueError(f"generated OLE lacks DSMT marker: {ole_path}")
         if not wmf_path.exists() or wmf_path.read_bytes()[:4] != bytes.fromhex("d7cdc69a"):
             raise ValueError(f"generated WMF preview is missing placeable header: {wmf_path}")
         equations.append(GeneratedEquation(latex=latex, ole_path=ole_path, wmf_path=wmf_path, metadata_path=metadata_path))
+    print(f"[mathtype] cache summary: hits={cache_hits}, misses={cache_misses}, dir={MATHTYPE_CACHE_DIR}")
     return equations

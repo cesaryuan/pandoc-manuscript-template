@@ -58,7 +58,7 @@ CONFIG = {
     'latex_dir': 'output/latex',
     'json_dir': 'output/json',
     'enable_docx_postprocess': True,
-    'mathtype_marker_filter': 'pandoc/filters/mathtype_markers.lua',
+    'mathtype_marker_filter': 'scripts/mathtype/mathtype_markers.lua',
     'mathtype_work_dir': 'tmp/mathtype-build',
 }
 

@@ -20,7 +20,7 @@ def convert_marked_docx(source: Path, target: Path, work_dir: Path) -> int:
     if not requests:
         raise ValueError(
             f"No hidden MathType markers found in {source}; "
-            "build the DOCX with pandoc/filters/mathtype_markers.lua first"
+            "build the DOCX with scripts/mathtype/mathtype_markers.lua first"
         )
 
     size_summary = sorted({request.font_size_pt for request in requests if request.font_size_pt is not None})

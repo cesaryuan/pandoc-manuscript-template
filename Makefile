@@ -39,7 +39,7 @@ endif
 # TARGETS
 # ============================================================================
 
-.PHONY: all docx latex clean distclean help
+.PHONY: all docx latex json clean distclean help
 
 # Default target
 all: docx
@@ -54,6 +54,10 @@ docx:
 # Generate LaTeX file
 latex:
 	@$(RUNNER) $(BUILD_SCRIPT) latex
+
+# Generate Pandoc JSON AST for debugging
+json:
+	@$(RUNNER) $(BUILD_SCRIPT) json
 
 # Clean all generated files
 clean:

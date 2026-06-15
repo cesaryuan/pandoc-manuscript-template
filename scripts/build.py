@@ -22,6 +22,8 @@ Usage:
     python build.py latex      # Generate LaTeX
     python build.py latex paper.md # Generate LaTeX from a specific markdown file
     python build.py latex paper.md --output-dir build # Generate LaTeX in build/latex
+    python build.py json       # Generate Pandoc JSON AST for debugging
+    python build.py json paper.md --output-dir build  # Generate JSON in build/json
     python build.py clean      # Remove generated files
     python build.py distclean  # Deep clean (including cache)
     python build.py help       # Show this help
@@ -37,7 +39,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any, Callable, Tuple
 
 import yaml
 from metadata import load_merged_metadata
@@ -54,6 +56,7 @@ CONFIG = {
     'output_dir': 'output',
     'docx_dir': 'output/docx',
     'latex_dir': 'output/latex',
+    'json_dir': 'output/json',
     'enable_docx_postprocess': True,
     'mathtype_marker_filter': 'pandoc/filters/mathtype_markers.lua',
     'mathtype_work_dir': 'tmp/mathtype-build',
@@ -146,6 +149,7 @@ def configure_output_dir(output_dir: str | Path) -> None:
     CONFIG['output_dir'] = to_pandoc_path(path)
     CONFIG['docx_dir'] = to_pandoc_path(path / 'docx')
     CONFIG['latex_dir'] = to_pandoc_path(path / 'latex')
+    CONFIG['json_dir'] = to_pandoc_path(path / 'json')
 
 
 def pandoc_defaults_with_runtime_paths(defaults_file: Path, output_file: Path) -> dict:
@@ -306,10 +310,30 @@ def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
     )
 
 
-def run_pandoc(defaults_file: Path, output_file: Path, extra_args: list[str] | None = None) -> None:
+def json_debug_defaults(defaults: dict) -> dict:
+    """Return DOCX-like defaults adjusted for Pandoc JSON debugging output.
+
+    The JSON build is meant to expose the filtered Pandoc AST, so it keeps the
+    DOCX filter chain but removes writer-only options that do not apply to JSON.
+    """
+    defaults = dict(defaults)
+    defaults['to'] = 'json'
+    defaults.pop('reference-doc', None)
+    defaults.pop('template', None)
+    return defaults
+
+
+def run_pandoc(
+    defaults_file: Path,
+    output_file: Path,
+    extra_args: list[str] | None = None,
+    defaults_mutator: Callable[[dict], dict] | None = None,
+) -> None:
     """Run Pandoc with a temporary defaults file for the selected markdown input."""
     extra_args = extra_args or []
     defaults = pandoc_defaults_with_runtime_paths(defaults_file, output_file)
+    if defaults_mutator:
+        defaults = defaults_mutator(defaults)
 
     with tempfile.TemporaryDirectory(prefix='pandoc-build-') as temp_dir:
         temp_defaults = Path(temp_dir) / defaults_file.name
@@ -394,6 +418,26 @@ def build_latex():
     print(f"\n[OK] LaTeX created: {CONFIG['latex_dir']}/{CONFIG['project_name']}.tex")
 
 
+def build_json():
+    """Generate Pandoc JSON AST for debugging filters and metadata."""
+    print("\n[JSON] Building Pandoc JSON AST...\n")
+
+    json_dir = Path(CONFIG['json_dir'])
+    json_dir.mkdir(parents=True, exist_ok=True)
+
+    json_file = json_dir / f"{CONFIG['project_name']}.json"
+
+    # Reuse the DOCX defaults because they carry the normal crossref/citeproc
+    # pipeline users most often need to inspect when debugging manuscript builds.
+    run_pandoc(
+        Path('pandoc/pandoc-docx.yml'),
+        json_file,
+        defaults_mutator=json_debug_defaults,
+    )
+
+    print(f"\n[OK] JSON created: {CONFIG['json_dir']}/{CONFIG['project_name']}.json")
+
+
 def clean():
     """Remove all generated files."""
     print("\n[Clean] Cleaning generated files...\n")
@@ -459,19 +503,19 @@ def main():
         'target',
         nargs='?',
         default='docx',
-        choices=['docx', 'latex', 'clean', 'distclean', 'help'],
+        choices=['docx', 'latex', 'json', 'clean', 'distclean', 'help'],
         help='Build target (default: docx)'
     )
     parser.add_argument(
         'manuscript',
         nargs='?',
-        help='Markdown file to build for docx/latex targets'
+        help='Markdown file to build for docx/latex/json targets'
     )
     parser.add_argument(
         '-m',
         '--manuscript',
         dest='manuscript_option',
-        help='Markdown file to build for docx/latex targets'
+        help='Markdown file to build for docx/latex/json targets'
     )
     parser.add_argument(
         '-o',
@@ -487,10 +531,10 @@ def main():
         parser.error("Specify the markdown file either positionally or with --manuscript, not both.")
 
     manuscript_arg = args.manuscript_option or args.manuscript
-    if manuscript_arg and args.target not in {'docx', 'latex'}:
-        parser.error("A markdown file can only be specified for docx or latex targets.")
+    if manuscript_arg and args.target not in {'docx', 'latex', 'json'}:
+        parser.error("A markdown file can only be specified for docx, latex, or json targets.")
 
-    if args.target in {'docx', 'latex'}:
+    if args.target in {'docx', 'latex', 'json'}:
         configure_manuscript(
             manuscript_arg or CONFIG['manuscript_file'],
             derive_project_name=bool(manuscript_arg),
@@ -500,6 +544,7 @@ def main():
     targets = {
         'docx': build_docx,
         'latex': build_latex,
+        'json': build_json,
         'clean': clean,
         'distclean': distclean,
         'help': show_help,

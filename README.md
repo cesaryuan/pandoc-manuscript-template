@@ -413,6 +413,7 @@ These scripts run automatically when `ENABLE_DOCX_POSTPROCESS = true` in the Mak
 ```bash
 make docx          # Generate DOCX
 make latex         # Generate LaTeX source only
+make json          # Generate Pandoc JSON AST for debugging
 make clean         # Remove generated files
 make help          # Show available commands
 ```
@@ -426,8 +427,10 @@ on the command line.
 ```bash
 uv run scripts/build.py docx              # Generate output/docx/manuscript.docx
 uv run scripts/build.py latex             # Generate output/latex/manuscript.tex
+uv run scripts/build.py json              # Generate output/json/manuscript.json
 uv run scripts/build.py docx paper.md     # Generate output/docx/paper.docx
 uv run scripts/build.py latex paper.md    # Generate output/latex/paper.tex
+uv run scripts/build.py json paper.md     # Generate output/json/paper.json
 ```
 
 You can also pass the markdown path with `--manuscript` or `-m`:
@@ -442,12 +445,13 @@ Use `--output-dir` or `-o` to change the base output directory:
 ```bash
 uv run scripts/build.py docx paper.md --output-dir build  # Generate build/docx/paper.docx
 uv run scripts/build.py latex paper.md -o build           # Generate build/latex/paper.tex
+uv run scripts/build.py json paper.md -o build            # Generate build/json/paper.json
 uv run scripts/build.py clean --output-dir build          # Remove build/
 ```
 
 When a markdown file is supplied, the output file name is derived from that
 file's stem. The DOCX post-processing step reads YAML metadata from the same
-markdown file. When an output directory is supplied, `docx` and `latex`
+markdown file. When an output directory is supplied, `docx`, `latex`, and `json`
 subdirectories are created under it.
 
 ### Direct Pandoc Commands

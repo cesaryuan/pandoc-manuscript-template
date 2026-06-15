@@ -19,6 +19,9 @@ citation-number-range-delimiter: "–"
 # Set to true to convert DOCX equations to MathType OLE objects during build.
 mathtype: true
 
+# Set to true for continuous DOCX line numbers, or use a string such as
+# '连续', '每页重编', '每节重编', 'continuous', 'restart-page', or 'restart-section'.
+show-line-numbers: '连续'
 # DOCX body text formatting (applied to the Body Text style in post-processing)
 bodyText:
   firstLineIndentChars: 2

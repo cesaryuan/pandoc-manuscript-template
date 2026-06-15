@@ -27,7 +27,7 @@ except ImportError:
 
 # Import processing modules
 try:
-    from metadata import load_merged_metadata
+    from metadata import load_merged_metadata, merge_metadata, parse_yaml_file
     from postprocess.common import print_error, print_info, print_success, print_warning
     from postprocess.merge_table_cells import merge_table_cells
     from postprocess.process_table_metadata import process_table_metadata
@@ -39,7 +39,9 @@ try:
     from postprocess.format_equation_layout_tables import format_equation_layout_tables
     from postprocess.body_text_style import apply_body_text_style_metadata
     from postprocess.inline_math_spacing import add_space_after_standalone_inline_math
+    from postprocess.line_numbers import apply_line_number_metadata
     from postprocess.where_paragraph_style import process_where_paragraph_styles
+    from postprocess.reply_blue_italic_style import apply_reply_blue_italic_style
 except ImportError as e:
     print(f"Error: Failed to import processing modules: {e}")
     print("Make sure all scripts are in the same directory:")
@@ -54,7 +56,9 @@ except ImportError as e:
     print("  - format_equation_layout_tables.py")
     print("  - body_text_style.py")
     print("  - inline_math_spacing.py")
+    print("  - line_numbers.py")
     print("  - where_paragraph_style.py")
+    print("  - reply_blue_italic_style.py")
     sys.exit(1)
 
 
@@ -76,7 +80,32 @@ def log_skip(label: str, reason: str) -> None:
     print_info("")
 
 
-def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str] | None = None) -> bool:
+def load_postprocess_metadata(md_path: str, metadata_files: list[str]) -> dict:
+    """Load metadata for post-processing, tolerating reply files without YAML."""
+    if not md_path:
+        return {}
+    try:
+        return load_merged_metadata(md_path, metadata_files)
+    except ValueError as exc:
+        if "No YAML front matter" not in str(exc):
+            raise
+
+        # Reply letters often have no YAML header; keep style.yml defaults so
+        # body/table post-processing can still use shared style metadata.
+        print_warning(f"No YAML front matter found in {md_path}; using metadata files only")
+        metadata: dict = {}
+        for metadata_file in metadata_files:
+            metadata = merge_metadata(metadata, parse_yaml_file(metadata_file))
+        return metadata
+
+
+def postprocess_docx(
+    docx_path: str,
+    md_path: str = '',
+    metadata_files: list[str] | None = None,
+    skip_author_info: bool = False,
+    reply_style_formatting: bool = False,
+) -> bool:
     """
     Post-process a DOCX file with all processing steps.
 
@@ -84,6 +113,8 @@ def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str
         docx_path: Path to the DOCX file to process
         md_path: Path to the markdown file with YAML metadata (optional)
         metadata_files: YAML metadata files merged before manuscript metadata
+        skip_author_info: Skip author insertion for non-manuscript outputs
+        reply_style_formatting: Apply reply-only blue italic caption/table styling
 
     Returns:
         True if successful, False otherwise
@@ -116,7 +147,7 @@ def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str
     print_info("")
 
     try:
-        merged_metadata = load_merged_metadata(md_path, metadata_files) if md_path else {}
+        merged_metadata = load_postprocess_metadata(md_path, metadata_files)
 
         # Open document (shared across all steps)
         print_info("Initializing document...")
@@ -124,7 +155,9 @@ def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str
         print_success("Document opened successfully")
         print_info("")
 
-        if md_path:
+        if skip_author_info:
+            log_skip("author information", "disabled for this build")
+        elif md_path:
             def insert_author_info_step() -> None:
                 """Insert author metadata and log the number of inserted records."""
                 authors, affiliations, has_footnote = insert_author_info_to_doc(doc, md_path)
@@ -154,9 +187,18 @@ def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str
                     f"after {result['space_after_pt']} pt"
                 )
 
-            run_pipeline_step("Applying body text style metadata", apply_body_text_style_step)
+            def apply_line_number_step() -> None:
+                """Apply merged YAML line-number metadata to all DOCX sections."""
+                result = apply_line_number_metadata(doc, merged_metadata)
+                if result is None:
+                    print_warning("No enabled show-line-numbers metadata found, skipping")
+                    return
+                print_success(
+                    f"Line numbers: restart={result['restart']}, sections={result['sections']}"
+                )
         else:
             log_skip("body text style metadata", "no markdown file provided")
+            log_skip("line-number metadata", "no markdown file provided")
 
         def merge_table_cells_step() -> None:
             """Merge table cells marked with left/up merge placeholders."""
@@ -212,8 +254,24 @@ def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str
             fixed_count = add_space_after_standalone_inline_math(doc)
             print_success(f"Fixed {fixed_count} standalone inline math paragraph(s)")
 
+        def apply_reply_blue_italic_style_step() -> None:
+            """Apply reply-only blue italic formatting to captions and regular tables."""
+            stats = apply_reply_blue_italic_style(doc)
+            print_success(
+                f"Formatted {stats['caption_styles']} caption style(s), "
+                f"{stats['caption_paragraphs']} caption paragraph(s), "
+                f"{stats['table_runs']} table run(s)"
+            )
+
         # Keep this ordered list explicit because DOCX post-processing steps are order-sensitive.
-        for label, action in [
+        pipeline_steps: list[tuple[str, Callable[[], None]]] = []
+        if md_path:
+            # Metadata-driven document-wide settings must run before table-specific cleanup.
+            pipeline_steps.extend([
+                ("Applying body text style metadata", apply_body_text_style_step),
+                ("Applying line-number metadata", apply_line_number_step),
+            ])
+        pipeline_steps.extend([
             ("Merging table cells", merge_table_cells_step),
             ("Processing table metadata", process_table_metadata_step),
             ("Clearing subfigure table formatting", clear_subfigure_table_format_step),
@@ -223,7 +281,11 @@ def postprocess_docx(docx_path: str, md_path: str = '', metadata_files: list[str
             ("Formatting equation layout tables", format_equation_layout_tables_step),
             ("Applying where paragraph style", apply_where_paragraph_style_step),
             ("Adding spaces after standalone inline math", add_inline_math_spacing_step),
-        ]:
+        ])
+        if reply_style_formatting:
+            pipeline_steps.append(("Applying reply blue italic caption/table style", apply_reply_blue_italic_style_step))
+
+        for label, action in pipeline_steps:
             run_pipeline_step(label, action)
 
         # ===================================================================
@@ -257,6 +319,7 @@ Examples:
 Processing steps:
   - Insert author information from YAML metadata (if md_path provided)
   - Apply Body Text style settings from merged YAML metadata (if md_path provided)
+  - Apply line numbers from show-line-numbers metadata (if md_path provided)
   - Merge table cells based on markers (!<! and !^!)
   - Process table metadata from captions (|key=value|)
   - Clear formatting for tables above 'Image Caption' paragraphs
@@ -266,6 +329,7 @@ Processing steps:
   - Format equation layout tables
   - Apply 'Where Paragraph' style after equation paragraphs
   - Add trailing spaces after standalone inline math
+  - Optionally apply reply blue italic caption/table styling
 
 This script applies all post-processing steps in sequence.
         """
@@ -278,10 +342,26 @@ This script applies all post-processing steps in sequence.
         default=[],
         help="YAML metadata file to merge before manuscript metadata",
     )
+    parser.add_argument(
+        "--skip-author-info",
+        action="store_true",
+        help="Skip author insertion while keeping the remaining DOCX post-processing steps",
+    )
+    parser.add_argument(
+        "--reply-style-formatting",
+        action="store_true",
+        help="Apply reply-only blue italic formatting to captions and regular table text",
+    )
 
     args = parser.parse_args()
 
-    success = postprocess_docx(args.docx_path, args.md_path, args.metadata_file)
+    success = postprocess_docx(
+        args.docx_path,
+        args.md_path,
+        args.metadata_file,
+        skip_author_info=args.skip_author_info,
+        reply_style_formatting=args.reply_style_formatting,
+    )
     sys.exit(0 if success else 1)
 
 

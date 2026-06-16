@@ -39,11 +39,10 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Callable, Tuple
+from typing import Any, Tuple
 
-import yaml
 from logging_utils import log_error, log_info, log_success, log_warning
-from metadata import load_merged_metadata, merge_metadata, parse_yaml_file
+from metadata import load_merged_metadata, merge_metadata, parse_yaml_file, parse_yaml_header
 from mathtype.ole_parts import check_mathtype_availability
 from postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from postprocess_docx import postprocess_docx as run_docx_postprocess
@@ -130,11 +129,6 @@ def resource_path(path: str | Path) -> Path:
     return Path(CONFIG['resource_root']) / path
 
 
-def resource_pandoc_path(path: str | Path) -> str:
-    """Return a Pandoc-friendly path for a bundled resource."""
-    return to_pandoc_path(resource_path(path))
-
-
 def is_relative_to(path: Path, parent: Path) -> bool:
     """Return True when path is inside parent on Python versions without Path.is_relative_to needs."""
     try:
@@ -171,78 +165,6 @@ def configure_output_dir(output_dir: str | Path) -> None:
     CONFIG['docx_dir'] = to_pandoc_path(path / 'docx')
     CONFIG['latex_dir'] = to_pandoc_path(path / 'latex')
     CONFIG['json_dir'] = to_pandoc_path(path / 'json')
-
-
-def pandoc_defaults_with_runtime_paths(defaults_file: Path, output_file: Path) -> dict:
-    """Load a Pandoc defaults file and replace input/output paths at runtime."""
-    with defaults_file.open('r', encoding='utf-8') as f:
-        defaults = yaml.safe_load(f) or {}
-
-    defaults['input-files'] = [CONFIG['manuscript_file']]
-    defaults['output-file'] = to_pandoc_path(output_file)
-    resolve_bundled_pandoc_defaults(defaults)
-    add_style_metadata_file(defaults)
-    return defaults
-
-
-def resolve_bundled_pandoc_defaults(defaults: dict) -> None:
-    """Rewrite bundled Pandoc resource paths when running through pmt.
-
-    The checked-in defaults use repository-relative paths such as
-    pandoc/templates/default.xml. Installed CLI builds run from the user's paper
-    directory, so those paths must point back to the package resource root.
-    """
-    if defaults.get('reference-doc'):
-        defaults['reference-doc'] = resource_pandoc_path(defaults['reference-doc'])
-    if defaults.get('template'):
-        defaults['template'] = resource_pandoc_path(defaults['template'])
-    if defaults.get('data-dir'):
-        defaults['data-dir'] = resource_pandoc_path(defaults['data-dir'])
-
-    filters = defaults.get('filters')
-    if not isinstance(filters, list):
-        return
-
-    resolved_filters = []
-    for item in filters:
-        if not isinstance(item, str):
-            resolved_filters.append(item)
-            continue
-        resolved_filters.append(resolve_filter_path(item))
-    defaults['filters'] = resolved_filters
-
-
-def resolve_filter_path(filter_name: str) -> str:
-    """Resolve repository-bundled filters while preserving external filters."""
-    filter_path = Path(filter_name)
-    if filter_path.is_absolute():
-        return to_pandoc_path(filter_path)
-    if filter_name in {'pandoc-crossref', 'citeproc'}:
-        return filter_name
-    if filter_name.startswith('pandoc/'):
-        return resource_pandoc_path(filter_name)
-
-    bundled_filter = resource_path(Path('pandoc') / 'filters' / filter_name)
-    if bundled_filter.exists():
-        return to_pandoc_path(bundled_filter)
-    return filter_name
-
-
-def add_style_metadata_file(defaults: dict) -> None:
-    """Add style.yml as build-time defaults that manuscript metadata can override."""
-    style_file = Path(CONFIG['style_file'])
-    if not should_use_style_metadata_file():
-        return
-
-    metadata_files = defaults.get('metadata-files') or []
-    if isinstance(metadata_files, (str, Path)):
-        metadata_files = [to_pandoc_path(Path(metadata_files))]
-
-    style_path = to_pandoc_path(style_file)
-    if style_path not in metadata_files:
-        # Put style.yml first so any existing metadata-files and the manuscript
-        # YAML header can override these output-style defaults.
-        defaults['metadata-files'] = [style_path, *metadata_files]
 
 
 def should_use_style_metadata_file() -> bool:
@@ -381,51 +303,56 @@ def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
     )
 
 
-def json_debug_defaults(defaults: dict) -> dict:
-    """Return DOCX-like defaults adjusted for Pandoc JSON debugging output.
-
-    The JSON build is meant to expose the filtered Pandoc AST, so it keeps the
-    DOCX filter chain but removes writer-only options that do not apply to JSON.
-    """
-    defaults = dict(defaults)
-    defaults['to'] = 'json'
-    defaults.pop('reference-doc', None)
-    defaults.pop('template', None)
-    return defaults
-
-
 def run_pandoc(
     defaults_file: Path,
     output_file: Path,
     extra_args: list[str] | None = None,
-    defaults_mutator: Callable[[dict], dict] | None = None,
 ) -> None:
-    """Run Pandoc with a temporary defaults file for the selected markdown input."""
+    """Run Pandoc with original defaults so ${.} resolves beside that file."""
     extra_args = extra_args or []
-    defaults = pandoc_defaults_with_runtime_paths(defaults_file, output_file)
-    if defaults_mutator:
-        defaults = defaults_mutator(defaults)
-
-    temp_defaults = build_temp_defaults_path(defaults_file.name)
-    with temp_defaults.open('w', encoding='utf-8') as f:
-        yaml.safe_dump(defaults, f, sort_keys=False, allow_unicode=True)
-
-    # The repo defaults keep manuscript.md fixed; this temporary copy lets
-    # command-line builds target another markdown file without editing YAML.
-    cmd = ['pandoc', '--defaults', str(temp_defaults), *extra_args]
+    cmd = [
+        'pandoc',
+        '--defaults',
+        str(defaults_file),
+        *style_metadata_args(),
+        *project_csl_args(),
+        '--output',
+        to_pandoc_path(output_file),
+        *extra_args,
+        CONFIG['manuscript_file'],
+    ]
     run_command(cmd, stream_output=True)
 
 
-def build_temp_defaults_path(defaults_name: str) -> Path:
-    """Return a writable project-local path for generated Pandoc defaults.
+def style_metadata_args() -> list[str]:
+    """Return Pandoc CLI args for project style metadata when style.yml exists."""
+    return [
+        arg
+        for metadata_file in style_metadata_files()
+        for arg in ('--metadata-file', metadata_file)
+    ]
 
-    Some managed Windows runs create tempfile directories with ACLs that reject
-    file creation. A stable project-cache directory avoids that permission edge
-    case while still keeping generated defaults out of the source files.
-    """
-    temp_dir = Path('.pandoc-cache') / 'tmp' / 'defaults'
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    return temp_dir / defaults_name
+
+def project_csl_args() -> list[str]:
+    """Return a project-relative --csl override when metadata explicitly sets CSL."""
+    csl = project_metadata_csl()
+    if not csl:
+        return []
+    return ['--csl', str(csl)]
+
+
+def project_metadata_csl() -> Any:
+    """Return CSL configured by style.yml or manuscript YAML, if present."""
+    csl: Any = None
+    for metadata_file in style_metadata_files():
+        csl = parse_yaml_file(metadata_file).get('csl', csl)
+
+    try:
+        csl = parse_yaml_header(CONFIG['manuscript_file']).get('csl', csl)
+    except ValueError as exc:
+        if "No YAML front matter" not in str(exc):
+            raise
+    return csl
 
 
 # ============================================================================
@@ -450,7 +377,7 @@ def build_docx():
     # Add filter for older Pandoc versions
     if should_use_mathbfit_filter():
         log_info("[INFO] Using mathbfit filter (Pandoc <= 3.8.3.0)")
-        extra_args.extend(['--filter', resource_pandoc_path('pandoc/filters/to_mathbfit.py')])
+        extra_args.extend(['--filter', to_pandoc_path(resource_path('pandoc/filters/to_mathbfit.py'))])
 
     if use_mathtype:
         pandoc_output = mathtype_marked_docx_path()
@@ -511,7 +438,7 @@ def build_json():
     run_pandoc(
         resource_path('pandoc/pandoc-docx.yml'),
         json_file,
-        defaults_mutator=json_debug_defaults,
+        extra_args=['--to', 'json'],
     )
 
     log_success(f"\n[OK] JSON created: {CONFIG['json_dir']}/{CONFIG['project_name']}.json")

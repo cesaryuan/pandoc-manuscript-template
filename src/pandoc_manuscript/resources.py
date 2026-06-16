@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-PACKAGE_NAME = "pandoc_manuscript_template"
+PACKAGE_NAME = "pandoc_manuscript"
 
 
 def source_tree_root() -> Path | None:

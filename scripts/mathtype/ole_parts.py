@@ -10,6 +10,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from logging_utils import log_debug, log_info, log_warning
+
 from .compound_file import CompoundFile
 
 
@@ -259,9 +261,9 @@ def run(command: list[str], echo_stdout: bool = True) -> subprocess.CompletedPro
         errors="replace",
     )
     if echo_stdout and result.stdout.strip():
-        print(result.stdout.strip())
+        log_info(result.stdout.strip())
     if result.stderr.strip():
-        print(result.stderr.strip())
+        log_warning(result.stderr.strip())
     if result.returncode != 0:
         raise RuntimeError(f"command failed: {' '.join(command)}")
     return result
@@ -270,7 +272,7 @@ def run(command: list[str], echo_stdout: bool = True) -> subprocess.CompletedPro
 def build_helper() -> None:
     """Ensure the small .NET OLE helper exists for MathType conversion."""
     if HELPER_EXE.exists():
-        print(f"[mathtype] helper executable found, skipping build: {HELPER_EXE}")
+        log_info(f"[mathtype] helper executable found, skipping build: {HELPER_EXE}")
         return
     if shutil.which("dotnet") is None:
         raise RuntimeError(
@@ -407,7 +409,7 @@ def valid_cached_parts(ole_path: Path, wmf_path: Path) -> bool:
         has_placeable_preview = wmf_path.read_bytes()[:4] == bytes.fromhex("d7cdc69a")
         return has_mathtype_payload and has_placeable_preview
     except Exception as exc:
-        print(f"[mathtype] warning: ignoring invalid cached equation {ole_path}: {exc}")
+        log_warning(f"[mathtype] warning: ignoring invalid cached equation {ole_path}: {exc}")
         return False
 
 
@@ -488,8 +490,8 @@ def inspect_ole(path: Path) -> CompoundFile:
     compound = CompoundFile(path.read_bytes())
     names = ", ".join(entry.name for entry in compound.entries if entry.name)
     native = compound.read_stream("Equation Native")
-    print(f"[mathtype] {path}: streams={names}")
-    print(f"[mathtype] Equation Native bytes={len(native)}, DSMT offset={native.find(b'DSMT')}")
+    log_debug(f"[mathtype] {path}: streams={names}")
+    log_debug(f"[mathtype] Equation Native bytes={len(native)}, DSMT offset={native.find(b'DSMT')}")
     return compound
 
 
@@ -504,7 +506,7 @@ def generate_equation_parts(requests: list[EquationRequest], output_dir: Path) -
     cache_misses = 0
     helper_digest = file_sha256(HELPER_EXE)
     if needs_variable_sizes and prefs_template is None:
-        print(
+        log_warning(
             "[mathtype] warning: MathType preference template not found; "
             "equations will fall back to MathType's current default size"
         )
@@ -534,10 +536,10 @@ def generate_equation_parts(requests: list[EquationRequest], output_dir: Path) -
         )
         if restore_cached_equation(cache_key, ole_path, wmf_path, metadata_path):
             cache_hits += 1
-            print(f"[mathtype] cache hit eq={index} key={cache_key[:12]}")
+            log_debug(f"[mathtype] cache hit eq={index} key={cache_key[:12]}")
         else:
             cache_misses += 1
-            print(f"[mathtype] cache miss eq={index} key={cache_key[:12]}")
+            log_debug(f"[mathtype] cache miss eq={index} key={cache_key[:12]}")
             try:
                 make_ole_from_format(
                     "TeX Input Language",
@@ -559,5 +561,5 @@ def generate_equation_parts(requests: list[EquationRequest], output_dir: Path) -
         if not wmf_path.exists() or wmf_path.read_bytes()[:4] != bytes.fromhex("d7cdc69a"):
             raise ValueError(f"generated WMF preview is missing placeable header: {wmf_path}")
         equations.append(GeneratedEquation(latex=latex, ole_path=ole_path, wmf_path=wmf_path, metadata_path=metadata_path))
-    print(f"[mathtype] cache summary: hits={cache_hits}, misses={cache_misses}, dir={MATHTYPE_CACHE_DIR}")
+    log_info(f"[mathtype] cache summary: hits={cache_hits}, misses={cache_misses}, dir={MATHTYPE_CACHE_DIR}")
     return equations

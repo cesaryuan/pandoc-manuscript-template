@@ -11,6 +11,8 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     __package__ = "mathtype"
 
+from logging_utils import log_info
+
 from .docx_ole import replace_omml_with_template
 
 
@@ -36,12 +38,12 @@ def main() -> int:
 
     if args.copy_only:
         copy_for_probe(source, target)
-        print(f"[mathtype] copied {source} -> {target}")
+        log_info(f"[mathtype] copied {source} -> {target}")
         return 0
 
     replaced = replace_omml_with_template(source, sample, target, args.limit)
-    print(f"[mathtype] wrote {target}")
-    print(f"[mathtype] replaced top-level OMML nodes: {replaced}")
+    log_info(f"[mathtype] wrote {target}")
+    log_info(f"[mathtype] replaced top-level OMML nodes: {replaced}")
     return 0 if replaced else 1
 
 

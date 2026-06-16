@@ -6,6 +6,8 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
+from logging_utils import log_debug, log_info
+
 from .docx_ole import (
     MathTypeTemplate,
     append_relationship,
@@ -296,7 +298,7 @@ def binding_font_size_resolution(
 def log_font_size_resolution(index: int, binding: MarkedFormulaBinding, resolution: FontSizeResolution) -> None:
     """Print one concise line showing where a formula's final font size came from."""
     size_text = f"{resolution.font_size_pt:g}pt" if resolution.font_size_pt is not None else "None"
-    print(
+    log_debug(
         "[mathtype] font-size"
         f" eq={index}"
         f" kind={binding.kind}"
@@ -433,9 +435,9 @@ def inspect_docx(path: Path) -> None:
         rels_xml = archive.read("word/_rels/document.xml.rels")
         embeddings = [name for name in names if name.startswith("word/embeddings/")]
         previews = [name for name in names if name.startswith("word/media/mathtype_formula_")]
-        print(f"[mathtype] docx={path}")
-        print(f"[mathtype] embeddings={len(embeddings)}, Equation.DSMT4={document_xml.count(b'Equation.DSMT4')}")
-        print(f"[mathtype] generated WMF previews={len(previews)}")
-        print(f"[mathtype] oMath tokens={document_xml.count(b'<m:oMath') + document_xml.count(b'<m:oMathPara')}")
-        print(f"[mathtype] MathType markers={document_xml.count(MATH_TYPE_MARKER_PREFIX.encode('utf-8'))}")
-        print(f"[mathtype] ole relationships={rels_xml.count(b'/oleObject')}")
+        log_info(f"[mathtype] docx={path}")
+        log_info(f"[mathtype] embeddings={len(embeddings)}, Equation.DSMT4={document_xml.count(b'Equation.DSMT4')}")
+        log_info(f"[mathtype] generated WMF previews={len(previews)}")
+        log_info(f"[mathtype] oMath tokens={document_xml.count(b'<m:oMath') + document_xml.count(b'<m:oMathPara')}")
+        log_info(f"[mathtype] MathType markers={document_xml.count(MATH_TYPE_MARKER_PREFIX.encode('utf-8'))}")
+        log_info(f"[mathtype] ole relationships={rels_xml.count(b'/oleObject')}")

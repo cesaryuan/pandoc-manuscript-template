@@ -51,6 +51,12 @@ import re
 import sys
 from pathlib import Path
 
+if __package__ in (None, ""):
+    # Allow direct execution while reusing the repository-wide logging gate.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from logging_utils import log_error, log_success, log_warning
+
 try:
     from docx import Document
     from docx.oxml.ns import qn
@@ -479,7 +485,7 @@ def insert_author_info(docx_path: str, md_path: str) -> tuple[int, int, bool]:
     result = insert_author_info_to_doc(doc, metadata)
 
     if result[0] == 0:
-        print("Warning: No authors found in YAML metadata")
+        log_warning("Warning: No authors found in YAML metadata")
         return result
 
     doc.save(docx_path)
@@ -531,23 +537,23 @@ Or inline affiliation text per author:
     args = parser.parse_args()
 
     if not Path(args.docx_path).exists():
-        print(f"Error: DOCX file not found: {args.docx_path}")
+        log_error(f"Error: DOCX file not found: {args.docx_path}")
         sys.exit(1)
 
     if not Path(args.md_path).exists():
-        print(f"Error: Markdown file not found: {args.md_path}")
+        log_error(f"Error: Markdown file not found: {args.md_path}")
         sys.exit(1)
 
     try:
         authors_count, affiliations_count, has_footnote = insert_author_info(
             args.docx_path, args.md_path
         )
-        print(f"Successfully inserted author information:")
-        print(f"  - Authors: {authors_count}")
-        print(f"  - Affiliations: {affiliations_count}")
-        print(f"  - Corresponding author footnote: {'Yes' if has_footnote else 'No'}")
+        log_success("Successfully inserted author information:")
+        log_success(f"  - Authors: {authors_count}")
+        log_success(f"  - Affiliations: {affiliations_count}")
+        log_success(f"  - Corresponding author footnote: {'Yes' if has_footnote else 'No'}")
     except Exception as e:
-        print(f"Error: {e}")
+        log_error(f"Error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

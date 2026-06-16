@@ -25,6 +25,8 @@ from typing import Any
 
 from lxml import etree
 
+from logging_utils import log_error, log_info, log_warning
+
 
 WD_ALERTS_NONE = 0
 WD_COMPARE_DESTINATION_NEW = 2
@@ -53,17 +55,17 @@ class MathTypeObject:
 
 def print_info(message: str) -> None:
     """Print an informational progress message."""
-    print(f"[INFO] {message}")
+    log_info(f"[INFO] {message}")
 
 
 def print_warning(message: str) -> None:
     """Print a warning for non-fatal comparison limitations."""
-    print(f"[WARN] {message}")
+    log_warning(f"[WARN] {message}")
 
 
 def print_error(message: str) -> None:
     """Print an error message to stderr."""
-    print(f"[ERROR] {message}", file=sys.stderr)
+    log_error(f"[ERROR] {message}")
 
 
 def qn(prefix: str, local: str) -> str:

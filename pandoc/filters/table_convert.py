@@ -14,6 +14,26 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "WARN": 30, "ERROR": 40}
+
+
+def should_log(level: str) -> bool:
+    """Return True when this Pandoc filter should emit a log message."""
+    configured = os.getenv("PANDOC_TEMPLATE_LOG_LEVEL", "WARNING").strip().upper()
+    return LOG_LEVELS.get(level, 30) >= LOG_LEVELS.get(configured, 30)
+
+
+def log_info(message: str) -> None:
+    """Emit filter progress only when INFO logging is enabled."""
+    if should_log("INFO"):
+        print(message, file=sys.stderr)
+
+
+def log_warning(message: str) -> None:
+    """Emit a filter warning; warnings remain visible by default."""
+    if should_log("WARNING"):
+        print(message, file=sys.stderr)
+
 try:
 # pyright: reportPossiblyUnboundVariable=false
     from google import genai
@@ -27,8 +47,8 @@ except ImportError:
 # Initialize Gemini API
 API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_KEY:
-    print("Warning: GEMINI_API_KEY environment variable not set.", file=sys.stderr)
-    print("Tables will be converted with fallback conversion.", file=sys.stderr)
+    log_warning("Warning: GEMINI_API_KEY environment variable not set.")
+    log_info("Tables will be converted with fallback conversion.")
     GEMINI_AVAILABLE = False
     GEMINI_CLIENT = None
 else:
@@ -430,7 +450,7 @@ def action(elem: pf.Element, doc: pf.Doc) -> Optional[pf.Element]:
         table_info = extract_table_info(elem)
         
         if not table_info['headers'] and not table_info['rows']:
-            print("Warning: Empty table found, skipping.", file=sys.stderr)
+            log_warning("Warning: Empty table found, skipping.")
             return None
         
         # Try AI conversion first
@@ -450,9 +470,9 @@ def action(elem: pf.Element, doc: pf.Doc) -> Optional[pf.Element]:
 
 def prepare(doc: pf.Doc) -> None:
     if doc.format == 'latex':
-        print("Table conversion filter initialized.", file=sys.stderr)
+        log_info("Table conversion filter initialized.")
         if not GEMINI_AVAILABLE:
-            print("WARNING: Gemini API not available. Using fallback conversion.", file=sys.stderr)
+            log_warning("WARNING: Gemini API not available. Using fallback conversion.")
 
 
 def finalize(doc: pf.Doc) -> None:
@@ -473,4 +493,3 @@ if __name__ == '__main__':
         pf.debug('DEBUG MODE')
         sys.stdin = open('temp.json', 'r')
     main()
-

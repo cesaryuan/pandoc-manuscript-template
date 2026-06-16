@@ -11,6 +11,8 @@ from docx.styles.style import _ParagraphStyle
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
+from logging_utils import log_message
+
 
 BODY_TEXT_STYLE_NAMES = ("Body Text", "正文文本")
 NORMAL_STYLE_NAMES = ("Normal", "正文")
@@ -28,22 +30,22 @@ class Colors:
 
 def print_success(message: str) -> None:
     """Print a success message in green."""
-    print(f"{Colors.GREEN}{message}{Colors.RESET}")
+    log_message("SUCCESS", f"{Colors.GREEN}{message}{Colors.RESET}")
 
 
 def print_info(message: str) -> None:
     """Print an informational message in cyan."""
-    print(f"{Colors.CYAN}{message}{Colors.RESET}")
+    log_message("INFO", f"{Colors.CYAN}{message}{Colors.RESET}")
 
 
 def print_warning(message: str) -> None:
     """Print a warning message in yellow."""
-    print(f"{Colors.YELLOW}{message}{Colors.RESET}")
+    log_message("WARNING", f"{Colors.YELLOW}{message}{Colors.RESET}")
 
 
 def print_error(message: str) -> None:
     """Print an error message in red."""
-    print(f"{Colors.RED}{message}{Colors.RESET}")
+    log_message("ERROR", f"{Colors.RED}{message}{Colors.RESET}")
 
 
 def validate_existing_file(path: str | Path, label: str) -> Path | None:

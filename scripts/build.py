@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any, Callable, Tuple
 
 import yaml
+from logging_utils import log_error, log_info, log_success, log_warning
 from metadata import load_merged_metadata, merge_metadata, parse_yaml_file
 from mathtype.ole_parts import check_mathtype_availability
 from postprocess.final_docx_syntax_check import validate_final_docx_syntax
@@ -77,7 +78,7 @@ def run_command(cmd: list, cwd: Path | None = None, check: bool = True, stream_o
         check: Raise exception on non-zero exit code
         stream_output: If True, stream stdout/stderr to console in real-time
     """
-    print(f"[Run] {' '.join(str(c) for c in cmd)}")
+    log_info(f"[Run] {' '.join(str(c) for c in cmd)}")
 
     if stream_output:
         # Stream output to console in real-time
@@ -100,7 +101,7 @@ def get_pandoc_version() -> Tuple[int, ...]:
             parts.append('0')
         return tuple(int(p) for p in parts[:4])
     except Exception as e:
-        print(f"Warning: Could not detect Pandoc version: {e}")
+        log_warning(f"[WARN] Could not detect Pandoc version: {e}")
         return (999, 0, 0, 0)  # Assume latest version
 
 
@@ -186,7 +187,7 @@ def should_use_style_metadata_file() -> bool:
     """Return True when the configured style metadata file exists for this build."""
     style_file = Path(CONFIG['style_file'])
     if not style_file.exists():
-        print(f"[INFO] Style metadata file not found, skipping: {style_file}")
+        log_info(f"[INFO] Style metadata file not found, skipping: {style_file}")
         return False
     return True
 
@@ -234,7 +235,7 @@ def load_build_metadata() -> dict[str, Any]:
 
         # Reply-style documents may omit manuscript YAML; keep style.yml defaults
         # so post-processing still receives the same build-level style metadata.
-        print(f"[WARN] No YAML front matter found in {CONFIG['manuscript_file']}; using metadata files only")
+        log_warning(f"[WARN] No YAML front matter found in {CONFIG['manuscript_file']}; using metadata files only")
         metadata: dict[str, Any] = {}
         for metadata_file in metadata_files:
             metadata = merge_metadata(metadata, parse_yaml_file(metadata_file))
@@ -284,23 +285,23 @@ def resolve_mathtype_build_enabled(requested: bool) -> bool:
     if not requested:
         return False
 
-    print("[INFO] MathType DOCX equations enabled by metadata: mathtype: true")
+    log_info("[INFO] MathType DOCX equations enabled by metadata: mathtype: true")
     availability = check_mathtype_availability()
     if availability.usable:
         return True
 
-    print(
+    log_warning(
         availability.format_failure(
             "[WARN] MathType was requested by metadata, but MathType conversion will be skipped."
         )
     )
-    print("[WARN] Building DOCX with Pandoc/Word equations instead.\n")
+    log_warning("[WARN] Building DOCX with Pandoc/Word equations instead.\n")
     return False
 
 
 def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
     """Convert a marked DOCX's OMML equations into MathType OLE equations."""
-    print("\n[DOCX] Converting equations to MathType OLE objects...\n")
+    log_info("\n[DOCX] Converting equations to MathType OLE objects...\n")
     run_command(
         [
             sys.executable,
@@ -360,7 +361,7 @@ def run_pandoc(
 
 def build_docx():
     """Generate DOCX file with optional post-processing."""
-    print("\n[DOCX] Building DOCX...\n")
+    log_info("\n[DOCX] Building DOCX...\n")
 
     # Create output directory
     docx_dir = Path(CONFIG['docx_dir'])
@@ -375,7 +376,7 @@ def build_docx():
 
     # Add filter for older Pandoc versions
     if should_use_mathbfit_filter():
-        print("[INFO] Using mathbfit filter (Pandoc <= 3.8.3.0)")
+        log_info("[INFO] Using mathbfit filter (Pandoc <= 3.8.3.0)")
         extra_args.extend(['--filter', 'pandoc/filters/to_mathbfit.py'])
 
     if use_mathtype:
@@ -387,7 +388,7 @@ def build_docx():
 
     # Post-process DOCX if enabled
     if CONFIG['enable_docx_postprocess']:
-        print("\n[DOCX] Running Python post-processing...\n")
+        log_info("\n[DOCX] Running Python post-processing...\n")
         postprocess_target = pandoc_output if use_mathtype else docx_file
         # When MathType is enabled, post-process the marker DOCX before
         # replacing OMML. Several DOCX fixes detect equation layout tables from
@@ -404,12 +405,12 @@ def build_docx():
     if syntax_findings:
         raise RuntimeError("Final DOCX still contains unrendered Pandoc syntax")
 
-    print(f"\n[OK] DOCX created: {CONFIG['docx_dir']}/{CONFIG['project_name']}.docx")
+    log_success(f"\n[OK] DOCX created: {CONFIG['docx_dir']}/{CONFIG['project_name']}.docx")
 
 
 def build_latex():
     """Generate LaTeX file."""
-    print("\n[LaTeX] Building LaTeX...\n")
+    log_info("\n[LaTeX] Building LaTeX...\n")
 
     # Create output directory
     latex_dir = Path(CONFIG['latex_dir'])
@@ -420,12 +421,12 @@ def build_latex():
     # Run pandoc
     run_pandoc(Path('pandoc/pandoc-latex.yml'), latex_file)
 
-    print(f"\n[OK] LaTeX created: {CONFIG['latex_dir']}/{CONFIG['project_name']}.tex")
+    log_success(f"\n[OK] LaTeX created: {CONFIG['latex_dir']}/{CONFIG['project_name']}.tex")
 
 
 def build_json():
     """Generate Pandoc JSON AST for debugging filters and metadata."""
-    print("\n[JSON] Building Pandoc JSON AST...\n")
+    log_info("\n[JSON] Building Pandoc JSON AST...\n")
 
     json_dir = Path(CONFIG['json_dir'])
     json_dir.mkdir(parents=True, exist_ok=True)
@@ -440,20 +441,20 @@ def build_json():
         defaults_mutator=json_debug_defaults,
     )
 
-    print(f"\n[OK] JSON created: {CONFIG['json_dir']}/{CONFIG['project_name']}.json")
+    log_success(f"\n[OK] JSON created: {CONFIG['json_dir']}/{CONFIG['project_name']}.json")
 
 
 def clean():
     """Remove all generated files."""
-    print("\n[Clean] Cleaning generated files...\n")
+    log_info("\n[Clean] Cleaning generated files...\n")
 
     output_dir = Path(CONFIG['output_dir'])
     if output_dir.exists():
         ensure_safe_clean_dir(output_dir)
         shutil.rmtree(output_dir)
-        print(f"Removed: {output_dir}")
+        log_info(f"Removed: {output_dir}")
 
-    print("\n[OK] Clean complete.")
+    log_success("\n[OK] Clean complete.")
 
 
 def ensure_safe_clean_dir(output_dir: Path) -> None:
@@ -470,7 +471,7 @@ def ensure_safe_clean_dir(output_dir: Path) -> None:
 
 def distclean():
     """Deep clean (including Pandoc cache)."""
-    print("\n[Clean] Deep cleaning...\n")
+    log_info("\n[Clean] Deep cleaning...\n")
 
     # Regular clean
     clean()
@@ -479,9 +480,9 @@ def distclean():
     cache_dir = Path('.pandoc-cache')
     if cache_dir.exists():
         shutil.rmtree(cache_dir)
-        print(f"Removed: {cache_dir}")
+        log_info(f"Removed: {cache_dir}")
 
-    print("\n[OK] Deep clean complete.")
+    log_success("\n[OK] Deep clean complete.")
 
 
 def show_help():
@@ -558,10 +559,10 @@ def main():
     try:
         targets[args.target]()
     except KeyboardInterrupt:
-        print("\n\n[WARN] Build interrupted by user.")
+        log_warning("\n\n[WARN] Build interrupted by user.")
         sys.exit(1)
     except Exception as e:
-        print(f"\n[ERROR] {e}")
+        log_error(f"\n[ERROR] {e}")
         sys.exit(1)
 
 

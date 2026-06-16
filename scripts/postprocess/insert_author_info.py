@@ -388,19 +388,19 @@ def find_title_paragraph_index(doc) -> int:
     return 0
 
 
-def insert_author_info_to_doc(doc, md_path: str) -> tuple[int, int, bool]:
+def insert_author_info_to_doc(doc, metadata: dict) -> tuple[int, int, bool]:
     """
     Insert author information into a Document object after the title.
 
     Args:
         doc: The Document object to modify
-        md_path: Path to the markdown file with YAML metadata
+        metadata: Merged manuscript metadata containing author information
 
     Returns:
         Tuple of (authors_count, affiliations_count, has_footnote)
     """
-    # Parse YAML metadata
-    metadata = parse_yaml_header(md_path)
+    if 'authors' not in metadata and 'author' not in metadata:
+        return (0, 0, False)
 
     authors, affiliations = normalize_author_metadata(metadata)
 
@@ -475,7 +475,8 @@ def insert_author_info(docx_path: str, md_path: str) -> tuple[int, int, bool]:
         Tuple of (authors_count, affiliations_count, has_footnote)
     """
     doc = Document(docx_path)
-    result = insert_author_info_to_doc(doc, md_path)
+    metadata = parse_yaml_header(md_path)
+    result = insert_author_info_to_doc(doc, metadata)
 
     if result[0] == 0:
         print("Warning: No authors found in YAML metadata")

@@ -11,13 +11,15 @@ Post-process DOCX file - orchestrator script.
 This script calls individual processing scripts in sequence.
 
 Usage:
-    uv run postprocess_docx.py path/to/file.docx path/to/manuscript.md
+    import postprocess_docx
+    postprocess_docx.postprocess_docx("path/to/file.docx", metadata)
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 try:
     from docx import Document
@@ -27,7 +29,6 @@ except ImportError:
 
 # Import processing modules
 try:
-    from metadata import load_merged_metadata, merge_metadata, parse_yaml_file
     from postprocess.common import print_error, print_info, print_success, print_warning
     from postprocess.merge_table_cells import merge_table_cells
     from postprocess.process_table_metadata import process_table_metadata
@@ -80,29 +81,9 @@ def log_skip(label: str, reason: str) -> None:
     print_info("")
 
 
-def load_postprocess_metadata(md_path: str, metadata_files: list[str]) -> dict:
-    """Load metadata for post-processing, tolerating reply files without YAML."""
-    if not md_path:
-        return {}
-    try:
-        return load_merged_metadata(md_path, metadata_files)
-    except ValueError as exc:
-        if "No YAML front matter" not in str(exc):
-            raise
-
-        # Reply letters often have no YAML header; keep style.yml defaults so
-        # body/table post-processing can still use shared style metadata.
-        print_warning(f"No YAML front matter found in {md_path}; using metadata files only")
-        metadata: dict = {}
-        for metadata_file in metadata_files:
-            metadata = merge_metadata(metadata, parse_yaml_file(metadata_file))
-        return metadata
-
-
 def postprocess_docx(
     docx_path: str,
-    md_path: str = '',
-    metadata_files: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
     skip_author_info: bool = False,
     reply_style_formatting: bool = False,
 ) -> bool:
@@ -111,8 +92,7 @@ def postprocess_docx(
 
     Args:
         docx_path: Path to the DOCX file to process
-        md_path: Path to the markdown file with YAML metadata (optional)
-        metadata_files: YAML metadata files merged before manuscript metadata
+        metadata: Merged style and manuscript metadata from the build layer
         skip_author_info: Skip author insertion for non-manuscript outputs
         reply_style_formatting: Apply reply-only blue italic caption/table styling
 
@@ -122,33 +102,19 @@ def postprocess_docx(
     # Validate inputs
     print_info("Validating inputs...")
     docx_file = Path(docx_path)
-    metadata_files = metadata_files or []
+    metadata = metadata or {}
 
     if not docx_file.exists():
         print_error(f"DOCX file not found: {docx_path}")
         return False
 
-    if md_path and not Path(md_path).exists():
-        print_error(f"Markdown file not found: {md_path}")
-        return False
-
-    for metadata_file in metadata_files:
-        if not Path(metadata_file).exists():
-            print_error(f"Metadata file not found: {metadata_file}")
-            return False
-
     docx_path_abs = docx_file.resolve()
     print_info("=== Starting DOCX Post-Processing Pipeline ===")
     print_info(f"Target file: {docx_path_abs}")
-    if md_path:
-        print_info(f"Markdown file: {Path(md_path).resolve()}")
-    for metadata_file in metadata_files:
-        print_info(f"Metadata file: {Path(metadata_file).resolve()}")
+    print_info(f"Metadata keys: {len(metadata)}")
     print_info("")
 
     try:
-        merged_metadata = load_postprocess_metadata(md_path, metadata_files)
-
         # Open document (shared across all steps)
         print_info("Initializing document...")
         doc = Document(str(docx_path_abs))
@@ -157,10 +123,10 @@ def postprocess_docx(
 
         if skip_author_info:
             log_skip("author information", "disabled for this build")
-        elif md_path:
+        else:
             def insert_author_info_step() -> None:
                 """Insert author metadata and log the number of inserted records."""
-                authors, affiliations, has_footnote = insert_author_info_to_doc(doc, md_path)
+                authors, affiliations, has_footnote = insert_author_info_to_doc(doc, metadata)
                 if authors > 0:
                     print_success(
                         f"Authors: {authors}, Affiliations: {affiliations}, "
@@ -170,35 +136,29 @@ def postprocess_docx(
                     print_warning("No authors found in YAML metadata, skipping")
 
             run_pipeline_step("Inserting author information", insert_author_info_step)
-        else:
-            log_skip("author information", "no markdown file provided")
 
-        if md_path:
-            def apply_body_text_style_step() -> None:
-                """Apply merged YAML bodyText metadata to the DOCX body style."""
-                result = apply_body_text_style_metadata(doc, merged_metadata)
-                if result is None:
-                    print_warning("No bodyText metadata found, skipping")
-                    return
-                print_success(
-                    f"Style '{result['style_name']}': "
-                    f"first-line indent {result['first_line_indent_chars']} chars, "
-                    f"before {result['space_before_pt']} pt, "
-                    f"after {result['space_after_pt']} pt"
-                )
+        def apply_body_text_style_step() -> None:
+            """Apply merged YAML bodyText metadata to the DOCX body style."""
+            result = apply_body_text_style_metadata(doc, metadata)
+            if result is None:
+                print_warning("No bodyText metadata found, skipping")
+                return
+            print_success(
+                f"Style '{result['style_name']}': "
+                f"first-line indent {result['first_line_indent_chars']} chars, "
+                f"before {result['space_before_pt']} pt, "
+                f"after {result['space_after_pt']} pt"
+            )
 
-            def apply_line_number_step() -> None:
-                """Apply merged YAML line-number metadata to all DOCX sections."""
-                result = apply_line_number_metadata(doc, merged_metadata)
-                if result is None:
-                    print_warning("No enabled show-line-numbers metadata found, skipping")
-                    return
-                print_success(
-                    f"Line numbers: restart={result['restart']}, sections={result['sections']}"
-                )
-        else:
-            log_skip("body text style metadata", "no markdown file provided")
-            log_skip("line-number metadata", "no markdown file provided")
+        def apply_line_number_step() -> None:
+            """Apply merged YAML line-number metadata to all DOCX sections."""
+            result = apply_line_number_metadata(doc, metadata)
+            if result is None:
+                print_warning("No enabled show-line-numbers metadata found, skipping")
+                return
+            print_success(
+                f"Line numbers: restart={result['restart']}, sections={result['sections']}"
+            )
 
         def merge_table_cells_step() -> None:
             """Merge table cells marked with left/up merge placeholders."""
@@ -264,14 +224,10 @@ def postprocess_docx(
             )
 
         # Keep this ordered list explicit because DOCX post-processing steps are order-sensitive.
-        pipeline_steps: list[tuple[str, Callable[[], None]]] = []
-        if md_path:
+        pipeline_steps: list[tuple[str, Callable[[], None]]] = [
             # Metadata-driven document-wide settings must run before table-specific cleanup.
-            pipeline_steps.extend([
-                ("Applying body text style metadata", apply_body_text_style_step),
-                ("Applying line-number metadata", apply_line_number_step),
-            ])
-        pipeline_steps.extend([
+            ("Applying body text style metadata", apply_body_text_style_step),
+            ("Applying line-number metadata", apply_line_number_step),
             ("Merging table cells", merge_table_cells_step),
             ("Processing table metadata", process_table_metadata_step),
             ("Clearing subfigure table formatting", clear_subfigure_table_format_step),
@@ -281,7 +237,7 @@ def postprocess_docx(
             ("Formatting equation layout tables", format_equation_layout_tables_step),
             ("Applying where paragraph style", apply_where_paragraph_style_step),
             ("Adding spaces after standalone inline math", add_inline_math_spacing_step),
-        ])
+        ]
         if reply_style_formatting:
             pipeline_steps.append(("Applying reply blue italic caption/table style", apply_reply_blue_italic_style_step))
 
@@ -313,13 +269,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  uv run postprocess_docx.py manuscript.docx manuscript.md
-  uv run postprocess_docx.py output/docx/manuscript.docx manuscript.md
+  Prefer calling postprocess_docx.postprocess_docx(docx_path, metadata) from build.py.
+  For standalone debugging, pass a pre-merged metadata JSON file with --metadata-json.
 
 Processing steps:
-  - Insert author information from YAML metadata (if md_path provided)
-  - Apply Body Text style settings from merged YAML metadata (if md_path provided)
-  - Apply line numbers from show-line-numbers metadata (if md_path provided)
+  - Insert author information from merged metadata (if metadata provided)
+  - Apply Body Text style settings from merged metadata (if metadata provided)
+  - Apply line numbers from show-line-numbers metadata (if metadata provided)
   - Merge table cells based on markers (!<! and !^!)
   - Process table metadata from captions (|key=value|)
   - Clear formatting for tables above 'Image Caption' paragraphs
@@ -335,12 +291,9 @@ This script applies all post-processing steps in sequence.
         """
     )
     parser.add_argument("docx_path", help="Path to the DOCX file to process")
-    parser.add_argument("md_path", nargs="?", default='manuscript.md', help="Path to the markdown file with YAML metadata (optional)")
     parser.add_argument(
-        "--metadata-file",
-        action="append",
-        default=[],
-        help="YAML metadata file to merge before manuscript metadata",
+        "--metadata-json",
+        help="Path to a pre-merged metadata JSON file produced by the build layer",
     )
     parser.add_argument(
         "--skip-author-info",
@@ -354,11 +307,16 @@ This script applies all post-processing steps in sequence.
     )
 
     args = parser.parse_args()
+    metadata = None
+    if args.metadata_json:
+        with Path(args.metadata_json).open("r", encoding="utf-8") as f:
+            metadata = json.load(f)
+        if not isinstance(metadata, dict):
+            parser.error("--metadata-json must contain a JSON object")
 
     success = postprocess_docx(
         args.docx_path,
-        args.md_path,
-        args.metadata_file,
+        metadata,
         skip_author_info=args.skip_author_info,
         reply_style_formatting=args.reply_style_formatting,
     )

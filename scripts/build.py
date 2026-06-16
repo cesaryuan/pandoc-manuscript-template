@@ -42,8 +42,9 @@ from pathlib import Path
 from typing import Any, Callable, Tuple
 
 import yaml
-from metadata import load_merged_metadata
+from metadata import load_merged_metadata, merge_metadata, parse_yaml_file
 from mathtype.ole_parts import check_mathtype_availability
+from postprocess_docx import postprocess_docx as run_docx_postprocess
 
 # ============================================================================
 # CONFIGURATION - Customize these variables for your project
@@ -189,13 +190,6 @@ def should_use_style_metadata_file() -> bool:
     return True
 
 
-def style_metadata_cli_args() -> list[str]:
-    """Return post-processing CLI args for the optional style metadata file."""
-    if not should_use_style_metadata_file():
-        return []
-    return ['--metadata-file', CONFIG['style_file']]
-
-
 def style_metadata_files() -> list[str]:
     """Return existing style metadata files in the same order Pandoc receives them."""
     if not should_use_style_metadata_file():
@@ -230,7 +224,20 @@ def ensure_docx_target_writable(target: Path) -> None:
 
 def load_build_metadata() -> dict[str, Any]:
     """Load style defaults plus manuscript metadata for build-time feature flags."""
-    return load_merged_metadata(CONFIG['manuscript_file'], style_metadata_files())
+    metadata_files = style_metadata_files()
+    try:
+        return load_merged_metadata(CONFIG['manuscript_file'], metadata_files)
+    except ValueError as exc:
+        if "No YAML front matter" not in str(exc):
+            raise
+
+        # Reply-style documents may omit manuscript YAML; keep style.yml defaults
+        # so post-processing still receives the same build-level style metadata.
+        print(f"[WARN] No YAML front matter found in {CONFIG['manuscript_file']}; using metadata files only")
+        metadata: dict[str, Any] = {}
+        for metadata_file in metadata_files:
+            metadata = merge_metadata(metadata, parse_yaml_file(metadata_file))
+        return metadata
 
 
 def metadata_bool(value: Any) -> bool:
@@ -380,21 +387,12 @@ def build_docx():
     # Post-process DOCX if enabled
     if CONFIG['enable_docx_postprocess']:
         print("\n[DOCX] Running Python post-processing...\n")
-        postprocess_docx = pandoc_output if use_mathtype else docx_file
+        postprocess_target = pandoc_output if use_mathtype else docx_file
         # When MathType is enabled, post-process the marker DOCX before
         # replacing OMML. Several DOCX fixes detect equation layout tables from
         # OMML, which is gone after OLE conversion.
-        run_command(
-            [
-                'uv',
-                'run',
-                'scripts/postprocess_docx.py',
-                str(postprocess_docx),
-                CONFIG['manuscript_file'],
-                *style_metadata_cli_args(),
-            ],
-            stream_output=True,
-        )
+        if not run_docx_postprocess(str(postprocess_target), metadata):
+            raise RuntimeError("DOCX post-processing failed")
 
     if use_mathtype:
         run_mathtype_conversion(pandoc_output, docx_file)

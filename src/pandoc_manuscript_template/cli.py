@@ -17,7 +17,6 @@ from . import __version__
 from .resources import iter_project_template_entries, template_root
 
 
-BUILD_TARGETS = ("docx", "reply", "latex", "json", "clean", "distclean", "help")
 IGNORE_NAMES = {
     ".git",
     ".pandoc-cache",
@@ -125,28 +124,19 @@ def load_build_module(resource_root: Path) -> ModuleType:
 def run_build(args: argparse.Namespace) -> int:
     """Run the existing manuscript build pipeline through the pmt CLI."""
     resource_root = template_root()
-    project_dir = Path(args.project_dir).resolve()
+    forwarded_args = list(getattr(args, "build_args", []))
+    if getattr(args, "build_help", False):
+        forwarded_args.append("--help")
+    shortcut_target = getattr(args, "target", None)
+    if shortcut_target:
+        forwarded_args = [shortcut_target, *forwarded_args]
+
+    project_dir, forwarded_args = extract_project_dir(
+        forwarded_args,
+        default_project_dir=getattr(args, "project_dir", None) or ".",
+    )
     if not project_dir.exists():
         raise FileNotFoundError(f"Project directory not found: {project_dir}")
-
-    forwarded_args = [args.target]
-    if args.manuscript:
-        forwarded_args.append(args.manuscript)
-    if args.manuscript_option:
-        forwarded_args.extend(["--manuscript", args.manuscript_option])
-    if args.output_dir:
-        forwarded_args.extend(["--output-dir", args.output_dir])
-    for option_name, flag in (
-        ("reply_manuscript", "--reply-manuscript"),
-        ("manuscript_line_source", "--manuscript-line-source"),
-        ("reply_style", "--reply-style"),
-        ("from_format", "--from-format"),
-        ("reference_doc", "--reference-doc"),
-        ("output_file", "--output-file"),
-    ):
-        value = getattr(args, option_name, None)
-        if value:
-            forwarded_args.extend([flag, value])
 
     with build_environment(project_dir, resource_root):
         module = load_build_module(resource_root)
@@ -159,6 +149,28 @@ def run_build(args: argparse.Namespace) -> int:
         finally:
             sys.argv = previous_argv
     return 0
+
+
+def extract_project_dir(build_args: list[str], default_project_dir: str = ".") -> tuple[Path, list[str]]:
+    """Remove pmt's wrapper-only --project-dir option from build arguments."""
+    project_dir = default_project_dir
+    forwarded_args: list[str] = []
+    index = 0
+    while index < len(build_args):
+        arg = build_args[index]
+        if arg == "--project-dir":
+            if index + 1 >= len(build_args):
+                raise ValueError("--project-dir requires a directory")
+            project_dir = build_args[index + 1]
+            index += 2
+            continue
+        if arg.startswith("--project-dir="):
+            project_dir = arg.split("=", 1)[1]
+            index += 1
+            continue
+        forwarded_args.append(arg)
+        index += 1
+    return Path(project_dir).resolve(), forwarded_args
 
 
 def command_status(command: list[str]) -> tuple[bool, str]:
@@ -234,37 +246,31 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--force", action="store_true", help="Overwrite existing template entries")
     init_parser.set_defaults(func=init_project)
 
-    build_parser_ = subparsers.add_parser("build", help="Build DOCX, reviewer reply, LaTeX, or JSON output")
-    build_parser_.add_argument("target", nargs="?", default="docx", choices=BUILD_TARGETS)
-    add_build_options(build_parser_)
+    build_parser_ = subparsers.add_parser(
+        "build",
+        add_help=False,
+        help="Build DOCX, reviewer reply, LaTeX, or JSON output",
+    )
+    build_parser_.add_argument("-h", "--help", dest="build_help", action="store_true", help="Show build help")
+    build_parser_.add_argument("--project-dir", help="Project directory to build")
+    build_parser_.add_argument("build_args", nargs=argparse.REMAINDER, help="Arguments forwarded to the build script")
     build_parser_.set_defaults(func=run_build)
 
     for target in ("docx", "reply", "latex", "json", "clean", "distclean"):
-        target_parser = subparsers.add_parser(target, help=f"Shortcut for `pmt build {target}`")
-        add_build_options(target_parser)
+        target_parser = subparsers.add_parser(
+            target,
+            add_help=False,
+            help=f"Shortcut for `pmt build {target}`",
+        )
+        target_parser.add_argument("-h", "--help", dest="build_help", action="store_true", help="Show build help")
+        target_parser.add_argument("--project-dir", help="Project directory to build")
+        target_parser.add_argument("build_args", nargs=argparse.REMAINDER, help="Arguments forwarded to the build script")
         target_parser.set_defaults(func=run_build, target=target)
 
     doctor_parser = subparsers.add_parser("doctor", help="Check environment and project readiness")
     doctor_parser.add_argument("--project-dir", default=".", help="Project directory to check")
     doctor_parser.set_defaults(func=doctor)
     return parser
-
-
-def add_build_options(parser: argparse.ArgumentParser) -> None:
-    """Add build options shared by `pmt build` and target shortcuts."""
-    parser.add_argument("manuscript", nargs="?", help="Markdown file to build")
-    parser.add_argument("-m", "--manuscript", dest="manuscript_option", help="Markdown file to build")
-    parser.add_argument("-o", "--output-dir", help="Base output directory")
-    parser.add_argument("--project-dir", default=".", help="Project directory to build")
-    parser.add_argument("--reply-manuscript", help="Manuscript markdown used as reply numbering source")
-    parser.add_argument(
-        "--manuscript-line-source",
-        help="PDF or DOCX used to resolve reply line regexes (default: output/docx/manuscript.docx)",
-    )
-    parser.add_argument("--reply-style", help="Reply style metadata file (default: style.reply.yml)")
-    parser.add_argument("--from-format", help="Pandoc input format for the reply target")
-    parser.add_argument("--reference-doc", help="Reference DOCX for docx/reply targets")
-    parser.add_argument("--output-file", help="Exact output DOCX path for the reply target")
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -152,7 +152,6 @@ def postprocess_docx(
             """Apply merged YAML line-number metadata to all DOCX sections."""
             result = apply_line_number_metadata(doc, metadata)
             if result is None:
-                print_warning("No enabled show-line-numbers metadata found, skipping")
                 return
             print_debug_success(
                 f"Line numbers: restart={result['restart']}, sections={result['sections']}"

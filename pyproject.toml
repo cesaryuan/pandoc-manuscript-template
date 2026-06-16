@@ -46,6 +46,3 @@ packages = ["src/pandoc_manuscript"]
 "README.md" = "pandoc_manuscript/_template/README.md"
 "Makefile" = "pandoc_manuscript/_template/Makefile"
 ".gitignore" = "pandoc_manuscript/_template/.gitignore"
-"src/pandoc_manuscript/mathtype/mathtype_markers.lua" = "pandoc_manuscript/mathtype/mathtype_markers.lua"
-"src/pandoc_manuscript/mathtype/Times+Symbol 12.eqp" = "pandoc_manuscript/mathtype/Times+Symbol 12.eqp"
-"src/pandoc_manuscript/mathtype_ole_helper" = "pandoc_manuscript/mathtype_ole_helper"

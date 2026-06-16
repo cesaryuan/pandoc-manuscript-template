@@ -56,6 +56,17 @@ UNRENDERED_PANDOC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"\[\s*@[\w:-]+(?:\s*;\s*@[\w:-]+)*\s*\]"),
     ),
     (
+        "Pandoc bare citation syntax",
+        # Bare citations such as @doe2024 or -@doe2024 should also disappear in
+        # final DOCX text. Exclude known cross-reference prefixes so @sec:intro
+        # continues to be reported as a cross-reference issue instead.
+        re.compile(
+            r"(?<![\w./-])-?@"
+            r"(?!(?:sec|fig|tbl|eq|app|alg|lem|thm|cor|def|prop|exm|exr):)"
+            r"[A-Za-z0-9_][A-Za-z0-9_:+-]*"
+        ),
+    ),
+    (
         "raw HTML tag",
         # Raw HTML such as <div>, </span>, <img ...>, <br/>, or <!-- ... --> should
         # not appear as literal text in the final DOCX unless Pandoc failed to parse it.

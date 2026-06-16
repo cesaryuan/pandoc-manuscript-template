@@ -9,7 +9,8 @@ A professional, reusable template for academic manuscripts focused on DOCX outpu
 - **Cross-references**: Automatic numbering and linking for figures, tables, equations, and sections
 - **Flexible citations**: Support for 9000+ citation styles via CSL
 - **Journal-ready DOCX workflow**: Reference-document styling and post-processing for submission files
-- **Reproducible**: Version-controlled workflow with Make-based builds
+- **Installable CLI**: Use `pmt` directly after package installation or through `uvx`
+- **Reproducible**: Version-controlled workflow with CLI, Python, and Make-based builds
 
 ## Quick Start
 
@@ -18,47 +19,46 @@ A professional, reusable template for academic manuscripts focused on DOCX outpu
 Install the following tools:
 
 1. **Pandoc** (>= 3.0): [Download](https://pandoc.org/installing.html)
-2. **UV**: For Pandoc filters
-3. **Make** (optional but recommended):
+2. **pandoc-crossref**: Required for figure, table, equation, and section references
+3. **UV**: Recommended for running the `pmt` CLI and Python filters
+4. **Make** (optional):
    - Windows: Install via [Chocolatey](https://chocolatey.org/) (`choco install make`) or use WSL
    - macOS/Linux: Pre-installed
 
 ### Generate Your First Document
 
-1. **Clone this repository**:
+1. **Create a manuscript project with `pmt`**:
    ```bash
-   git clone <repository-url>
-   cd pandoc-manuscript-template
+   uvx --from git+https://github.com/yourname/pandoc-manuscript-template pmt init my-paper
+   cd my-paper
    ```
 
-2. **Initialize submodules**:
+   When the package is installed as a tool, use:
    ```bash
-   git submodule update --init --recursive
+   uv tool install pandoc-manuscript-template
+   pmt init my-paper
+   ```
+
+2. **Check your environment**:
+   ```bash
+   pmt doctor
    ```
 
 3. **Generate DOCX**:
    ```bash
-   make docx
-   # or 
-   uv run scripts/build.py docx
+   pmt build docx
    # Output: output/docx/manuscript.docx
    ```
 
    To build a different markdown file without editing the Pandoc defaults:
    ```bash
-   uv run scripts/build.py docx paper.md
+   pmt build docx paper.md
    # Output: output/docx/paper.docx
-   ```
-
-   To write generated files under another output directory:
-   ```bash
-   uv run scripts/build.py docx paper.md --output-dir build
-   # Output: build/docx/paper.docx
    ```
 
 4. **View available commands**:
    ```bash
-   make help
+   pmt --help
    ```
 
 ## Usage Guide
@@ -408,7 +408,29 @@ These scripts run automatically when `ENABLE_DOCX_POSTPROCESS = true` in the Mak
 
 ## Build System
 
-### Using Make (Recommended)
+### Using pmt (Recommended)
+
+The package CLI is the preferred entry point for new projects. It can initialize
+a manuscript directory, check external tools, and run the existing Pandoc build
+pipeline.
+
+```bash
+pmt init my-paper     # Create a manuscript project
+pmt doctor            # Check Pandoc, pandoc-crossref, Python dependencies, and project files
+pmt build docx        # Generate output/docx/manuscript.docx
+pmt build latex       # Generate output/latex/manuscript.tex
+pmt build json        # Generate output/json/manuscript.json
+pmt clean             # Remove generated files
+```
+
+Shortcuts are also available:
+
+```bash
+pmt docx paper.md -o build
+pmt latex paper.md
+```
+
+### Using Make
 
 ```bash
 make docx          # Generate DOCX

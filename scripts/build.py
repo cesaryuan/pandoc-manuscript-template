@@ -34,10 +34,10 @@ Configuration:
 
 import argparse
 import errno
+import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, Callable, Tuple
 
@@ -56,6 +56,7 @@ CONFIG = {
     'project_name': 'manuscript',
     'manuscript_file': 'manuscript.md',
     'style_file': 'style.yml',
+    'resource_root': os.environ.get('PMT_RESOURCE_ROOT', '.'),
     'output_dir': 'output',
     'docx_dir': 'output/docx',
     'latex_dir': 'output/latex',
@@ -117,6 +118,23 @@ def to_pandoc_path(path: Path) -> str:
     return path.as_posix()
 
 
+def resource_path(path: str | Path) -> Path:
+    """Resolve a bundled template/tool path without changing project-relative paths.
+
+    pmt sets PMT_RESOURCE_ROOT when the build scripts live in an installed Python
+    package. Direct repository execution keeps the default "." resource root.
+    """
+    path = Path(path)
+    if path.is_absolute():
+        return path
+    return Path(CONFIG['resource_root']) / path
+
+
+def resource_pandoc_path(path: str | Path) -> str:
+    """Return a Pandoc-friendly path for a bundled resource."""
+    return to_pandoc_path(resource_path(path))
+
+
 def is_relative_to(path: Path, parent: Path) -> bool:
     """Return True when path is inside parent on Python versions without Path.is_relative_to needs."""
     try:
@@ -162,8 +180,52 @@ def pandoc_defaults_with_runtime_paths(defaults_file: Path, output_file: Path) -
 
     defaults['input-files'] = [CONFIG['manuscript_file']]
     defaults['output-file'] = to_pandoc_path(output_file)
+    resolve_bundled_pandoc_defaults(defaults)
     add_style_metadata_file(defaults)
     return defaults
+
+
+def resolve_bundled_pandoc_defaults(defaults: dict) -> None:
+    """Rewrite bundled Pandoc resource paths when running through pmt.
+
+    The checked-in defaults use repository-relative paths such as
+    pandoc/templates/default.xml. Installed CLI builds run from the user's paper
+    directory, so those paths must point back to the package resource root.
+    """
+    if defaults.get('reference-doc'):
+        defaults['reference-doc'] = resource_pandoc_path(defaults['reference-doc'])
+    if defaults.get('template'):
+        defaults['template'] = resource_pandoc_path(defaults['template'])
+    if defaults.get('data-dir'):
+        defaults['data-dir'] = resource_pandoc_path(defaults['data-dir'])
+
+    filters = defaults.get('filters')
+    if not isinstance(filters, list):
+        return
+
+    resolved_filters = []
+    for item in filters:
+        if not isinstance(item, str):
+            resolved_filters.append(item)
+            continue
+        resolved_filters.append(resolve_filter_path(item))
+    defaults['filters'] = resolved_filters
+
+
+def resolve_filter_path(filter_name: str) -> str:
+    """Resolve repository-bundled filters while preserving external filters."""
+    filter_path = Path(filter_name)
+    if filter_path.is_absolute():
+        return to_pandoc_path(filter_path)
+    if filter_name in {'pandoc-crossref', 'citeproc'}:
+        return filter_name
+    if filter_name.startswith('pandoc/'):
+        return resource_pandoc_path(filter_name)
+
+    bundled_filter = resource_path(Path('pandoc') / 'filters' / filter_name)
+    if bundled_filter.exists():
+        return to_pandoc_path(bundled_filter)
+    return filter_name
 
 
 def add_style_metadata_file(defaults: dict) -> None:
@@ -269,7 +331,7 @@ def mathtype_marked_docx_path() -> Path:
 
 def mathtype_filter_args() -> list[str]:
     """Return Pandoc args that insert hidden LaTeX markers before DOCX writing."""
-    marker_filter = Path(CONFIG['mathtype_marker_filter'])
+    marker_filter = resource_path(CONFIG['mathtype_marker_filter'])
     if not marker_filter.exists():
         raise FileNotFoundError(f"MathType marker filter not found: {marker_filter}")
     return ['--lua-filter', to_pandoc_path(marker_filter)]
@@ -305,7 +367,7 @@ def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
     run_command(
         [
             sys.executable,
-            'scripts/mathtype/convert_marked_docx.py',
+            str(resource_path('scripts/mathtype/convert_marked_docx.py')),
             '--mode',
             'all',
             '--source',
@@ -344,15 +406,26 @@ def run_pandoc(
     if defaults_mutator:
         defaults = defaults_mutator(defaults)
 
-    with tempfile.TemporaryDirectory(prefix='pandoc-build-') as temp_dir:
-        temp_defaults = Path(temp_dir) / defaults_file.name
-        with temp_defaults.open('w', encoding='utf-8') as f:
-            yaml.safe_dump(defaults, f, sort_keys=False, allow_unicode=True)
+    temp_defaults = build_temp_defaults_path(defaults_file.name)
+    with temp_defaults.open('w', encoding='utf-8') as f:
+        yaml.safe_dump(defaults, f, sort_keys=False, allow_unicode=True)
 
-        # The repo defaults keep manuscript.md fixed; this temporary copy lets
-        # command-line builds target another markdown file without editing YAML.
-        cmd = ['pandoc', '--defaults', str(temp_defaults), *extra_args]
-        run_command(cmd, stream_output=True)
+    # The repo defaults keep manuscript.md fixed; this temporary copy lets
+    # command-line builds target another markdown file without editing YAML.
+    cmd = ['pandoc', '--defaults', str(temp_defaults), *extra_args]
+    run_command(cmd, stream_output=True)
+
+
+def build_temp_defaults_path(defaults_name: str) -> Path:
+    """Return a writable project-local path for generated Pandoc defaults.
+
+    Some managed Windows runs create tempfile directories with ACLs that reject
+    file creation. A stable project-cache directory avoids that permission edge
+    case while still keeping generated defaults out of the source files.
+    """
+    temp_dir = Path('.pandoc-cache') / 'tmp' / 'defaults'
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    return temp_dir / defaults_name
 
 
 # ============================================================================
@@ -377,14 +450,14 @@ def build_docx():
     # Add filter for older Pandoc versions
     if should_use_mathbfit_filter():
         log_info("[INFO] Using mathbfit filter (Pandoc <= 3.8.3.0)")
-        extra_args.extend(['--filter', 'pandoc/filters/to_mathbfit.py'])
+        extra_args.extend(['--filter', resource_pandoc_path('pandoc/filters/to_mathbfit.py')])
 
     if use_mathtype:
         pandoc_output = mathtype_marked_docx_path()
         extra_args.extend(mathtype_filter_args())
 
     # Run pandoc
-    run_pandoc(Path('pandoc/pandoc-docx.yml'), pandoc_output, extra_args=extra_args)
+    run_pandoc(resource_path('pandoc/pandoc-docx.yml'), pandoc_output, extra_args=extra_args)
 
     # Post-process DOCX if enabled
     if CONFIG['enable_docx_postprocess']:
@@ -419,7 +492,7 @@ def build_latex():
     latex_file = latex_dir / f"{CONFIG['project_name']}.tex"
 
     # Run pandoc
-    run_pandoc(Path('pandoc/pandoc-latex.yml'), latex_file)
+    run_pandoc(resource_path('pandoc/pandoc-latex.yml'), latex_file)
 
     log_success(f"\n[OK] LaTeX created: {CONFIG['latex_dir']}/{CONFIG['project_name']}.tex")
 
@@ -436,7 +509,7 @@ def build_json():
     # Reuse the DOCX defaults because they carry the normal crossref/citeproc
     # pipeline users most often need to inspect when debugging manuscript builds.
     run_pandoc(
-        Path('pandoc/pandoc-docx.yml'),
+        resource_path('pandoc/pandoc-docx.yml'),
         json_file,
         defaults_mutator=json_debug_defaults,
     )

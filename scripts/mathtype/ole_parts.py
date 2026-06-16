@@ -15,8 +15,20 @@ from logging_utils import log_debug, log_info, log_warning
 from .compound_file import CompoundFile
 
 
-HELPER_PROJECT = Path("scripts/mathtype_ole_helper/MathTypeOleHelper.csproj")
-HELPER_EXE = Path("scripts/mathtype_ole_helper/bin/Release/net48/MathTypeOleHelper.exe")
+def resource_path(path: str | Path) -> Path:
+    """Resolve bundled MathType helper paths for installed pmt builds.
+
+    PMT_RESOURCE_ROOT is set only by the package CLI; direct script execution
+    still resolves these paths relative to the repository root.
+    """
+    path = Path(path)
+    if path.is_absolute():
+        return path
+    return Path(os.environ.get("PMT_RESOURCE_ROOT", ".")) / path
+
+
+HELPER_PROJECT = resource_path("scripts/mathtype_ole_helper/MathTypeOleHelper.csproj")
+HELPER_EXE = resource_path("scripts/mathtype_ole_helper/bin/Release/net48/MathTypeOleHelper.exe")
 MATHTYPE_PROG_ID = "Equation.DSMT4"
 MATHTYPE_MT6_RELATIVE_PATHS = (
     Path("System/64/MT6.dll"),
@@ -24,7 +36,7 @@ MATHTYPE_MT6_RELATIVE_PATHS = (
     Path("MT6.dll"),
 )
 # Keep the sizing template in-repo so builds do not depend on a local MathType preferences path.
-MATHTYPE_DEFAULT_PREFS_TEMPLATE = Path("scripts/mathtype/Times+Symbol 12.eqp")
+MATHTYPE_DEFAULT_PREFS_TEMPLATE = resource_path("scripts/mathtype/Times+Symbol 12.eqp")
 MATHTYPE_CACHE_DIR = Path(".pandoc-cache/mathtype")
 MATHTYPE_CACHE_VERSION = 1
 BEGIN_ALIGNED_RE = re.compile(r"\\begin\s*\{\s*aligned\s*\}")

@@ -63,6 +63,21 @@ UNRENDERED_PANDOC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"<!--.*?-->|</?[A-Za-z][A-Za-z0-9:-]*(?:\s+[^<>]*?)?\s*/?>"
         ),
     ),
+    (
+        "duplicated reference label word",
+        # Broken cross-reference rendering can duplicate the visible label text,
+        # leaving artifacts such as "Section Section" or "Figure Figure".
+        re.compile(r"\b(Section|Figure|Table|Equation)\s+\1\b"),
+    ),
+    (
+        "duplicated numbered reference label",
+        # Some failures duplicate the full numbered prefix, such as
+        # "Table 3 Table 3" or "Figure 2.1 Figure 2.1".
+        re.compile(
+            r"\b(Section|Figure|Table|Equation)\s+"
+            r"(\d+(?:\.\d+)*)\s+\1\s+\2\b"
+        ),
+    ),
 )
 
 
@@ -166,7 +181,8 @@ def validate_final_docx_syntax(docx_path: str | Path, max_findings: int = 20) ->
     print_error("Final DOCX syntax check failed")
     print_warning(
         "Found text that still looks like raw Pandoc syntax. "
-        "This usually means a source block/filter/cross-reference/raw HTML fragment was not rendered."
+        "This usually means a source block/filter/cross-reference/raw HTML fragment was not rendered, "
+        "or a visible reference label was duplicated unexpectedly."
     )
     for finding in findings:
         part_label = summarize_part_name(finding.part_name)

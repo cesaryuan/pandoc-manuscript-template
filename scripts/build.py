@@ -35,16 +35,15 @@ Configuration:
     Build settings are typed by BuildSettings below and can be overridden by CLI args.
 """
 
-import argparse
 import errno
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any, Literal, Tuple
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, CliApp, CliPositionalArg, SettingsConfigDict
 
 from logging_utils import log_error, log_info, log_success, log_warning
 from metadata import (
@@ -88,6 +87,35 @@ class BuildSettings(BaseSettings):
 
 
 SETTINGS = BuildSettings()
+
+BuildTarget = Literal["docx", "reply", "latex", "json", "clean", "distclean", "help"]
+
+
+class BuildCliSettings(BaseSettings):
+    """CLI settings for manuscript builds parsed by pydantic-settings."""
+
+    model_config = SettingsConfigDict(
+        cli_kebab_case=True,
+        cli_shortcuts={
+            "manuscript_option": ["-m", "--manuscript"],
+            "output_dir": ["-o", "--output-dir"],
+        },
+    )
+
+    target: CliPositionalArg[BuildTarget] = "docx"
+    markdown: CliPositionalArg[str | None] = None
+    manuscript_option: str | None = None
+    output_dir: str | None = None
+    reply_manuscript: str | None = None
+    manuscript_line_source: str | None = None
+    reply_style: str | None = None
+    from_format: str | None = None
+    reference_doc: str | None = None
+    output_file: str | None = None
+
+    def cli_cmd(self) -> None:
+        """Execute the parsed build command when run through CliApp."""
+        raise SystemExit(run_build_command(self))
 
 # ============================================================================
 # UTILITY FUNCTIONS
@@ -585,61 +613,8 @@ def show_help():
 # MAIN
 # ============================================================================
 
-def main():
-    parser = argparse.ArgumentParser(
-        description='Build system for Pandoc manuscript template',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
-    )
-    parser.add_argument(
-        'target',
-        nargs='?',
-        default='docx',
-        choices=['docx', 'reply', 'latex', 'json', 'clean', 'distclean', 'help'],
-        help='Build target (default: docx)'
-    )
-    parser.add_argument(
-        'manuscript',
-        nargs='?',
-        help='Markdown file to build for docx/reply/latex/json targets'
-    )
-    parser.add_argument(
-        '-m',
-        '--manuscript',
-        dest='manuscript_option',
-        help='Markdown file to build for docx/reply/latex/json targets'
-    )
-    parser.add_argument(
-        '-o',
-        '--output-dir',
-        help='Base output directory (default: output)'
-    )
-    parser.add_argument(
-        '--reply-manuscript',
-        help='Manuscript markdown used as the numbering source for the reply target'
-    )
-    parser.add_argument(
-        '--manuscript-line-source',
-        help='Manuscript PDF or DOCX used to resolve (Line `regex`) placeholders for the reply target (default: output/docx/manuscript.docx)'
-    )
-    parser.add_argument(
-        '--reply-style',
-        help='Reply style metadata file used by the reply target (default: style.reply.yml)'
-    )
-    parser.add_argument(
-        '--from-format',
-        help='Pandoc input format for reply probing and conversion (default: markdown)'
-    )
-    parser.add_argument(
-        '--reference-doc',
-        help='Reference DOCX for docx/reply targets (default: bundled reference-doc.docx)'
-    )
-    parser.add_argument(
-        '--output-file',
-        help='Exact output DOCX path for the reply target'
-    )
-
-    args = parser.parse_args()
+def run_build_command(args: BuildCliSettings) -> int:
+    """Apply parsed CLI settings and run the selected build target."""
     if args.output_dir:
         configure_output_dir(args.output_dir)
     configure_reference_doc(args.reference_doc)
@@ -651,18 +626,18 @@ def main():
         output_file=args.output_file,
     )
 
-    if args.manuscript and args.manuscript_option:
-        parser.error("Specify the markdown file either positionally or with --manuscript, not both.")
+    if args.markdown and args.manuscript_option:
+        raise ValueError("Specify the markdown file either positionally or with --manuscript, not both.")
 
-    manuscript_arg = args.manuscript_option or args.manuscript
+    manuscript_arg = args.manuscript_option or args.markdown
     if manuscript_arg and args.target not in {'docx', 'reply', 'latex', 'json'}:
-        parser.error("A markdown file can only be specified for docx, reply, latex, or json targets.")
+        raise ValueError("A markdown file can only be specified for docx, reply, latex, or json targets.")
     if args.output_file and args.target != 'reply':
-        parser.error("--output-file is only supported by the reply target.")
+        raise ValueError("--output-file is only supported by the reply target.")
     if args.reference_doc and args.target not in {'docx', 'reply'}:
-        parser.error("--reference-doc is only supported by docx and reply targets.")
+        raise ValueError("--reference-doc is only supported by docx and reply targets.")
     if any([args.reply_manuscript, args.manuscript_line_source, args.reply_style, args.from_format]) and args.target != 'reply':
-        parser.error("Reply-specific options require the reply target.")
+        raise ValueError("Reply-specific options require the reply target.")
 
     if args.target in {'docx', 'reply', 'latex', 'json'}:
         configure_manuscript(
@@ -670,7 +645,6 @@ def main():
             derive_project_name=bool(manuscript_arg) or args.target == 'reply',
         )
 
-    # Dispatch to target function
     targets = {
         'docx': build_docx,
         'reply': build_reply_docx_target,
@@ -683,12 +657,18 @@ def main():
 
     try:
         targets[args.target]()
+        return 0
     except KeyboardInterrupt:
         log_warning("\n\n[WARN] Build interrupted by user.")
-        sys.exit(1)
+        return 1
     except Exception as e:
         log_error(f"\n[ERROR] {e}")
-        sys.exit(1)
+        return 1
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Run the build CLI using pydantic-settings."""
+    CliApp.run(BuildCliSettings, cli_args=argv, cli_parse_args=True)
 
 
 def default_input_for_target(target: str) -> str:

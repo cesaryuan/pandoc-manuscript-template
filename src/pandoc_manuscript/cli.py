@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import importlib.util
 import os
 import shutil
@@ -11,11 +10,33 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
-from typing import Iterator
+from typing import Any, ClassVar, Iterator, Literal
+
+from pydantic import AliasChoices, Field, PrivateAttr
+from pydantic_settings import (
+    BaseSettings,
+    CliApp,
+    CliPositionalArg,
+    CliSubCommand,
+    SettingsConfigDict,
+    get_subcommand,
+)
 
 from . import __version__
 from .resources import iter_project_template_entries, template_root
 
+
+BuildTarget = Literal["docx", "reply", "latex", "json", "clean", "distclean", "help"]
+ShortcutTarget = Literal["docx", "reply", "latex", "json"]
+
+BUILD_CLI_CONFIG = SettingsConfigDict(
+    cli_kebab_case=True,
+    cli_implicit_flags=True,
+    cli_shortcuts={
+        "manuscript_option": ["-m", "--manuscript"],
+        "output_dir": ["-o", "--output-dir"],
+    },
+)
 
 IGNORE_NAMES = {
     ".git",
@@ -55,32 +76,40 @@ def ignore_generated_artifacts(directory: str, names: list[str]) -> set[str]:
     return {name for name in names if name in IGNORE_NAMES or name.endswith(".pyc")}
 
 
-def init_project(args: argparse.Namespace) -> int:
-    """Create a new manuscript project from the packaged template files."""
-    root = template_root()
-    target = Path(args.directory).resolve()
-    if target.exists() and any(target.iterdir()) and not args.force:
-        raise RuntimeError(f"Target directory is not empty. Use --force to overwrite entries: {target}")
+class InitSettings(BaseSettings):
+    """Settings for `pmt init`."""
 
-    target.mkdir(parents=True, exist_ok=True)
-    for relative_name in iter_project_template_entries():
-        source = root / relative_name
-        if not source.exists():
-            continue
-        copy_template_entry(source, target / relative_name, overwrite=args.force)
+    model_config = SettingsConfigDict(cli_kebab_case=True, cli_implicit_flags=True)
 
-    # Empty directories are not preserved in wheels/sdists, but manuscripts
-    # conventionally keep figures under images/ from the beginning.
-    (target / "images").mkdir(exist_ok=True)
+    directory: CliPositionalArg[str]
+    force: bool = False
 
-    log(f"[OK] Created manuscript project: {target}")
-    log("Next: cd into the project and run `pmt doctor`, then `pmt build docx`.")
-    return 0
+    def run(self) -> int:
+        """Create a new manuscript project from the packaged template files."""
+        root = template_root()
+        target = Path(self.directory).resolve()
+        if target.exists() and any(target.iterdir()) and not self.force:
+            raise RuntimeError(f"Target directory is not empty. Use --force to overwrite entries: {target}")
+
+        target.mkdir(parents=True, exist_ok=True)
+        for relative_name in iter_project_template_entries():
+            source = root / relative_name
+            if not source.exists():
+                continue
+            copy_template_entry(source, target / relative_name, overwrite=self.force)
+
+        # Empty directories are not preserved in wheels/sdists, but manuscripts
+        # conventionally keep figures under images/ from the beginning.
+        (target / "images").mkdir(exist_ok=True)
+
+        log(f"[OK] Created manuscript project: {target}")
+        log("Next: cd into the project and run `pmt doctor`, then `pmt build docx`.")
+        return 0
 
 
 @contextmanager
 def build_environment(project_dir: Path, resource_root: Path) -> Iterator[None]:
-    """Temporarily run the existing build script as if it were package-owned."""
+    """Temporarily run the build module as if it were package-owned."""
     previous_cwd = Path.cwd()
     previous_resource_root = os.environ.get("PMT_RESOURCE_ROOT")
     scripts_dir = str(resource_root / "scripts")
@@ -121,56 +150,145 @@ def load_build_module(resource_root: Path) -> ModuleType:
     return module
 
 
-def run_build(args: argparse.Namespace) -> int:
-    """Run the existing manuscript build pipeline through the pmt CLI."""
+def run_build_data(project_dir: Path, build_data: dict[str, Any]) -> int:
+    """Run the packaged build module from one parsed pmt build model."""
     resource_root = template_root()
-    forwarded_args = list(getattr(args, "build_args", []))
-    if getattr(args, "build_help", False):
-        forwarded_args.append("--help")
-    shortcut_target = getattr(args, "target", None)
-    if shortcut_target:
-        forwarded_args = [shortcut_target, *forwarded_args]
-
-    project_dir, forwarded_args = extract_project_dir(
-        forwarded_args,
-        default_project_dir=getattr(args, "project_dir", None) or ".",
-    )
+    project_dir = project_dir.resolve()
     if not project_dir.exists():
         raise FileNotFoundError(f"Project directory not found: {project_dir}")
 
     with build_environment(project_dir, resource_root):
         module = load_build_module(resource_root)
-        previous_argv = sys.argv[:]
-        sys.argv = ["pmt build", *forwarded_args]
-        try:
-            module.main()
-        except SystemExit as exc:
-            return int(exc.code or 0)
-        finally:
-            sys.argv = previous_argv
-    return 0
+        build_settings = module.BuildCliSettings(**build_data)
+        return int(module.run_build_command(build_settings))
 
 
-def extract_project_dir(build_args: list[str], default_project_dir: str = ".") -> tuple[Path, list[str]]:
-    """Remove pmt's wrapper-only --project-dir option from build arguments."""
-    project_dir = default_project_dir
-    forwarded_args: list[str] = []
-    index = 0
-    while index < len(build_args):
-        arg = build_args[index]
-        if arg == "--project-dir":
-            if index + 1 >= len(build_args):
-                raise ValueError("--project-dir requires a directory")
-            project_dir = build_args[index + 1]
-            index += 2
-            continue
-        if arg.startswith("--project-dir="):
-            project_dir = arg.split("=", 1)[1]
-            index += 1
-            continue
-        forwarded_args.append(arg)
-        index += 1
-    return Path(project_dir).resolve(), forwarded_args
+class BuildCommandSettings(BaseSettings):
+    """Settings for `pmt build`."""
+
+    model_config = BUILD_CLI_CONFIG
+
+    target: CliPositionalArg[BuildTarget] = "docx"
+    markdown: CliPositionalArg[str | None] = None
+    manuscript_option: str | None = Field(default=None, validation_alias=AliasChoices("m", "manuscript"))
+    output_dir: str | None = Field(default=None, validation_alias=AliasChoices("o", "output-dir"))
+    project_dir: Path = Path(".")
+    reply_manuscript: str | None = None
+    manuscript_line_source: str | None = None
+    reply_style: str | None = None
+    from_format: str | None = None
+    reference_doc: str | None = None
+    output_file: str | None = None
+
+    def run(self) -> int:
+        """Run the selected build target."""
+        return run_build_data(self.project_dir, self.build_data(self.target))
+
+    def build_data(self, target: BuildTarget) -> dict[str, Any]:
+        """Return data accepted by scripts/build.py's BuildCliSettings."""
+        return {
+            "target": target,
+            "markdown": self.markdown,
+            "manuscript_option": self.manuscript_option,
+            "output_dir": self.output_dir,
+            "reply_manuscript": self.reply_manuscript,
+            "manuscript_line_source": self.manuscript_line_source,
+            "reply_style": self.reply_style,
+            "from_format": self.from_format,
+            "reference_doc": self.reference_doc,
+            "output_file": self.output_file,
+        }
+
+
+class BuildShortcutSettings(BaseSettings):
+    """Shared settings for `pmt docx/reply/latex/json` shortcuts."""
+
+    model_config = BUILD_CLI_CONFIG
+    target: ClassVar[ShortcutTarget] = "docx"
+
+    markdown: CliPositionalArg[str | None] = None
+    manuscript_option: str | None = Field(default=None, validation_alias=AliasChoices("m", "manuscript"))
+    output_dir: str | None = Field(default=None, validation_alias=AliasChoices("o", "output-dir"))
+    project_dir: Path = Path(".")
+    reply_manuscript: str | None = None
+    manuscript_line_source: str | None = None
+    reply_style: str | None = None
+    from_format: str | None = None
+    reference_doc: str | None = None
+    output_file: str | None = None
+
+    def run(self) -> int:
+        """Run the shortcut's fixed build target."""
+        return run_build_data(self.project_dir, self.build_data())
+
+    def build_data(self) -> dict[str, Any]:
+        """Return data accepted by scripts/build.py's BuildCliSettings."""
+        return {
+            "target": self.target,
+            "markdown": self.markdown,
+            "manuscript_option": self.manuscript_option,
+            "output_dir": self.output_dir,
+            "reply_manuscript": self.reply_manuscript,
+            "manuscript_line_source": self.manuscript_line_source,
+            "reply_style": self.reply_style,
+            "from_format": self.from_format,
+            "reference_doc": self.reference_doc,
+            "output_file": self.output_file,
+        }
+
+
+class DocxSettings(BuildShortcutSettings):
+    """Settings for `pmt docx`."""
+
+    target: ClassVar[ShortcutTarget] = "docx"
+
+
+class ReplySettings(BuildShortcutSettings):
+    """Settings for `pmt reply`."""
+
+    target: ClassVar[ShortcutTarget] = "reply"
+
+
+class LatexSettings(BuildShortcutSettings):
+    """Settings for `pmt latex`."""
+
+    target: ClassVar[ShortcutTarget] = "latex"
+
+
+class JsonSettings(BuildShortcutSettings):
+    """Settings for `pmt json`."""
+
+    target: ClassVar[ShortcutTarget] = "json"
+
+
+class CleanSettings(BaseSettings):
+    """Settings for `pmt clean` and `pmt distclean`."""
+
+    model_config = SettingsConfigDict(
+        cli_kebab_case=True,
+        cli_implicit_flags=True,
+        cli_shortcuts={"output_dir": ["-o", "--output-dir"]},
+    )
+    target: ClassVar[Literal["clean", "distclean"]] = "clean"
+
+    output_dir: str | None = Field(default=None, validation_alias=AliasChoices("o", "output-dir"))
+    project_dir: Path = Path(".")
+
+    def run(self) -> int:
+        """Run the shortcut's fixed clean target."""
+        return run_build_data(
+            self.project_dir,
+            {
+                "target": self.target,
+                "output_dir": self.output_dir,
+            },
+        )
+
+
+class DistcleanSettings(CleanSettings):
+    """Settings for `pmt distclean`."""
+
+    target: ClassVar[Literal["clean", "distclean"]] = "distclean"
 
 
 def command_status(command: list[str]) -> tuple[bool, str]:
@@ -201,88 +319,86 @@ def import_status(module_name: str) -> tuple[bool, str]:
     return True, "available"
 
 
-def doctor(args: argparse.Namespace) -> int:
-    """Check the local environment and current manuscript project."""
-    project_dir = Path(args.project_dir).resolve()
-    root = template_root()
-    checks: list[tuple[str, bool, str]] = []
+class DoctorSettings(BaseSettings):
+    """Settings for `pmt doctor`."""
 
-    for command in (["pandoc", "--version"], ["pandoc-crossref", "--version"]):
-        ok, detail = command_status(command)
-        checks.append((" ".join(command), ok, detail))
+    model_config = SettingsConfigDict(cli_kebab_case=True, cli_implicit_flags=True)
 
-    for module_name in ("docx", "yaml", "lxml", "panflute", "fitz"):
-        ok, detail = import_status(module_name)
-        checks.append((f"python import {module_name}", ok, detail))
+    project_dir: Path = Path(".")
 
-    checks.extend(
-        [
-            ("pmt resource scripts/build.py", (root / "scripts" / "build.py").exists(), str(root)),
-            ("project directory", project_dir.exists(), str(project_dir)),
-            ("project manuscript.md", (project_dir / "manuscript.md").exists(), str(project_dir / "manuscript.md")),
-            ("project style.yml", (project_dir / "style.yml").exists(), str(project_dir / "style.yml")),
-        ]
-    )
+    def run(self) -> int:
+        """Check the local environment and current manuscript project."""
+        project_dir = self.project_dir.resolve()
+        root = template_root()
+        checks: list[tuple[str, bool, str]] = []
 
-    has_error = False
-    for label, ok, detail in checks:
-        prefix = "[OK]" if ok else "[ERROR]"
-        log(f"{prefix} {label}: {detail}")
-        has_error = has_error or not ok
-    return 1 if has_error else 0
+        for command in (["pandoc", "--version"], ["pandoc-crossref", "--version"]):
+            ok, detail = command_status(command)
+            checks.append((" ".join(command), ok, detail))
 
+        for module_name in ("docx", "yaml", "lxml", "panflute", "fitz"):
+            ok, detail = import_status(module_name)
+            checks.append((f"python import {module_name}", ok, detail))
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the top-level pmt argument parser."""
-    parser = argparse.ArgumentParser(
-        prog="pmt",
-        description="Pandoc Manuscript Template CLI",
-    )
-    parser.add_argument("--version", action="version", version=f"pmt {__version__}")
-    subparsers = parser.add_subparsers(dest="command")
-
-    init_parser = subparsers.add_parser("init", help="Create a new manuscript project")
-    init_parser.add_argument("directory", help="Directory to create or populate")
-    init_parser.add_argument("--force", action="store_true", help="Overwrite existing template entries")
-    init_parser.set_defaults(func=init_project)
-
-    build_parser_ = subparsers.add_parser(
-        "build",
-        add_help=False,
-        help="Build DOCX, reviewer reply, LaTeX, or JSON output",
-    )
-    build_parser_.add_argument("-h", "--help", dest="build_help", action="store_true", help="Show build help")
-    build_parser_.add_argument("--project-dir", help="Project directory to build")
-    build_parser_.add_argument("build_args", nargs=argparse.REMAINDER, help="Arguments forwarded to the build script")
-    build_parser_.set_defaults(func=run_build)
-
-    for target in ("docx", "reply", "latex", "json", "clean", "distclean"):
-        target_parser = subparsers.add_parser(
-            target,
-            add_help=False,
-            help=f"Shortcut for `pmt build {target}`",
+        checks.extend(
+            [
+                ("pmt resource scripts/build.py", (root / "scripts" / "build.py").exists(), str(root)),
+                ("project directory", project_dir.exists(), str(project_dir)),
+                ("project manuscript.md", (project_dir / "manuscript.md").exists(), str(project_dir / "manuscript.md")),
+                ("project style.yml", (project_dir / "style.yml").exists(), str(project_dir / "style.yml")),
+            ]
         )
-        target_parser.add_argument("-h", "--help", dest="build_help", action="store_true", help="Show build help")
-        target_parser.add_argument("--project-dir", help="Project directory to build")
-        target_parser.add_argument("build_args", nargs=argparse.REMAINDER, help="Arguments forwarded to the build script")
-        target_parser.set_defaults(func=run_build, target=target)
 
-    doctor_parser = subparsers.add_parser("doctor", help="Check environment and project readiness")
-    doctor_parser.add_argument("--project-dir", default=".", help="Project directory to check")
-    doctor_parser.set_defaults(func=doctor)
-    return parser
+        has_error = False
+        for label, ok, detail in checks:
+            prefix = "[OK]" if ok else "[ERROR]"
+            log(f"{prefix} {label}: {detail}")
+            has_error = has_error or not ok
+        return 1 if has_error else 0
+
+
+class PmtCli(BaseSettings):
+    """Pandoc Manuscript Template CLI."""
+
+    model_config = SettingsConfigDict(
+        cli_prog_name="pmt",
+        cli_kebab_case=True,
+        cli_implicit_flags=True,
+        extra="ignore",
+    )
+
+    version_flag: bool = Field(default=False, alias="version")
+    init: CliSubCommand[InitSettings | None]
+    build: CliSubCommand[BuildCommandSettings | None]
+    docx: CliSubCommand[DocxSettings | None]
+    reply: CliSubCommand[ReplySettings | None]
+    latex: CliSubCommand[LatexSettings | None]
+    json_command: CliSubCommand[JsonSettings | None] = Field(alias="json")
+    clean: CliSubCommand[CleanSettings | None]
+    distclean: CliSubCommand[DistcleanSettings | None]
+    doctor: CliSubCommand[DoctorSettings | None]
+
+    _exit_code: int = PrivateAttr(default=0)
+
+    def cli_cmd(self) -> None:
+        """Dispatch the selected pmt subcommand."""
+        if self.version_flag:
+            log(f"pmt {__version__}")
+            self._exit_code = 0
+            return
+        command = get_subcommand(self, is_required=False)
+        if command is None:
+            log("Use `pmt --help` to see available commands.")
+            self._exit_code = 1
+            return
+        self._exit_code = int(command.run())
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the pmt command-line interface."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    if not hasattr(args, "func"):
-        parser.print_help()
-        return 0
-
     try:
-        return int(args.func(args))
+        app = CliApp.run(PmtCli, cli_args=argv, cli_parse_args=True)
+        return app._exit_code
     except KeyboardInterrupt:
         print("\n[WARN] Interrupted by user.", file=sys.stderr)
         return 1

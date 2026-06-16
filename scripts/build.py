@@ -6,6 +6,7 @@
 #   "pyyaml>=6.0",
 #   "lxml>=4.9.0",
 #   "panflute>=2.3.0",
+#   "pymupdf>=1.26.0",
 #   "dotenv>=0.9.0",
 # ]
 # ///
@@ -19,6 +20,7 @@ Usage:
     python build.py docx       # Generate DOCX (default)
     python build.py docx paper.md  # Generate DOCX from a specific markdown file
     python build.py docx paper.md --output-dir build  # Generate DOCX in build/docx
+    python build.py reply reply.md  # Generate reviewer reply DOCX
     python build.py latex      # Generate LaTeX
     python build.py latex paper.md # Generate LaTeX from a specific markdown file
     python build.py latex paper.md --output-dir build # Generate LaTeX in build/latex
@@ -46,6 +48,7 @@ from metadata import load_merged_metadata, merge_metadata, parse_yaml_file, pars
 from mathtype.ole_parts import check_mathtype_availability
 from postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from postprocess_docx import postprocess_docx as run_docx_postprocess
+from reply_build import build_reply_docx
 
 # ============================================================================
 # CONFIGURATION - Customize these variables for your project
@@ -63,6 +66,12 @@ CONFIG = {
     'enable_docx_postprocess': True,
     'mathtype_marker_filter': 'scripts/mathtype/mathtype_markers.lua',
     'mathtype_work_dir': 'tmp/mathtype-build',
+    'reply_manuscript_file': 'manuscript.md',
+    'reply_line_source': 'output/docx/manuscript.docx',
+    'reply_style_file': 'style.reply.yml',
+    'reply_from_format': 'markdown',
+    'reply_reference_doc': None,
+    'reply_output_file': None,
 }
 
 # ============================================================================
@@ -165,6 +174,30 @@ def configure_output_dir(output_dir: str | Path) -> None:
     CONFIG['docx_dir'] = to_pandoc_path(path / 'docx')
     CONFIG['latex_dir'] = to_pandoc_path(path / 'latex')
     CONFIG['json_dir'] = to_pandoc_path(path / 'json')
+
+
+def configure_reply_options(
+    *,
+    manuscript: str | None = None,
+    line_source: str | None = None,
+    style: str | None = None,
+    from_format: str | None = None,
+    reference_doc: str | None = None,
+    output_file: str | None = None,
+) -> None:
+    """Configure reviewer-reply build inputs while keeping manuscript defaults stable."""
+    if manuscript:
+        CONFIG['reply_manuscript_file'] = manuscript
+    if line_source:
+        CONFIG['reply_line_source'] = line_source
+    if style:
+        CONFIG['reply_style_file'] = style
+    if from_format:
+        CONFIG['reply_from_format'] = from_format
+    if reference_doc:
+        CONFIG['reply_reference_doc'] = reference_doc
+    if output_file:
+        CONFIG['reply_output_file'] = output_file
 
 
 def should_use_style_metadata_file() -> bool:
@@ -408,6 +441,34 @@ def build_docx():
     log_success(f"\n[OK] DOCX created: {CONFIG['docx_dir']}/{CONFIG['project_name']}.docx")
 
 
+def build_reply_docx_target() -> None:
+    """Generate a reviewer-reply DOCX using manuscript numbering and reply styling."""
+    log_info("\n[DOCX] Building reviewer reply DOCX...\n")
+    output = reply_output_path()
+    reference_doc = Path(CONFIG['reply_reference_doc']) if CONFIG['reply_reference_doc'] else resource_path(
+        'pandoc/manuscript-template/reference-doc.docx'
+    )
+    build_reply_docx(
+        reply=Path(CONFIG['manuscript_file']),
+        manuscript=Path(CONFIG['reply_manuscript_file']),
+        manuscript_line_source=Path(CONFIG['reply_line_source']),
+        output=output,
+        reference_doc=reference_doc,
+        style=Path(CONFIG['reply_style_file']),
+        from_format=CONFIG['reply_from_format'],
+        resource_root=Path(CONFIG['resource_root']),
+    )
+
+
+def reply_output_path() -> Path:
+    """Return the output DOCX path for reply builds."""
+    if CONFIG['reply_output_file']:
+        return Path(CONFIG['reply_output_file'])
+    docx_dir = Path(CONFIG['docx_dir'])
+    docx_dir.mkdir(parents=True, exist_ok=True)
+    return docx_dir / f"{CONFIG['project_name']}.docx"
+
+
 def build_latex():
     """Generate LaTeX file."""
     log_info("\n[LaTeX] Building LaTeX...\n")
@@ -509,46 +570,83 @@ def main():
         'target',
         nargs='?',
         default='docx',
-        choices=['docx', 'latex', 'json', 'clean', 'distclean', 'help'],
+        choices=['docx', 'reply', 'latex', 'json', 'clean', 'distclean', 'help'],
         help='Build target (default: docx)'
     )
     parser.add_argument(
         'manuscript',
         nargs='?',
-        help='Markdown file to build for docx/latex/json targets'
+        help='Markdown file to build for docx/reply/latex/json targets'
     )
     parser.add_argument(
         '-m',
         '--manuscript',
         dest='manuscript_option',
-        help='Markdown file to build for docx/latex/json targets'
+        help='Markdown file to build for docx/reply/latex/json targets'
     )
     parser.add_argument(
         '-o',
         '--output-dir',
         help='Base output directory (default: output)'
     )
+    parser.add_argument(
+        '--reply-manuscript',
+        help='Manuscript markdown used as the numbering source for the reply target'
+    )
+    parser.add_argument(
+        '--manuscript-line-source',
+        help='Manuscript PDF or DOCX used to resolve (Line `regex`) placeholders for the reply target (default: output/docx/manuscript.docx)'
+    )
+    parser.add_argument(
+        '--reply-style',
+        help='Reply style metadata file used by the reply target (default: style.reply.yml)'
+    )
+    parser.add_argument(
+        '--from-format',
+        help='Pandoc input format for reply probing and conversion (default: markdown)'
+    )
+    parser.add_argument(
+        '--reference-doc',
+        help='Reference DOCX for the reply target (default: bundled reference-doc.docx)'
+    )
+    parser.add_argument(
+        '--output-file',
+        help='Exact output DOCX path for the reply target'
+    )
 
     args = parser.parse_args()
     if args.output_dir:
         configure_output_dir(args.output_dir)
+    configure_reply_options(
+        manuscript=args.reply_manuscript,
+        line_source=args.manuscript_line_source,
+        style=args.reply_style,
+        from_format=args.from_format,
+        reference_doc=args.reference_doc,
+        output_file=args.output_file,
+    )
 
     if args.manuscript and args.manuscript_option:
         parser.error("Specify the markdown file either positionally or with --manuscript, not both.")
 
     manuscript_arg = args.manuscript_option or args.manuscript
-    if manuscript_arg and args.target not in {'docx', 'latex', 'json'}:
-        parser.error("A markdown file can only be specified for docx, latex, or json targets.")
+    if manuscript_arg and args.target not in {'docx', 'reply', 'latex', 'json'}:
+        parser.error("A markdown file can only be specified for docx, reply, latex, or json targets.")
+    if args.output_file and args.target != 'reply':
+        parser.error("--output-file is only supported by the reply target.")
+    if any([args.reply_manuscript, args.manuscript_line_source, args.reply_style, args.from_format, args.reference_doc]) and args.target != 'reply':
+        parser.error("Reply-specific options require the reply target.")
 
-    if args.target in {'docx', 'latex', 'json'}:
+    if args.target in {'docx', 'reply', 'latex', 'json'}:
         configure_manuscript(
-            manuscript_arg or CONFIG['manuscript_file'],
-            derive_project_name=bool(manuscript_arg),
+            manuscript_arg or default_input_for_target(args.target),
+            derive_project_name=bool(manuscript_arg) or args.target == 'reply',
         )
 
     # Dispatch to target function
     targets = {
         'docx': build_docx,
+        'reply': build_reply_docx_target,
         'latex': build_latex,
         'json': build_json,
         'clean': clean,
@@ -564,6 +662,16 @@ def main():
     except Exception as e:
         log_error(f"\n[ERROR] {e}")
         sys.exit(1)
+
+
+def default_input_for_target(target: str) -> str:
+    """Return the default markdown input for the selected build target."""
+    if target != 'reply':
+        return CONFIG['manuscript_file']
+    legacy_reply = Path('submissions/dbe/reply_to_reviewers_first.md')
+    if legacy_reply.exists():
+        return to_pandoc_path(legacy_reply)
+    return 'reply.md'
 
 
 if __name__ == '__main__':

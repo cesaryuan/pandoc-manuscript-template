@@ -430,6 +430,22 @@ pmt docx paper.md -o build
 pmt latex paper.md
 ```
 
+Reviewer replies can be built with the same DOCX pipeline. The `reply` target
+resolves manuscript cross-references and citations against the manuscript before
+converting the reply letter:
+
+```bash
+pmt build reply reply.md \
+  --reply-manuscript manuscript.md \
+  --output-file output/docx/reply.docx
+```
+
+If no reply markdown path is supplied, the reply target first looks for
+`submissions/dbe/reply_to_reviewers_first.md`, then falls back to `reply.md`.
+`--reply-style` defaults to `style.reply.yml`, and `--manuscript-line-source`
+defaults to `output/docx/manuscript.docx`. The line source is only read when the
+reply uses ``(Line `regex`)`` placeholders.
+
 ### Using Make
 
 ```bash

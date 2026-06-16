@@ -55,6 +55,14 @@ UNRENDERED_PANDOC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         # Citation brackets such as [@doe2024] should have been rendered into the target citation style.
         re.compile(r"\[\s*@[\w:-]+(?:\s*;\s*@[\w:-]+)*\s*\]"),
     ),
+    (
+        "raw HTML tag",
+        # Raw HTML such as <div>, </span>, <img ...>, <br/>, or <!-- ... --> should
+        # not appear as literal text in the final DOCX unless Pandoc failed to parse it.
+        re.compile(
+            r"<!--.*?-->|</?[A-Za-z][A-Za-z0-9:-]*(?:\s+[^<>]*?)?\s*/?>"
+        ),
+    ),
 )
 
 
@@ -158,7 +166,7 @@ def validate_final_docx_syntax(docx_path: str | Path, max_findings: int = 20) ->
     print_error("Final DOCX syntax check failed")
     print_warning(
         "Found text that still looks like raw Pandoc syntax. "
-        "This usually means a source block/filter/cross-reference was not rendered."
+        "This usually means a source block/filter/cross-reference/raw HTML fragment was not rendered."
     )
     for finding in findings:
         part_label = summarize_part_name(finding.part_name)

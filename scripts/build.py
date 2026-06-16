@@ -44,6 +44,7 @@ from typing import Any, Callable, Tuple
 import yaml
 from metadata import load_merged_metadata, merge_metadata, parse_yaml_file
 from mathtype.ole_parts import check_mathtype_availability
+from postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from postprocess_docx import postprocess_docx as run_docx_postprocess
 
 # ============================================================================
@@ -396,6 +397,12 @@ def build_docx():
 
     if use_mathtype:
         run_mathtype_conversion(pandoc_output, docx_file)
+
+    # Final output validation should inspect the real shipped DOCX rather than
+    # an intermediate pre-MathType file, so syntax residue cannot slip through.
+    syntax_findings = validate_final_docx_syntax(docx_file)
+    if syntax_findings:
+        raise RuntimeError("Final DOCX still contains unrendered Pandoc syntax")
 
     print(f"\n[OK] DOCX created: {CONFIG['docx_dir']}/{CONFIG['project_name']}.docx")
 

@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
-from logging_utils import log_debug, log_info
+from logging_utils import log_debug
 
 from .docx_ole import (
     MathTypeTemplate,
@@ -435,9 +435,9 @@ def inspect_docx(path: Path) -> None:
         rels_xml = archive.read("word/_rels/document.xml.rels")
         embeddings = [name for name in names if name.startswith("word/embeddings/")]
         previews = [name for name in names if name.startswith("word/media/mathtype_formula_")]
-        log_info(f"[mathtype] docx={path}")
-        log_info(f"[mathtype] embeddings={len(embeddings)}, Equation.DSMT4={document_xml.count(b'Equation.DSMT4')}")
-        log_info(f"[mathtype] generated WMF previews={len(previews)}")
-        log_info(f"[mathtype] oMath tokens={document_xml.count(b'<m:oMath') + document_xml.count(b'<m:oMathPara')}")
-        log_info(f"[mathtype] MathType markers={document_xml.count(MATH_TYPE_MARKER_PREFIX.encode('utf-8'))}")
-        log_info(f"[mathtype] ole relationships={rels_xml.count(b'/oleObject')}")
+        log_debug(f"[mathtype] docx={path}")
+        log_debug(f"[mathtype] embeddings={len(embeddings)}, Equation.DSMT4={document_xml.count(b'Equation.DSMT4')}")
+        log_debug(f"[mathtype] generated WMF previews={len(previews)}")
+        log_debug(f"[mathtype] oMath tokens={document_xml.count(b'<m:oMath') + document_xml.count(b'<m:oMathPara')}")
+        log_debug(f"[mathtype] MathType markers={document_xml.count(MATH_TYPE_MARKER_PREFIX.encode('utf-8'))}")
+        log_debug(f"[mathtype] ole relationships={rels_xml.count(b'/oleObject')}")

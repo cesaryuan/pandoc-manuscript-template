@@ -21,6 +21,8 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
+from logging_utils import log_debug, log_info, log_success
+
 try:
     from docx import Document
 except ImportError:
@@ -29,7 +31,7 @@ except ImportError:
 
 # Import processing modules
 try:
-    from postprocess.common import print_error, print_info, print_success, print_warning
+    from postprocess.common import print_error, print_success, print_warning
     from postprocess.merge_table_cells import merge_table_cells
     from postprocess.process_table_metadata import process_table_metadata
     from postprocess.autofit_tables import autofit_tables
@@ -65,11 +67,10 @@ except ImportError as e:
 
 def run_pipeline_step(label: str, action: Callable[[], None]) -> None:
     """Run one post-processing step with consistent pipeline logging."""
-    print_info(f"Step: {label}...")
+    log_info(f"[postprocess] Step: {label}...")
     try:
         action()
-        print_success("Step completed")
-        print_info("")
+        log_debug("[postprocess] Step completed")
     except Exception as e:
         print_error(f"Step failed: {e}")
         raise
@@ -77,8 +78,7 @@ def run_pipeline_step(label: str, action: Callable[[], None]) -> None:
 
 def log_skip(label: str, reason: str) -> None:
     """Log a skipped optional pipeline step using the same step format."""
-    print_info(f"Step: Skipping {label} ({reason})")
-    print_info("")
+    log_info(f"[postprocess] Step: Skipping {label} ({reason})")
 
 
 def postprocess_docx(
@@ -100,7 +100,7 @@ def postprocess_docx(
         True if successful, False otherwise
     """
     # Validate inputs
-    print_info("Validating inputs...")
+    log_info("[postprocess] Validating inputs...")
     docx_file = Path(docx_path)
     metadata = metadata or {}
 
@@ -109,17 +109,15 @@ def postprocess_docx(
         return False
 
     docx_path_abs = docx_file.resolve()
-    print_info("=== Starting DOCX Post-Processing Pipeline ===")
-    print_info(f"Target file: {docx_path_abs}")
-    print_info(f"Metadata keys: {len(metadata)}")
-    print_info("")
+    log_info("[postprocess] Starting DOCX post-processing pipeline")
+    log_info(f"[postprocess] Target file: {docx_path_abs}")
+    log_debug(f"[postprocess] Metadata keys: {len(metadata)}")
 
     try:
         # Open document (shared across all steps)
-        print_info("Initializing document...")
+        log_info("[postprocess] Initializing document...")
         doc = Document(str(docx_path_abs))
-        print_success("Document opened successfully")
-        print_info("")
+        log_debug("[postprocess] Document opened successfully")
 
         if skip_author_info:
             log_skip("author information", "disabled for this build")
@@ -247,11 +245,11 @@ def postprocess_docx(
         # ===================================================================
         # Save document (all changes from all scripts)
         # ===================================================================
-        print_info("Saving all changes to document...")
+        log_info("[postprocess] Saving all changes to document...")
         doc.save(str(docx_path_abs))
-        print_success("Document saved successfully")
+        log_success("[postprocess] Document saved successfully")
 
-        print_success("=== Post-Processing Pipeline Completed Successfully ===")
+        log_success("[postprocess] DOCX post-processing completed successfully")
         return True
 
     except Exception as e:

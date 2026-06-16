@@ -19,13 +19,19 @@ LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "WARN": 30, "ERROR": 40}
 
 def should_log(level: str) -> bool:
     """Return True when this Pandoc filter should emit a log message."""
-    configured = os.getenv("PANDOC_TEMPLATE_LOG_LEVEL", "WARNING").strip().upper()
+    configured = os.getenv("PANDOC_TEMPLATE_LOG_LEVEL", "INFO").strip().upper()
     return LOG_LEVELS.get(level, 30) >= LOG_LEVELS.get(configured, 30)
 
 
 def log_info(message: str) -> None:
     """Emit filter progress only when INFO logging is enabled."""
     if should_log("INFO"):
+        print(message, file=sys.stderr)
+
+
+def log_debug(message: str) -> None:
+    """Emit verbose filter progress only when DEBUG logging is enabled."""
+    if should_log("DEBUG"):
         print(message, file=sys.stderr)
 
 
@@ -470,7 +476,7 @@ def action(elem: pf.Element, doc: pf.Doc) -> Optional[pf.Element]:
 
 def prepare(doc: pf.Doc) -> None:
     if doc.format == 'latex':
-        log_info("Table conversion filter initialized.")
+        log_debug("Table conversion filter initialized.")
         if not GEMINI_AVAILABLE:
             log_warning("WARNING: Gemini API not available. Using fallback conversion.")
 

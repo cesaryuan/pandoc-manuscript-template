@@ -29,13 +29,13 @@ class Colors:
 
 
 def print_success(message: str) -> None:
-    """Print a success message in green."""
-    log_message("SUCCESS", f"{Colors.GREEN}{message}{Colors.RESET}")
+    """Print a detailed success message in green when DEBUG logging is enabled."""
+    log_message("DEBUG", f"{Colors.GREEN}{message}{Colors.RESET}")
 
 
 def print_info(message: str) -> None:
-    """Print an informational message in cyan."""
-    log_message("INFO", f"{Colors.CYAN}{message}{Colors.RESET}")
+    """Print detailed post-processing progress when DEBUG logging is enabled."""
+    log_message("DEBUG", f"{Colors.CYAN}{message}{Colors.RESET}")
 
 
 def print_warning(message: str) -> None:

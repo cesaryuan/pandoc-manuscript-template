@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import shutil
 import subprocess
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from types import ModuleType
 from typing import Any, ClassVar, Iterator, Literal
 
 from pydantic import AliasChoices, Field, PrivateAttr
@@ -23,7 +21,8 @@ from pydantic_settings import (
 )
 
 from . import __version__
-from .resources import iter_project_template_entries, template_root
+from .build import BuildCliSettings, run_build_command
+from .resources import iter_project_template_entries, package_resource_path, template_root
 
 
 BuildTarget = Literal["docx", "reply", "latex", "json", "clean", "distclean", "help"]
@@ -108,59 +107,25 @@ class InitSettings(BaseSettings):
 
 
 @contextmanager
-def build_environment(project_dir: Path, resource_root: Path) -> Iterator[None]:
-    """Temporarily run the build module as if it were package-owned."""
+def project_directory(project_dir: Path) -> Iterator[None]:
+    """Temporarily run build commands from the selected manuscript project."""
     previous_cwd = Path.cwd()
-    previous_resource_root = os.environ.get("PMT_RESOURCE_ROOT")
-    scripts_dir = str(resource_root / "scripts")
-    inserted_path = False
-
-    if scripts_dir not in sys.path:
-        sys.path.insert(0, scripts_dir)
-        inserted_path = True
-    os.environ["PMT_RESOURCE_ROOT"] = str(resource_root)
     os.chdir(project_dir)
     try:
         yield
     finally:
         os.chdir(previous_cwd)
-        if previous_resource_root is None:
-            os.environ.pop("PMT_RESOURCE_ROOT", None)
-        else:
-            os.environ["PMT_RESOURCE_ROOT"] = previous_resource_root
-        if inserted_path:
-            try:
-                sys.path.remove(scripts_dir)
-            except ValueError:
-                pass
-
-
-def load_build_module(resource_root: Path) -> ModuleType:
-    """Load the repository build script from the active pmt resource root."""
-    build_script = resource_root / "scripts" / "build.py"
-    if not build_script.exists():
-        raise FileNotFoundError(f"Build script not found: {build_script}")
-
-    module_name = "_pmt_build"
-    spec = importlib.util.spec_from_file_location(module_name, build_script)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load build script: {build_script}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def run_build_data(project_dir: Path, build_data: dict[str, Any]) -> int:
     """Run the packaged build module from one parsed pmt build model."""
-    resource_root = template_root()
     project_dir = project_dir.resolve()
     if not project_dir.exists():
         raise FileNotFoundError(f"Project directory not found: {project_dir}")
 
-    with build_environment(project_dir, resource_root):
-        module = load_build_module(resource_root)
-        build_settings = module.BuildCliSettings(**build_data)
-        return int(module.run_build_command(build_settings))
+    with project_directory(project_dir):
+        build_settings = BuildCliSettings(**build_data)
+        return int(run_build_command(build_settings))
 
 
 class BuildCommandSettings(BaseSettings):
@@ -185,7 +150,7 @@ class BuildCommandSettings(BaseSettings):
         return run_build_data(self.project_dir, self.build_data(self.target))
 
     def build_data(self, target: BuildTarget) -> dict[str, Any]:
-        """Return data accepted by scripts/build.py's BuildCliSettings."""
+        """Return data accepted by the package build settings."""
         return {
             "target": target,
             "markdown": self.markdown,
@@ -222,7 +187,7 @@ class BuildShortcutSettings(BaseSettings):
         return run_build_data(self.project_dir, self.build_data())
 
     def build_data(self) -> dict[str, Any]:
-        """Return data accepted by scripts/build.py's BuildCliSettings."""
+        """Return data accepted by the package build settings."""
         return {
             "target": self.target,
             "markdown": self.markdown,
@@ -342,7 +307,13 @@ class DoctorSettings(BaseSettings):
 
         checks.extend(
             [
-                ("pmt resource scripts/build.py", (root / "scripts" / "build.py").exists(), str(root)),
+                ("pmt package build module", True, "pandoc_manuscript.build"),
+                ("pmt pandoc defaults", (root / "pandoc" / "pandoc-docx.yml").exists(), str(root / "pandoc")),
+                (
+                    "pmt MathType marker filter",
+                    package_resource_path("mathtype/mathtype_markers.lua").exists(),
+                    str(package_resource_path("mathtype/mathtype_markers.lua")),
+                ),
                 ("project directory", project_dir.exists(), str(project_dir)),
                 ("project manuscript.md", (project_dir / "manuscript.md").exists(), str(project_dir / "manuscript.md")),
                 ("project style.yml", (project_dir / "style.yml").exists(), str(project_dir / "style.yml")),

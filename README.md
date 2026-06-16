@@ -157,7 +157,7 @@ Avoid Pandoc's compact string-only author syntax, such as `author: [First Author
 
 ### Output Style Metadata
 
-Style-oriented metadata lives in `style.yml` so the manuscript YAML header can stay focused on the paper itself. During `make docx`, `make latex`, or `uv run scripts/build.py ...`, the build script loads `style.yml` before `manuscript.md`; any field already defined in the manuscript YAML header overrides the style default.
+Style-oriented metadata lives in `style.yml` so the manuscript YAML header can stay focused on the paper itself. During `pmt build docx`, `pmt build latex`, `make docx`, or `make latex`, the build loads `style.yml` before `manuscript.md`; any field already defined in the manuscript YAML header overrides the style default.
 
 If you want to change style-related content, edit `style.yml`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
 
@@ -399,12 +399,12 @@ In this example, "Group A" will span two rows (merging with the cell below conta
 
 All tables are automatically fitted to window width and centered. This can be overridden using the `autofit` metadata key.
 
-**Post-processing scripts location**: `scripts/`
-- `process-table-metadata.ps1` - Applies metadata from captions
-- `merge-table-cells.ps1` - Merges cells based on markers
-- `autofit-tables.ps1` - Auto-fits tables to window
+**Post-processing modules location**: `src/pandoc_manuscript/postprocess/`
+- `process_table_metadata.py` - Applies metadata from captions
+- `merge_table_cells.py` - Merges cells based on markers
+- `autofit_tables.py` - Auto-fits tables to window
 
-These scripts run automatically when `ENABLE_DOCX_POSTPROCESS = true` in the Makefile (Windows only, requires Microsoft Word).
+These modules run automatically during `pmt build docx` and `pmt build reply` when DOCX post-processing is enabled.
 
 ## Build System
 
@@ -460,40 +460,39 @@ make clean         # Remove generated files
 make help          # Show available commands
 ```
 
-### Using the Python Build Script
+### Command Options
 
-The Python build script is the most flexible direct entry point. It uses the
-same Pandoc defaults as Make, but it can also build a markdown file specified
-on the command line.
+The `pmt build` command can build a markdown file specified on the command
+line. When a markdown file is supplied, the output file name is derived from
+that file's stem.
 
 ```bash
-uv run scripts/build.py docx              # Generate output/docx/manuscript.docx
-uv run scripts/build.py latex             # Generate output/latex/manuscript.tex
-uv run scripts/build.py json              # Generate output/json/manuscript.json
-uv run scripts/build.py docx paper.md     # Generate output/docx/paper.docx
-uv run scripts/build.py latex paper.md    # Generate output/latex/paper.tex
-uv run scripts/build.py json paper.md     # Generate output/json/paper.json
+pmt build docx              # Generate output/docx/manuscript.docx
+pmt build latex             # Generate output/latex/manuscript.tex
+pmt build json              # Generate output/json/manuscript.json
+pmt build docx paper.md     # Generate output/docx/paper.docx
+pmt build latex paper.md    # Generate output/latex/paper.tex
+pmt build json paper.md     # Generate output/json/paper.json
 ```
 
 You can also pass the markdown path with `--manuscript` or `-m`:
 
 ```bash
-uv run scripts/build.py docx --manuscript paper.md
-uv run scripts/build.py latex -m paper.md
+pmt build docx --manuscript paper.md
+pmt build latex -m paper.md
 ```
 
 Use `--output-dir` or `-o` to change the base output directory:
 
 ```bash
-uv run scripts/build.py docx paper.md --output-dir build  # Generate build/docx/paper.docx
-uv run scripts/build.py latex paper.md -o build           # Generate build/latex/paper.tex
-uv run scripts/build.py json paper.md -o build            # Generate build/json/paper.json
-uv run scripts/build.py clean --output-dir build          # Remove build/
+pmt build docx paper.md --output-dir build  # Generate build/docx/paper.docx
+pmt build latex paper.md -o build           # Generate build/latex/paper.tex
+pmt build json paper.md -o build            # Generate build/json/paper.json
+pmt clean --output-dir build                # Remove build/
 ```
 
-When a markdown file is supplied, the output file name is derived from that
-file's stem. The DOCX post-processing step reads YAML metadata from the same
-markdown file. When an output directory is supplied, `docx`, `latex`, and `json`
+The DOCX post-processing step reads YAML metadata from the same markdown file.
+When an output directory is supplied, `docx`, `latex`, and `json`
 subdirectories are created under it.
 
 ### Direct Pandoc Commands

@@ -39,7 +39,6 @@ exclude = [
 packages = ["src/pandoc_manuscript"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"scripts" = "pandoc_manuscript/_template/scripts"
 "pandoc" = "pandoc_manuscript/_template/pandoc"
 "examples" = "pandoc_manuscript/_template/examples"
 "manuscript.md" = "pandoc_manuscript/_template/manuscript.md"
@@ -47,3 +46,6 @@ packages = ["src/pandoc_manuscript"]
 "README.md" = "pandoc_manuscript/_template/README.md"
 "Makefile" = "pandoc_manuscript/_template/Makefile"
 ".gitignore" = "pandoc_manuscript/_template/.gitignore"
+"src/pandoc_manuscript/mathtype/mathtype_markers.lua" = "pandoc_manuscript/mathtype/mathtype_markers.lua"
+"src/pandoc_manuscript/mathtype/Times+Symbol 12.eqp" = "pandoc_manuscript/mathtype/Times+Symbol 12.eqp"
+"src/pandoc_manuscript/mathtype_ole_helper" = "pandoc_manuscript/mathtype_ole_helper"

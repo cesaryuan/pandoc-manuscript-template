@@ -1,0 +1,58 @@
+; --- Copyright (c) 2010 by Design Science, Inc.
+; MathType INI v1: Equation Preferences
+
+[Styles]
+Text=Times New Roman
+Function=Times New Roman
+Variable=Times New Roman,I
+LCGreek=Symbol,I
+UCGreek=Symbol
+Symbol=Symbol
+Vector=Times New Roman,B
+Number=Times New Roman
+User1=Courier New
+User2=Times New Roman
+MTExtra=MT Extra
+
+[Sizes]
+Full=12 pt
+Script=58 %
+ScriptScript=42 %
+Symbol=150 %
+SubSymbol=100 %
+User1=75 %
+User2=150 %
+SmallLargeIncr=1 pt
+
+[Spacing]
+LineSpacing=150 %
+MatrixRowSpacing=150 %
+MatrixColSpacing=100 %
+SuperscriptHeight=45 %
+SubscriptDepth=25 %
+SubSupGap=8 %
+LimHeight=25 %
+LimDepth=100 %
+LimLineSpacing=100 %
+NumerHeight=35 %
+DenomDepth=100 %
+FractBarOver=8 %
+FractBarThick=5 %
+SubFractBarThick=2.5 %
+FractGap=8 %
+FenceOver=8 %
+OperSpacing=100 %
+NonOperSpacing=100 %
+CharWidth=0 %
+MinGap=8 %
+VertRadGap=17 %
+HorizRadGap=8 %
+RadWidth=100 %
+EmbellGap=12.5 %
+PrimeHeight=45 %
+BoxStrokeThick=5 %
+StikeThruThick=5 %
+MatrixLineThick=5 %
+RadStrokeThick=5 %
+HorizFenceGap=10 %
+

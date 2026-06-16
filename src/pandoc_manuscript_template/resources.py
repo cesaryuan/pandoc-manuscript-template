@@ -35,11 +35,8 @@ def iter_project_template_entries() -> Iterable[str]:
     yield from (
         "manuscript.md",
         "style.yml",
-        "README.md",
-        "Makefile",
         ".gitignore",
         "images",
         "examples",
-        "pandoc",
-        "scripts",
+        "pandoc/csl",
     )

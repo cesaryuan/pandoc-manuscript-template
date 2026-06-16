@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from logging_utils import log_debug, log_error, log_info, log_success, log_warning
-from metadata import load_merged_metadata, merge_metadata, parse_yaml_file
+from metadata import load_merged_metadata_with_status
 from mathtype.marked_docx import extract_marked_equation_requests
 from mathtype.ole_parts import check_mathtype_availability
 from postprocess.final_docx_syntax_check import validate_final_docx_syntax
@@ -49,16 +49,13 @@ def to_pandoc_path(path: Path) -> str:
 
 
 def load_reply_metadata(reply: Path, style: Path) -> dict[str, Any]:
-    """Load reply style metadata, allowing reply markdown to omit YAML front matter."""
-    try:
-        return load_merged_metadata(reply, [style])
-    except ValueError as exc:
-        if "No YAML front matter" not in str(exc):
-            raise
-
-        # Reply letters often omit YAML; keep style defaults for post-processing.
-        log_warning(f"[WARN] No YAML front matter found in {reply}; using metadata files only")
-        return merge_metadata({}, parse_yaml_file(style))
+    """Load reply style metadata, silently allowing reply markdown without YAML."""
+    metadata, _ = load_merged_metadata_with_status(
+        reply,
+        [style],
+        allow_missing_header=True,
+    )
+    return metadata
 
 
 def log_red(message: str) -> None:

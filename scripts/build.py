@@ -44,7 +44,12 @@ from pathlib import Path
 from typing import Any, Tuple
 
 from logging_utils import log_error, log_info, log_success, log_warning
-from metadata import load_merged_metadata, merge_metadata, parse_yaml_file, parse_yaml_header
+from metadata import (
+    MissingYamlFrontMatterError,
+    load_merged_metadata_with_status,
+    parse_yaml_file,
+    parse_yaml_header,
+)
 from mathtype.ole_parts import check_mathtype_availability
 from postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from postprocess_docx import postprocess_docx as run_docx_postprocess
@@ -247,19 +252,15 @@ def ensure_docx_target_writable(target: Path) -> None:
 def load_build_metadata() -> dict[str, Any]:
     """Load style defaults plus manuscript metadata for build-time feature flags."""
     metadata_files = style_metadata_files()
-    try:
-        return load_merged_metadata(CONFIG['manuscript_file'], metadata_files)
-    except ValueError as exc:
-        if "No YAML front matter" not in str(exc):
-            raise
-
-        # Reply-style documents may omit manuscript YAML; keep style.yml defaults
-        # so post-processing still receives the same build-level style metadata.
+    metadata, has_yaml_header = load_merged_metadata_with_status(
+        CONFIG['manuscript_file'],
+        metadata_files,
+        allow_missing_header=True,
+    )
+    if not has_yaml_header:
+        # Reply-style documents may omit manuscript YAML; keep style.yml defaults.
         log_warning(f"[WARN] No YAML front matter found in {CONFIG['manuscript_file']}; using metadata files only")
-        metadata: dict[str, Any] = {}
-        for metadata_file in metadata_files:
-            metadata = merge_metadata(metadata, parse_yaml_file(metadata_file))
-        return metadata
+    return metadata
 
 
 def metadata_bool(value: Any) -> bool:
@@ -399,9 +400,8 @@ def project_metadata_csl() -> Any:
 
     try:
         csl = parse_yaml_header(CONFIG['manuscript_file']).get('csl', csl)
-    except ValueError as exc:
-        if "No YAML front matter" not in str(exc):
-            raise
+    except MissingYamlFrontMatterError:
+        pass
     return csl
 
 

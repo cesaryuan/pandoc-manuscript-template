@@ -47,7 +47,6 @@ Or inline affiliation text per author:
 """
 
 import argparse
-import re
 import sys
 from pathlib import Path
 
@@ -56,6 +55,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from logging_utils import log_error, log_success, log_warning
+from metadata import parse_yaml_header
 
 try:
     from docx import Document
@@ -69,28 +69,10 @@ except ImportError as e:
     print("Install with: pip install python-docx pyyaml lxml")
     sys.exit(1)
 
-try:
-    import yaml
-except ImportError:
-    print("Error: pyyaml is not installed. Install it with: pip install pyyaml")
-    sys.exit(1)
-
 
 # Word XML namespaces
 WORD_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 XML_SPACE = '{http://www.w3.org/XML/1998/namespace}space'
-
-
-def parse_yaml_header(md_path: str) -> dict:
-    """Parse YAML front matter from a markdown file."""
-    with open(md_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-
-    match = re.match(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
-    if not match:
-        raise ValueError("No YAML front matter found in markdown file")
-
-    return yaml.safe_load(match.group(1))
 
 
 def normalize_author_metadata(metadata: dict) -> tuple[list[dict], dict[str, str]]:

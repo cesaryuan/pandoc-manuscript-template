@@ -430,6 +430,10 @@ pmt docx paper.md -o build
 pmt latex paper.md
 ```
 
+For DOCX output, pass `--reference-doc custom-reference.docx` to override the
+bundled Word reference document. The option is supported by both `docx` and
+`reply` targets.
+
 Reviewer replies can be built with the same DOCX pipeline. The `reply` target
 resolves manuscript cross-references and citations against the manuscript before
 converting the reply letter:

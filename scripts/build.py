@@ -66,11 +66,11 @@ CONFIG = {
     'enable_docx_postprocess': True,
     'mathtype_marker_filter': 'scripts/mathtype/mathtype_markers.lua',
     'mathtype_work_dir': 'tmp/mathtype-build',
+    'reference_doc': None,
     'reply_manuscript_file': 'manuscript.md',
     'reply_line_source': 'output/docx/manuscript.docx',
     'reply_style_file': 'style.reply.yml',
     'reply_from_format': 'markdown',
-    'reply_reference_doc': None,
     'reply_output_file': None,
 }
 
@@ -176,13 +176,18 @@ def configure_output_dir(output_dir: str | Path) -> None:
     CONFIG['json_dir'] = to_pandoc_path(path / 'json')
 
 
+def configure_reference_doc(reference_doc: str | None) -> None:
+    """Configure a user-supplied reference DOCX for DOCX-producing targets."""
+    if reference_doc:
+        CONFIG['reference_doc'] = reference_doc
+
+
 def configure_reply_options(
     *,
     manuscript: str | None = None,
     line_source: str | None = None,
     style: str | None = None,
     from_format: str | None = None,
-    reference_doc: str | None = None,
     output_file: str | None = None,
 ) -> None:
     """Configure reviewer-reply build inputs while keeping manuscript defaults stable."""
@@ -194,8 +199,6 @@ def configure_reply_options(
         CONFIG['reply_style_file'] = style
     if from_format:
         CONFIG['reply_from_format'] = from_format
-    if reference_doc:
-        CONFIG['reply_reference_doc'] = reference_doc
     if output_file:
         CONFIG['reply_output_file'] = output_file
 
@@ -357,6 +360,20 @@ def run_pandoc(
     run_command(cmd, stream_output=True)
 
 
+def reference_doc_args() -> list[str]:
+    """Return Pandoc args that override the bundled DOCX reference document."""
+    if not CONFIG['reference_doc']:
+        return []
+    return ['--reference-doc', to_pandoc_path(Path(CONFIG['reference_doc']))]
+
+
+def reply_reference_doc_path() -> Path:
+    """Return the active reference DOCX path for reviewer reply builds."""
+    if CONFIG['reference_doc']:
+        return Path(CONFIG['reference_doc'])
+    return resource_path('pandoc/manuscript-template/reference-doc.docx')
+
+
 def style_metadata_args() -> list[str]:
     """Return Pandoc CLI args for project style metadata when style.yml exists."""
     return [
@@ -406,6 +423,7 @@ def build_docx():
     metadata = load_build_metadata()
     use_mathtype = resolve_mathtype_build_enabled(should_use_mathtype(metadata))
     pandoc_output = docx_file
+    extra_args.extend(reference_doc_args())
 
     # Add filter for older Pandoc versions
     if should_use_mathbfit_filter():
@@ -445,15 +463,12 @@ def build_reply_docx_target() -> None:
     """Generate a reviewer-reply DOCX using manuscript numbering and reply styling."""
     log_info("\n[DOCX] Building reviewer reply DOCX...\n")
     output = reply_output_path()
-    reference_doc = Path(CONFIG['reply_reference_doc']) if CONFIG['reply_reference_doc'] else resource_path(
-        'pandoc/manuscript-template/reference-doc.docx'
-    )
     build_reply_docx(
         reply=Path(CONFIG['manuscript_file']),
         manuscript=Path(CONFIG['reply_manuscript_file']),
         manuscript_line_source=Path(CONFIG['reply_line_source']),
         output=output,
-        reference_doc=reference_doc,
+        reference_doc=reply_reference_doc_path(),
         style=Path(CONFIG['reply_style_file']),
         from_format=CONFIG['reply_from_format'],
         resource_root=Path(CONFIG['resource_root']),
@@ -607,7 +622,7 @@ def main():
     )
     parser.add_argument(
         '--reference-doc',
-        help='Reference DOCX for the reply target (default: bundled reference-doc.docx)'
+        help='Reference DOCX for docx/reply targets (default: bundled reference-doc.docx)'
     )
     parser.add_argument(
         '--output-file',
@@ -617,12 +632,12 @@ def main():
     args = parser.parse_args()
     if args.output_dir:
         configure_output_dir(args.output_dir)
+    configure_reference_doc(args.reference_doc)
     configure_reply_options(
         manuscript=args.reply_manuscript,
         line_source=args.manuscript_line_source,
         style=args.reply_style,
         from_format=args.from_format,
-        reference_doc=args.reference_doc,
         output_file=args.output_file,
     )
 
@@ -634,7 +649,9 @@ def main():
         parser.error("A markdown file can only be specified for docx, reply, latex, or json targets.")
     if args.output_file and args.target != 'reply':
         parser.error("--output-file is only supported by the reply target.")
-    if any([args.reply_manuscript, args.manuscript_line_source, args.reply_style, args.from_format, args.reference_doc]) and args.target != 'reply':
+    if args.reference_doc and args.target not in {'docx', 'reply'}:
+        parser.error("--reference-doc is only supported by docx and reply targets.")
+    if any([args.reply_manuscript, args.manuscript_line_source, args.reply_style, args.from_format]) and args.target != 'reply':
         parser.error("Reply-specific options require the reply target.")
 
     if args.target in {'docx', 'reply', 'latex', 'json'}:

@@ -263,7 +263,7 @@ def add_build_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--reply-style", help="Reply style metadata file (default: style.reply.yml)")
     parser.add_argument("--from-format", help="Pandoc input format for the reply target")
-    parser.add_argument("--reference-doc", help="Reference DOCX for the reply target")
+    parser.add_argument("--reference-doc", help="Reference DOCX for docx/reply targets")
     parser.add_argument("--output-file", help="Exact output DOCX path for the reply target")
 
 

@@ -26,8 +26,8 @@ if __package__ in (None, ""):
 from postprocess.common import (
     open_docx,
     print_error,
-    print_info,
-    print_success,
+    print_debug,
+    print_debug_success,
     print_warning,
     save_docx,
 )
@@ -69,10 +69,10 @@ def merge_table_cells(doc: DocumentObject) -> tuple[int, int]:
     table_count = len(doc.tables)
 
     if table_count == 0:
-        print_info("No tables found in document")
+        print_debug("No tables found in document")
         return left_merge_count, up_merge_count
 
-    print_info(f"Processing {table_count} table(s)...")
+    print_debug(f"Processing {table_count} table(s)...")
 
     for table in doc.tables:
         # ===================================================================
@@ -177,18 +177,18 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
             return None
 
         # Process table cell merges
-        print_info("Processing table cell merges...")
+        print_debug("Processing table cell merges...")
         left_merges, up_merges = merge_table_cells(doc)
 
-        print_success(f"Processed {len(doc.tables)} table(s)")
-        print_success(f"Left merges: {left_merges}")
-        print_success(f"Up merges: {up_merges}")
+        print_debug_success(f"Processed {len(doc.tables)} table(s)")
+        print_debug_success(f"Left merges: {left_merges}")
+        print_debug_success(f"Up merges: {up_merges}")
 
         # Save the document
         if save:
             save_docx(doc, docx_path_abs)
 
-        print_success("\nTable cell merge processing completed successfully!")
+        print_debug_success("\nTable cell merge processing completed successfully!")
         return doc
 
     except Exception as e:

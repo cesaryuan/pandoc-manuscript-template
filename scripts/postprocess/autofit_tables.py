@@ -29,8 +29,8 @@ from postprocess.common import (
     get_or_add_tbl_pr,
     open_docx,
     print_error,
-    print_info,
-    print_success,
+    print_debug,
+    print_debug_success,
     print_warning,
     save_docx,
 )
@@ -155,15 +155,15 @@ def autofit_tables(doc: DocumentObject, center_align: bool = True) -> int:
     skipped_count = 0
 
     if table_count == 0:
-        print_info("No tables found in document")
+        print_debug("No tables found in document")
         return success_count
 
-    print_info(f"Auto-fitting {table_count} table(s) to window...")
+    print_debug(f"Auto-fitting {table_count} table(s) to window...")
 
     for i, table in enumerate(doc.tables, start=1):
         try:
             if is_equation_layout_table(table):
-                print_info(f"Skipping equation layout table {i}")
+                print_debug(f"Skipping equation layout table {i}")
                 skipped_count += 1
                 continue
 
@@ -180,9 +180,9 @@ def autofit_tables(doc: DocumentObject, center_align: bool = True) -> int:
             print_warning(f"Failed to auto-fit table {i}: {e}")
 
     if skipped_count:
-        print_info(f"Skipped {skipped_count} equation layout table(s)")
+        print_debug(f"Skipped {skipped_count} equation layout table(s)")
 
-    print_success(f"Auto-fitted {success_count} of {table_count} table(s) to window")
+    print_debug_success(f"Auto-fitted {success_count} of {table_count} table(s) to window")
 
     return success_count
 
@@ -211,7 +211,7 @@ def process_file(docx_path: str, save: bool = True, center_align: bool = True) -
         if save:
             save_docx(doc, docx_path_abs)
 
-        print_success("\nTable auto-fit processing completed successfully!")
+        print_debug_success("\nTable auto-fit processing completed successfully!")
         return doc
 
     except Exception as e:

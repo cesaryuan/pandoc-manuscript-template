@@ -31,7 +31,7 @@ except ImportError:
 
 # Import processing modules
 try:
-    from postprocess.common import print_error, print_success, print_warning
+    from postprocess.common import print_error, print_debug_success, print_warning
     from postprocess.merge_table_cells import merge_table_cells
     from postprocess.process_table_metadata import process_table_metadata
     from postprocess.autofit_tables import autofit_tables
@@ -126,7 +126,7 @@ def postprocess_docx(
                 """Insert author metadata and log the number of inserted records."""
                 authors, affiliations, has_footnote = insert_author_info_to_doc(doc, metadata)
                 if authors > 0:
-                    print_success(
+                    print_debug_success(
                         f"Authors: {authors}, Affiliations: {affiliations}, "
                         f"Footnote: {'Yes' if has_footnote else 'No'}"
                     )
@@ -141,7 +141,7 @@ def postprocess_docx(
             if result is None:
                 print_warning("No bodyText metadata found, skipping")
                 return
-            print_success(
+            print_debug_success(
                 f"Style '{result['style_name']}': "
                 f"first-line indent {result['first_line_indent_chars']} chars, "
                 f"before {result['space_before_pt']} pt, "
@@ -154,24 +154,24 @@ def postprocess_docx(
             if result is None:
                 print_warning("No enabled show-line-numbers metadata found, skipping")
                 return
-            print_success(
+            print_debug_success(
                 f"Line numbers: restart={result['restart']}, sections={result['sections']}"
             )
 
         def merge_table_cells_step() -> None:
             """Merge table cells marked with left/up merge placeholders."""
             left_merges, up_merges = merge_table_cells(doc)
-            print_success(f"Left merges: {left_merges}, Up merges: {up_merges}")
+            print_debug_success(f"Left merges: {left_merges}, Up merges: {up_merges}")
 
         def process_table_metadata_step() -> None:
             """Apply table caption metadata and report the applied setting count."""
             processed, settings = process_table_metadata(doc)
-            print_success(f"Processed {processed} table(s), Applied {settings} setting(s)")
+            print_debug_success(f"Processed {processed} table(s), Applied {settings} setting(s)")
 
         def clear_subfigure_table_format_step() -> None:
             """Clear formatting from tables used only for subfigure layout."""
             processed_count = clear_subfigure_table_format(doc)
-            print_success(f"Cleared formatting for {processed_count} subfigure table(s)")
+            print_debug_success(f"Cleared formatting for {processed_count} subfigure table(s)")
 
         def convert_table_text_style_step() -> None:
             """Convert table paragraphs from Compact to the shared Table Text style."""
@@ -179,7 +179,7 @@ def postprocess_docx(
                 print_warning("Could not ensure Table Text style exists, skipping style conversion")
                 return
             stats = convert_table_text_style(doc)
-            print_success(f"Converted {stats['converted']} paragraph(s) from 'Compact' to 'Table Text'")
+            print_debug_success(f"Converted {stats['converted']} paragraph(s) from 'Compact' to 'Table Text'")
 
         def apply_para_after_table_style_step() -> None:
             """Style regular body paragraphs that directly follow tables."""
@@ -187,17 +187,17 @@ def postprocess_docx(
             if para_after_table_count is None:
                 print_warning("Could not ensure Para After Table style exists, skipping style conversion")
                 return
-            print_success(f"Styled {para_after_table_count} paragraph(s) as 'Para After Table'")
+            print_debug_success(f"Styled {para_after_table_count} paragraph(s) as 'Para After Table'")
 
         def autofit_tables_step() -> None:
             """Auto-fit regular tables while leaving equation layout tables alone."""
             fitted_count = autofit_tables(doc, center_align=True)
-            print_success(f"Auto-fitted {fitted_count} table(s)")
+            print_debug_success(f"Auto-fitted {fitted_count} table(s)")
 
         def format_equation_layout_tables_step() -> None:
             """Hide borders and tune widths for equation layout tables."""
             equation_table_count = format_equation_layout_tables(doc)
-            print_success(f"Formatted {equation_table_count} equation layout table(s)")
+            print_debug_success(f"Formatted {equation_table_count} equation layout table(s)")
 
         def apply_where_paragraph_style_step() -> None:
             """Style where clauses that immediately follow equations."""
@@ -205,17 +205,17 @@ def postprocess_docx(
             if where_count is None:
                 print_warning("Could not ensure Where Paragraph style exists, skipping style conversion")
                 return
-            print_success(f"Styled {where_count} paragraph(s) as 'Where Paragraph'")
+            print_debug_success(f"Styled {where_count} paragraph(s) as 'Where Paragraph'")
 
         def add_inline_math_spacing_step() -> None:
             """Add a trailing space to standalone inline math paragraphs for Word rendering."""
             fixed_count = add_space_after_standalone_inline_math(doc)
-            print_success(f"Fixed {fixed_count} standalone inline math paragraph(s)")
+            print_debug_success(f"Fixed {fixed_count} standalone inline math paragraph(s)")
 
         def apply_reply_blue_italic_style_step() -> None:
             """Apply reply-only blue italic formatting to captions and regular tables."""
             stats = apply_reply_blue_italic_style(doc)
-            print_success(
+            print_debug_success(
                 f"Formatted {stats['caption_styles']} caption style(s), "
                 f"{stats['caption_paragraphs']} caption paragraph(s), "
                 f"{stats['table_runs']} table run(s)"

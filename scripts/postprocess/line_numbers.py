@@ -27,7 +27,7 @@ except ImportError as e:
     sys.exit(1)
 
 from metadata import load_merged_metadata
-from postprocess.common import open_docx, print_success, print_warning, save_docx, validate_existing_file
+from postprocess.common import open_docx, print_debug, print_debug_success, print_warning, save_docx, validate_existing_file
 
 
 LINE_NUMBER_METADATA_KEYS = ("show-line-numbers", "showLineNumbers", "show_line_numbers")
@@ -160,12 +160,12 @@ def process_file(
     metadata = load_merged_metadata(md_file, metadata_files)
     result = apply_line_number_metadata(doc, metadata)
     if result is None:
-        print_warning("No enabled show-line-numbers metadata found, skipping")
+        print_debug("No enabled show-line-numbers metadata found, skipping")
         return None
 
     if save:
         save_docx(doc, docx_file)
-    print_success(f"Applied line numbers: restart={result['restart']}, sections={result['sections']}")
+    print_debug_success(f"Applied line numbers: restart={result['restart']}, sections={result['sections']}")
     return result
 
 

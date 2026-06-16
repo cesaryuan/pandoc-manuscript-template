@@ -27,8 +27,8 @@ from postprocess.common import (
     get_normal_style,
     open_docx,
     print_error,
-    print_info,
-    print_success,
+    print_debug,
+    print_debug_success,
     print_warning,
     save_docx,
 )
@@ -52,7 +52,7 @@ def set_table_text_base_style(doc: DocumentObject, table_text_style: _ParagraphS
         return False
 
     table_text_style.base_style = normal_style
-    print_info(f"'Table Text' style based on '{normal_style_name}' style")
+    print_debug(f"'Table Text' style based on '{normal_style_name}' style")
     return True
 
 
@@ -72,11 +72,11 @@ def ensure_table_text_style_exists(doc: DocumentObject) -> bool:
         table_text_style = cast(_ParagraphStyle, doc.styles['Table Text'])
         if not set_table_text_base_style(doc, table_text_style):
             return False
-        print_info("'Table Text' style already exists")
+        print_debug("'Table Text' style already exists")
         return True
     except KeyError:
         # Style doesn't exist, create it
-        print_info("'Table Text' style not found, creating it...")
+        print_debug("'Table Text' style not found, creating it...")
         try:
             from docx.shared import Cm
 
@@ -103,7 +103,7 @@ def ensure_table_text_style_exists(doc: DocumentObject) -> bool:
             table_text_style.quick_style = True
             table_text_style.priority = 1
 
-            print_success("'Table Text' style created successfully")
+            print_debug_success("'Table Text' style created successfully")
             return True
         except Exception as e:
             print_error(f"Failed to create 'Table Text' style: {e}")
@@ -159,10 +159,10 @@ def process_all_tables(doc: DocumentObject) -> dict:
     }
 
     if table_count == 0:
-        print_info("No tables found in document")
+        print_debug("No tables found in document")
         return stats
 
-    print_info(f"Processing {table_count} table(s)...")
+    print_debug(f"Processing {table_count} table(s)...")
 
     for i, table in enumerate(doc.tables, start=1):
         try:
@@ -171,7 +171,7 @@ def process_all_tables(doc: DocumentObject) -> dict:
             # regular table body text.
             if is_equation_layout_table(table):
                 stats['tables_skipped_equation_layout'] += 1
-                print_info(f"Skipping equation layout table {i}")
+                print_debug(f"Skipping equation layout table {i}")
                 continue
             convert_table_text_style(table, stats)
             stats['tables_processed'] += 1
@@ -179,10 +179,10 @@ def process_all_tables(doc: DocumentObject) -> dict:
             print_warning(f"Failed to process table {i}: {e}")
 
     if stats['tables_skipped_equation_layout']:
-        print_info(f"Skipped {stats['tables_skipped_equation_layout']} equation layout table(s)")
-    print_success(f"Processed {stats['tables_processed']} of {table_count} table(s)")
-    print_info(f"  - Converted: {stats['converted']} paragraph(s) from 'Compact' to 'Table Text'")
-    print_info(f"  - Skipped: {stats['skipped']} paragraph(s) (not 'Compact' style)")
+        print_debug(f"Skipped {stats['tables_skipped_equation_layout']} equation layout table(s)")
+    print_debug_success(f"Processed {stats['tables_processed']} of {table_count} table(s)")
+    print_debug(f"  - Converted: {stats['converted']} paragraph(s) from 'Compact' to 'Table Text'")
+    print_debug(f"  - Skipped: {stats['skipped']} paragraph(s) (not 'Compact' style)")
 
     return stats
 
@@ -215,7 +215,7 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
         if save:
             save_docx(doc, docx_path_abs)
 
-        print_success("\nTable text style conversion completed successfully!")
+        print_debug_success("\nTable text style conversion completed successfully!")
         return doc
 
     except Exception as e:

@@ -39,7 +39,7 @@ from postprocess.common import (
     get_body_text_style,
     open_docx,
     print_error,
-    print_success,
+    print_debug_success,
     print_warning,
     save_docx,
     set_style_first_line_indent_chars as set_common_style_first_line_indent_chars,
@@ -193,7 +193,7 @@ def process_file(
 
     if save:
         save_docx(doc, docx_file)
-    print_success(
+    print_debug_success(
         "Applied Body Text style: "
         f"first-line indent {result['first_line_indent_chars']} chars, "
         f"before {result['space_before_pt']} pt, after {result['space_after_pt']} pt"

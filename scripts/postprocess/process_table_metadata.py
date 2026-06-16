@@ -35,8 +35,8 @@ from postprocess.common import (
     get_or_add_tbl_pr,
     open_docx,
     print_error,
-    print_info,
-    print_success,
+    print_debug,
+    print_debug_success,
     print_warning,
     save_docx,
 )
@@ -299,10 +299,10 @@ def process_table_metadata(doc: DocumentObject) -> tuple[int, int]:
     table_count = len(doc.tables)
 
     if table_count == 0:
-        print_info("No tables found in document")
+        print_debug("No tables found in document")
         return processed_count, total_settings_applied
 
-    print_info(f"Processing {table_count} table(s)...")
+    print_debug(f"Processing {table_count} table(s)...")
 
     # Iterate through all tables
     for i, table in enumerate(doc.tables, start=1):
@@ -339,7 +339,7 @@ def process_table_metadata(doc: DocumentObject) -> tuple[int, int]:
 
         # Process metadata if caption found
         if caption_para and re.search(r'\|[^|]+=[^|]+\|', caption_text):
-            print_info(f"Processing Table {i}...")
+            print_debug(f"Processing Table {i}...")
 
             # Parse metadata
             metadata = parse_table_metadata(caption_text)
@@ -349,14 +349,14 @@ def process_table_metadata(doc: DocumentObject) -> tuple[int, int]:
                 applied_settings = apply_table_metadata(table, metadata)
 
                 if applied_settings:
-                    print_success(f"  Applied: {', '.join(applied_settings)}")
+                    print_debug_success(f"  Applied: {', '.join(applied_settings)}")
                     total_settings_applied += len(applied_settings)
 
                 # Remove metadata from caption
-                print_info(f"  Original caption: {caption_text}")
+                print_debug(f"  Original caption: {caption_text}")
                 clean_caption = remove_metadata_from_caption(caption_text)
                 caption_para.text = clean_caption
-                print_success("  Metadata removed from caption")
+                print_debug_success("  Metadata removed from caption")
 
                 processed_count += 1
 
@@ -380,17 +380,17 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
             return None
 
         # Process table metadata
-        print_info("Processing table metadata from captions...")
+        print_debug("Processing table metadata from captions...")
         processed, settings_applied = process_table_metadata(doc)
 
-        print_success(f"\nProcessed {processed} of {len(doc.tables)} table(s)")
-        print_success(f"Total settings applied: {settings_applied}")
+        print_debug_success(f"\nProcessed {processed} of {len(doc.tables)} table(s)")
+        print_debug_success(f"Total settings applied: {settings_applied}")
 
         # Save the document
         if save:
             save_docx(doc, docx_path_abs)
 
-        print_success("\nTable metadata processing completed successfully!")
+        print_debug_success("\nTable metadata processing completed successfully!")
         return doc
 
     except Exception as e:

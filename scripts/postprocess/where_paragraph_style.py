@@ -45,8 +45,8 @@ from postprocess.common import (
     iter_body_blocks,
     open_docx,
     print_error,
-    print_info,
-    print_success,
+    print_debug,
+    print_debug_success,
     print_warning,
     save_docx,
     set_style_first_line_indent_chars as set_common_style_first_line_indent_chars,
@@ -85,7 +85,7 @@ def set_where_next_paragraph_style(doc: DocumentObject, style: _ParagraphStyle) 
         return False
 
     style.next_paragraph_style = body_text_style
-    print_info(f"'Where Paragraph' next paragraph style set to '{body_text_style_name}'")
+    print_debug(f"'Where Paragraph' next paragraph style set to '{body_text_style_name}'")
     return True
 
 
@@ -100,13 +100,13 @@ def set_where_paragraph_format(style: _ParagraphStyle, use_table_layout_spacing:
     if use_table_layout_spacing:
         # Equation tables sit visually closer to the following where clause than tab-layout equations.
         style.paragraph_format.space_before = Pt(WHERE_TABLE_LAYOUT_SPACE_BEFORE_PT)
-        print_info(
+        print_debug(
             f"'Where Paragraph' spacing before set to {WHERE_TABLE_LAYOUT_SPACE_BEFORE_PT:g} pt"
         )
     else:
         style.paragraph_format.space_before = None
-        print_info("'Where Paragraph' spacing before inherits from base style")
-    print_info("'Where Paragraph' first-line indent set to 0 chars")
+        print_debug("'Where Paragraph' spacing before inherits from base style")
+    print_debug("'Where Paragraph' first-line indent set to 0 chars")
 
 
 def ensure_where_paragraph_style_exists(
@@ -120,17 +120,17 @@ def ensure_where_paragraph_style_exists(
         if not set_where_next_paragraph_style(doc, style):
             return False
         set_where_paragraph_format(style, analysis.use_table_layout_spacing)
-        print_info("'Where Paragraph' style already exists")
+        print_debug("'Where Paragraph' style already exists")
         return True
     except KeyError:
-        print_info("'Where Paragraph' style not found, creating it...")
+        print_debug("'Where Paragraph' style not found, creating it...")
 
     try:
         style = cast(_ParagraphStyle, doc.styles.add_style(WHERE_STYLE_NAME, WD_STYLE_TYPE.PARAGRAPH))
         base_style, base_style_name = get_first_existing_paragraph_style(doc, BASE_STYLE_CANDIDATES)
         if base_style is not None:
             style.base_style = base_style
-            print_info(f"'Where Paragraph' style based on '{base_style_name}' style")
+            print_debug(f"'Where Paragraph' style based on '{base_style_name}' style")
         if not set_where_next_paragraph_style(doc, style):
             return False
         set_where_paragraph_format(style, analysis.use_table_layout_spacing)
@@ -139,7 +139,7 @@ def ensure_where_paragraph_style_exists(
         style.hidden = False
         style.quick_style = True
         style.priority = 1
-        print_success("'Where Paragraph' style created successfully")
+        print_debug_success("'Where Paragraph' style created successfully")
         return True
     except Exception as e:
         print_error(f"Failed to create 'Where Paragraph' style: {e}")
@@ -216,19 +216,19 @@ def analyze_where_paragraphs(doc: DocumentObject) -> WhereParagraphAnalysis:
 def log_where_layout_detection(analysis: WhereParagraphAnalysis) -> None:
     """Log the detected equation layout mode used before where paragraphs."""
     if analysis.table_layout_count:
-        print_info(
+        print_debug(
             f"Detected {analysis.table_layout_count} where paragraph(s) after equation layout table(s); "
             f"using {WHERE_TABLE_LAYOUT_SPACE_BEFORE_PT:g} pt style spacing before"
         )
         return
 
     if analysis.tab_layout_count:
-        print_info(
+        print_debug(
             f"Detected {analysis.tab_layout_count} where paragraph(s) after tab-layout equation paragraph(s); "
             "leaving style spacing before inherited"
         )
     else:
-        print_info("No table-layout where paragraphs detected; leaving style spacing before inherited")
+        print_debug("No table-layout where paragraphs detected; leaving style spacing before inherited")
 
 
 def apply_where_paragraph_style(
@@ -260,7 +260,7 @@ def process_file(docx_path: str, save: bool = True) -> int | None:
     if save:
         save_docx(doc, docx_path_abs)
 
-    print_success(f"Applied 'Where Paragraph' style to {updated} paragraph(s)")
+    print_debug_success(f"Applied 'Where Paragraph' style to {updated} paragraph(s)")
     return updated
 
 

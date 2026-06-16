@@ -33,8 +33,8 @@ from postprocess.common import (
     get_or_add_tbl_pr,
     open_docx,
     print_error,
-    print_info,
-    print_success,
+    print_debug,
+    print_debug_success,
     save_docx,
 )
 
@@ -149,9 +149,9 @@ def clear_subfigure_table_format(doc: DocumentObject, caption_style: str = 'Imag
         processed_count += 1
 
     if processed_count == 0:
-        print_info(f"No tables found above '{caption_style}' paragraphs")
+        print_debug(f"No tables found above '{caption_style}' paragraphs")
     else:
-        print_success(f"Processed {processed_count} subfigure table(s)")
+        print_debug_success(f"Processed {processed_count} subfigure table(s)")
 
     return processed_count
 
@@ -168,9 +168,9 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
             if processed_count > 0:
                 save_docx(doc, docx_path_abs)
             else:
-                print_info("No changes made, skipping save")
+                print_debug("No changes made, skipping save")
 
-        print_success("\nSubfigure table formatting cleanup completed successfully!")
+        print_debug_success("\nSubfigure table formatting cleanup completed successfully!")
         return doc
 
     except Exception as e:

@@ -29,13 +29,23 @@ class Colors:
 
 
 def print_success(message: str) -> None:
-    """Print a detailed success message in green when DEBUG logging is enabled."""
-    log_message("DEBUG", f"{Colors.GREEN}{message}{Colors.RESET}")
+    """Print a user-facing success message in green."""
+    log_message("SUCCESS", f"{Colors.GREEN}{message}{Colors.RESET}")
 
 
 def print_info(message: str) -> None:
+    """Print a user-facing informational message in cyan."""
+    log_message("INFO", f"{Colors.CYAN}{message}{Colors.RESET}")
+
+
+def print_debug(message: str) -> None:
     """Print detailed post-processing progress when DEBUG logging is enabled."""
     log_message("DEBUG", f"{Colors.CYAN}{message}{Colors.RESET}")
+
+
+def print_debug_success(message: str) -> None:
+    """Print detailed post-processing success output when DEBUG logging is enabled."""
+    log_message("DEBUG", f"{Colors.GREEN}{message}{Colors.RESET}")
 
 
 def print_warning(message: str) -> None:
@@ -59,21 +69,21 @@ def validate_existing_file(path: str | Path, label: str) -> Path | None:
 
 def open_docx(docx_path: str | Path) -> tuple[DocumentObject | None, Path | None]:
     """Validate and open a DOCX file for standalone post-process scripts."""
-    print_info("Validating inputs...")
+    print_debug("Validating inputs...")
     docx_file = validate_existing_file(docx_path, "DOCX file")
     if docx_file is None:
         return None, None
 
-    print_info(f"Processing: {docx_file}")
-    print_info("Opening document...")
+    print_debug(f"Processing: {docx_file}")
+    print_debug("Opening document...")
     return Document(str(docx_file)), docx_file
 
 
 def save_docx(doc: DocumentObject, docx_path: str | Path) -> None:
     """Save a DOCX document with consistent progress logging."""
-    print_info("Saving document...")
+    print_debug("Saving document...")
     doc.save(str(docx_path))
-    print_success("Document saved")
+    print_debug_success("Document saved")
 
 
 def get_or_add_child(parent, tag: str):

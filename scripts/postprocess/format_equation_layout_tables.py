@@ -46,8 +46,8 @@ from postprocess.common import (
     get_or_add_tbl_pr,
     open_docx,
     print_error,
-    print_info,
-    print_success,
+    print_debug,
+    print_debug_success,
     print_warning,
     save_docx,
 )
@@ -391,10 +391,10 @@ def format_equation_layout_tables(doc: DocumentObject) -> int:
     processed_count = 0
 
     if table_count == 0:
-        print_info("No tables found in document")
+        print_debug("No tables found in document")
         return processed_count
 
-    print_info(f"Formatting equation layout tables among {table_count} table(s)...")
+    print_debug(f"Formatting equation layout tables among {table_count} table(s)...")
     for i, table in enumerate(doc.tables, start=1):
         try:
             if not is_equation_layout_table(table):
@@ -402,11 +402,11 @@ def format_equation_layout_tables(doc: DocumentObject) -> int:
 
             format_equation_layout_table(table)
             processed_count += 1
-            print_info(f"Formatted equation layout table {i}")
+            print_debug(f"Formatted equation layout table {i}")
         except Exception as e:
             print_warning(f"Failed to format equation layout table {i}: {e}")
 
-    print_success(f"Formatted {processed_count} equation layout table(s)")
+    print_debug_success(f"Formatted {processed_count} equation layout table(s)")
     return processed_count
 
 
@@ -432,9 +432,9 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
             if processed_count > 0:
                 save_docx(doc, docx_path_abs)
             else:
-                print_info("No changes made, skipping save")
+                print_debug("No changes made, skipping save")
 
-        print_success("\nEquation layout table formatting completed successfully!")
+        print_debug_success("\nEquation layout table formatting completed successfully!")
         return doc
 
     except Exception as e:

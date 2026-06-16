@@ -23,7 +23,7 @@ if __package__ in (None, ""):
     # Allow direct execution via `uv run scripts/postprocess/<script>.py`.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from postprocess.common import open_docx, print_error, print_success, save_docx
+from postprocess.common import open_docx, print_error, print_debug_success, save_docx
 
 try:
     from docx.document import Document as DocumentObject
@@ -122,7 +122,7 @@ def process_file(docx_path: str, save: bool = True) -> int | None:
     if save and updated:
         save_docx(doc, docx_path_abs)
 
-    print_success(f"Added trailing spaces after {updated} standalone inline math paragraph(s)")
+    print_debug_success(f"Added trailing spaces after {updated} standalone inline math paragraph(s)")
     return updated
 
 

@@ -23,7 +23,7 @@ if __package__ in (None, ""):
     # Allow direct execution via `uv run scripts/postprocess/<script>.py`.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from postprocess.common import open_docx, print_error, print_success, save_docx
+from postprocess.common import open_docx, print_error, print_debug_success, save_docx
 from postprocess.autofit_tables import is_equation_layout_table
 
 try:
@@ -125,7 +125,7 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
         if save:
             save_docx(doc, docx_path_abs)
 
-        print_success(
+        print_debug_success(
             "Reply blue italic formatting applied: "
             f"{stats['caption_styles']} caption style(s), "
             f"{stats['caption_paragraphs']} caption paragraph(s), "

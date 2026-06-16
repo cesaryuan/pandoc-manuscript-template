@@ -29,8 +29,8 @@ from postprocess.common import (
     iter_body_blocks,
     open_docx,
     print_error,
-    print_info,
-    print_success,
+    print_debug,
+    print_debug_success,
     print_warning,
     save_docx,
 )
@@ -72,10 +72,10 @@ def ensure_para_after_table_style_exists(doc: DocumentObject) -> bool:
     try:
         para_after_table_style = cast(_ParagraphStyle, doc.styles[PARA_AFTER_TABLE_STYLE_NAME])
         configure_para_after_table_style(para_after_table_style, body_text_style)
-        print_info(f"'{PARA_AFTER_TABLE_STYLE_NAME}' style already exists")
+        print_debug(f"'{PARA_AFTER_TABLE_STYLE_NAME}' style already exists")
         return True
     except KeyError:
-        print_info(f"'{PARA_AFTER_TABLE_STYLE_NAME}' style not found, creating it...")
+        print_debug(f"'{PARA_AFTER_TABLE_STYLE_NAME}' style not found, creating it...")
 
     try:
         style = cast(
@@ -83,7 +83,7 @@ def ensure_para_after_table_style_exists(doc: DocumentObject) -> bool:
             doc.styles.add_style(PARA_AFTER_TABLE_STYLE_NAME, WD_STYLE_TYPE.PARAGRAPH),
         )
         configure_para_after_table_style(style, body_text_style)
-        print_success(
+        print_debug_success(
             f"'{PARA_AFTER_TABLE_STYLE_NAME}' style created based on '{body_text_style_name}' "
             f"with {PARA_AFTER_TABLE_SPACE_BEFORE_PT:g} pt spacing before"
         )
@@ -139,7 +139,7 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
         if save:
             save_docx(doc, docx_path_abs)
 
-        print_success(f"Applied '{PARA_AFTER_TABLE_STYLE_NAME}' style to {updated} paragraph(s)")
+        print_debug_success(f"Applied '{PARA_AFTER_TABLE_STYLE_NAME}' style to {updated} paragraph(s)")
         return doc
     except Exception as e:
         print_error(f"\nPara After Table style processing failed: {e}")

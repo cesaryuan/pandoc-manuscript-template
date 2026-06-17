@@ -10,7 +10,7 @@ A professional, reusable template for academic manuscripts focused on DOCX outpu
 - **Flexible citations**: Support for 9000+ citation styles via CSL
 - **Journal-ready DOCX workflow**: Reference-document styling and post-processing for submission files
 - **Installable CLI**: Use `pmt` directly after package installation or through `uvx`
-- **Reproducible**: Version-controlled workflow with CLI, Python, and Make-based builds
+- **Reproducible**: Version-controlled workflow with CLI, Python
 
 ## Quick Start
 
@@ -21,9 +21,6 @@ Install the following tools:
 1. **Pandoc** (>= 3.0): [Download](https://pandoc.org/installing.html)
 2. **pandoc-crossref**: Required for figure, table, equation, and section references
 3. **UV**: Recommended for running the `pmt` CLI and Python filters
-4. **Make** (optional):
-   - Windows: Install via [Chocolatey](https://chocolatey.org/) (`choco install make`) or use WSL
-   - macOS/Linux: Pre-installed
 
 ### Generate Your First Document
 
@@ -157,7 +154,7 @@ Avoid Pandoc's compact string-only author syntax, such as `author: [First Author
 
 ### Output Style Metadata
 
-Style-oriented metadata lives in `style.yml` so the manuscript YAML header can stay focused on the paper itself. During `pmt build docx`, `pmt build latex`, `make docx`, or `make latex`, the build loads `style.yml` before `manuscript.md`; any field already defined in the manuscript YAML header overrides the style default.
+Style-oriented metadata lives in `style.yml` so the manuscript YAML header can stay focused on the paper itself. During `pmt build docx`, `pmt build latex`, the build loads `style.yml` before `manuscript.md`; any field already defined in the manuscript YAML header overrides the style default.
 
 If you want to change style-related content in a generated manuscript project, edit `style.yml`. The top-level keys cover the normal manuscript build, while the optional `reply:` section stores reply-specific overrides used by `pmt build reply`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
 
@@ -206,7 +203,7 @@ Common style fields under `docxStyle` include:
 
 ### Optional LaTeX Source Configuration
 
-The primary workflow is DOCX generation. If you also generate LaTeX source with `make latex`, you can edit the YAML header in `manuscript.md` for document-class-specific output:
+The primary workflow is DOCX generation. If you also generate LaTeX source, you can edit the YAML header in `manuscript.md` for document-class-specific output:
 
 #### Example 1: Elsevier Journal
 
@@ -353,7 +350,7 @@ Use standard Pandoc citation syntax:
 
 ### Advanced Table Formatting (DOCX Post-Processing)
 
-When generating DOCX output with `make docx`, three post-processing scripts automatically enhance table formatting:
+When generating DOCX output, three post-processing scripts automatically enhance table formatting:
 
 #### 1. Table Metadata
 
@@ -462,14 +459,6 @@ The reply build reads its reply-specific defaults from the `reply:` section in
 `output/docx/manuscript.docx`. The line source is only read when the reply uses
 ``(Line `regex`)`` placeholders.
 
-### Using Make
-
-```bash
-make docx          # Generate DOCX
-make latex         # Generate LaTeX source only
-make json          # Generate Pandoc JSON AST for debugging
-make clean         # Remove generated files
-make help          # Show available commands
 ```
 
 ### Command Options
@@ -508,8 +497,6 @@ When an output directory is supplied, `docx`, `latex`, and `json`
 subdirectories are created under it.
 
 ### Direct Pandoc Commands
-
-If Make is not available:
 
 ```bash
 # Generate DOCX
@@ -558,7 +545,6 @@ See the [manuscript-template submodule](pandoc/manuscript-template/) for advance
 - [ ] Add figures to appropriate directory and reference in text
 - [ ] Create/update bibliography file with all references
 - [ ] Select appropriate citation style (CSL file)
-- [ ] Generate DOCX: `make docx`
 - [ ] Review output in Word/LibreOffice
 - [ ] Verify all figures, tables, and references appear correctly
 - [ ] Run journal-specific formatting checks (line numbers, anonymization, etc.)

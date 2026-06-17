@@ -21,11 +21,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-if __package__ in (None, ""):
-    # Allow direct execution via `uv run scripts/postprocess/<script>.py`.
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from postprocess.common import (
+from .common import (
     get_or_add_tbl_pr,
     open_docx,
     print_error,

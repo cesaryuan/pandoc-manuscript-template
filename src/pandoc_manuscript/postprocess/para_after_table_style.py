@@ -19,11 +19,7 @@ import sys
 from pathlib import Path
 from typing import Optional, cast
 
-if __package__ in (None, ""):
-    # Allow direct execution via `uv run scripts/postprocess/<script>.py`.
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from postprocess.common import (
+from .common import (
     BODY_TEXT_STYLE_NAMES,
     get_body_text_style,
     iter_body_blocks,

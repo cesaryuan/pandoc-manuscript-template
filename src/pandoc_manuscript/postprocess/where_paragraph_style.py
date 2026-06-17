@@ -21,11 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-if __package__ in (None, ""):
-    # Allow direct execution via `uv run scripts/postprocess/<script>.py`.
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from postprocess.autofit_tables import is_equation_layout_table
+from .autofit_tables import is_equation_layout_table
 
 try:
     from docx.document import Document as DocumentObject
@@ -39,7 +35,7 @@ except ImportError:
     print("Error: python-docx is not installed. Install it with: pip install python-docx")
     sys.exit(1)
 
-from postprocess.common import (
+from .common import (
     BODY_TEXT_STYLE_NAMES as BODY_TEXT_STYLE_CANDIDATES,
     get_first_existing_paragraph_style,
     iter_body_blocks,

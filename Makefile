@@ -1,39 +1,17 @@
 # Pandoc Manuscript Template - Makefile
-# Wrapper for build.py - provides backward compatibility
+# Wrapper for pmt - provides backward-compatible make targets
 #
-# This Makefile delegates all build tasks to build.py for better
-# maintainability and readability. You can use either:
+# This Makefile delegates all build tasks to the installed pmt CLI so make and
+# direct CLI usage exercise the same package-owned build pipeline. You can use:
 #   - make <target>  (traditional)
-#   - python build.py <target>  (direct)
+#   - pmt build <target>  (direct)
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
-# Build script
-BUILD_SCRIPT = scripts/build.py
-
-# ============================================================================
-# PLATFORM DETECTION AND RUNNER SELECTION
-# ============================================================================
-
-ifeq ($(OS),Windows_NT)
-    # Windows - check for uv, fallback to python
-    UV_CHECK := $(shell where uv 2>nul)
-    ifneq ($(UV_CHECK),)
-        RUNNER = uv run
-    else
-        RUNNER = python
-    endif
-else
-    # Unix/Linux/macOS - check for uv, fallback to python3
-    UV_CHECK := $(shell command -v uv 2>/dev/null)
-    ifneq ($(UV_CHECK),)
-        RUNNER = uv run
-    else
-        RUNNER = python3
-    endif
-endif
+# CLI executable. Override with `make docx PMT="uv run pmt"` if needed.
+PMT ?= pmt
 
 # ============================================================================
 # TARGETS
@@ -45,24 +23,24 @@ endif
 all: docx
 
 help:
-	@$(RUNNER) $(BUILD_SCRIPT) help
+	@$(PMT) build help
 
 # Generate DOCX file
 docx:
-	@$(RUNNER) $(BUILD_SCRIPT) docx
+	@$(PMT) build docx
 
 # Generate LaTeX file
 latex:
-	@$(RUNNER) $(BUILD_SCRIPT) latex
+	@$(PMT) build latex
 
 # Generate Pandoc JSON AST for debugging
 json:
-	@$(RUNNER) $(BUILD_SCRIPT) json
+	@$(PMT) build json
 
 # Clean all generated files
 clean:
-	@$(RUNNER) $(BUILD_SCRIPT) clean
+	@$(PMT) build clean
 
 # Deep clean (including pandoc cache)
 distclean:
-	@$(RUNNER) $(BUILD_SCRIPT) distclean
+	@$(PMT) build distclean

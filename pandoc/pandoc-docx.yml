@@ -2,18 +2,15 @@
 # Usage: pandoc --defaults pandoc.yml
 
 verbosity: WARNING
-input-files:
-  - manuscript.md
-
-output-file: output/docx/manuscript.docx
 standalone: true
-reference-doc: pandoc/manuscript-template/reference-doc.docx
+csl: ${.}/csl/elsevier-vancouver.csl
+reference-doc: ${.}/manuscript-template/reference-doc.docx
 # Custom XML template for DOCX formatting
-template: pandoc/templates/default.xml
+template: ${.}/templates/default.xml
 
 # Filters are applied in order
 filters:
   - pandoc-crossref  # Must come before citeproc
   - citeproc
-  - pandoc/filters/citation_number_range_delimiter.lua
-  - pandoc/filters/italic_to_emphasis_style.lua
+  - ${.}/filters/citation_number_range_delimiter.lua
+  - ${.}/filters/italic_to_emphasis_style.lua

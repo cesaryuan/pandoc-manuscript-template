@@ -13,10 +13,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-if __package__ in (None, ""):
-    # Allow direct execution via `uv run scripts/postprocess/<script>.py`.
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
 try:
     from docx.document import Document as DocumentObject
     from docx.oxml import OxmlElement
@@ -26,8 +22,8 @@ except ImportError as e:
     print("Install with: pip install python-docx pyyaml")
     sys.exit(1)
 
-from metadata import load_merged_metadata
-from postprocess.common import open_docx, print_debug, print_debug_success, print_warning, save_docx, validate_existing_file
+from ..metadata import load_merged_metadata
+from .common import open_docx, print_debug, print_debug_success, print_warning, save_docx, validate_existing_file
 
 
 LINE_NUMBER_METADATA_KEYS = ("show-line-numbers", "showLineNumbers", "show_line_numbers")

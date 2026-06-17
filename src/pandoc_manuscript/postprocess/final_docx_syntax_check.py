@@ -26,11 +26,7 @@ from pathlib import Path
 from typing import Iterable
 from xml.etree import ElementTree as ET
 
-if __package__ in (None, ""):
-    # Allow direct execution via `uv run scripts/postprocess/<script>.py`.
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from postprocess.common import print_error, print_info, print_success, print_warning
+from .common import print_error, print_info, print_success, print_warning
 
 
 WORD_NAMESPACE = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}

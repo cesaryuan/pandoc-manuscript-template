@@ -2,15 +2,9 @@
 """Convert a marker-bearing DOCX from OMML equations to MathType OLE equations."""
 
 import argparse
-import sys
 from pathlib import Path
 
-if __package__ in (None, ""):
-    # Preserve direct execution via `python scripts/mathtype/convert_marked_docx.py`.
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    __package__ = "mathtype"
-
-from logging_utils import log_info
+from ..logging_utils import log_info
 
 from .marked_docx import extract_marked_equation_requests, inspect_docx, replace_marked_omml_with_generated
 from .ole_parts import build_helper, generate_equation_parts
@@ -22,7 +16,7 @@ def convert_marked_docx(source: Path, target: Path, work_dir: Path) -> int:
     if not requests:
         raise ValueError(
             f"No hidden MathType markers found in {source}; "
-            "build the DOCX with scripts/mathtype/mathtype_markers.lua first"
+            "build the DOCX with the packaged MathType marker Lua filter first"
         )
 
     size_summary = sorted({request.font_size_pt for request in requests if request.font_size_pt is not None})

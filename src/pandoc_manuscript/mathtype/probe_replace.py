@@ -3,15 +3,9 @@
 
 import argparse
 import shutil
-import sys
 from pathlib import Path
 
-if __package__ in (None, ""):
-    # Preserve direct execution via `python scripts/mathtype/probe_replace.py`.
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    __package__ = "mathtype"
-
-from logging_utils import log_info
+from ..logging_utils import log_info
 
 from .docx_ole import replace_omml_with_template
 

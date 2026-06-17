@@ -9,7 +9,8 @@ A professional, reusable template for academic manuscripts focused on DOCX outpu
 - **Cross-references**: Automatic numbering and linking for figures, tables, equations, and sections
 - **Flexible citations**: Support for 9000+ citation styles via CSL
 - **Journal-ready DOCX workflow**: Reference-document styling and post-processing for submission files
-- **Reproducible**: Version-controlled workflow with Make-based builds
+- **Installable CLI**: Use `pmt` directly after package installation or through `uvx`
+- **Reproducible**: Version-controlled workflow with CLI, Python
 
 ## Quick Start
 
@@ -18,47 +19,43 @@ A professional, reusable template for academic manuscripts focused on DOCX outpu
 Install the following tools:
 
 1. **Pandoc** (>= 3.0): [Download](https://pandoc.org/installing.html)
-2. **UV**: For Pandoc filters
-3. **Make** (optional but recommended):
-   - Windows: Install via [Chocolatey](https://chocolatey.org/) (`choco install make`) or use WSL
-   - macOS/Linux: Pre-installed
+2. **pandoc-crossref**: Required for figure, table, equation, and section references
+3. **UV**: Recommended for running the `pmt` CLI and Python filters
 
 ### Generate Your First Document
 
-1. **Clone this repository**:
+1. **Create a manuscript project with `pmt`**:
    ```bash
-   git clone <repository-url>
-   cd pandoc-manuscript-template
+   uvx --from git+https://github.com/yourname/pandoc-manuscript-template pmt init my-paper
+   cd my-paper
    ```
 
-2. **Initialize submodules**:
+   When the package is installed as a tool, use:
    ```bash
-   git submodule update --init --recursive
+   uv tool install pandoc-manuscript-template
+   pmt init my-paper
+   ```
+
+2. **Check your environment**:
+   ```bash
+   pmt doctor
    ```
 
 3. **Generate DOCX**:
    ```bash
-   make docx
-   # or 
-   uv run scripts/build.py docx
+   pmt build docx
    # Output: output/docx/manuscript.docx
    ```
 
    To build a different markdown file without editing the Pandoc defaults:
    ```bash
-   uv run scripts/build.py docx paper.md
+   pmt build docx paper.md
    # Output: output/docx/paper.docx
-   ```
-
-   To write generated files under another output directory:
-   ```bash
-   uv run scripts/build.py docx paper.md --output-dir build
-   # Output: build/docx/paper.docx
    ```
 
 4. **View available commands**:
    ```bash
-   make help
+   pmt --help
    ```
 
 ## Usage Guide
@@ -157,9 +154,9 @@ Avoid Pandoc's compact string-only author syntax, such as `author: [First Author
 
 ### Output Style Metadata
 
-Style-oriented metadata lives in `style.yml` so the manuscript YAML header can stay focused on the paper itself. During `make docx`, `make latex`, or `uv run scripts/build.py ...`, the build script loads `style.yml` before `manuscript.md`; any field already defined in the manuscript YAML header overrides the style default.
+Style-oriented metadata lives in `style.yml` so the manuscript YAML header can stay focused on the paper itself. During `pmt build docx`, `pmt build latex`, the build loads `style.yml` before `manuscript.md`; any field already defined in the manuscript YAML header overrides the style default.
 
-If you want to change style-related content, edit `style.yml`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
+If you want to change style-related content in a generated manuscript project, edit `style.yml`. The top-level keys cover the normal manuscript build, while the optional `reply:` section stores reply-specific overrides used by `pmt build-reply`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
 
 Collapsed numeric citation ranges can use a journal-specific delimiter after Pandoc citeproc renders them. Set `citation-number-range-delimiter` in `style.yml`, or override it in the manuscript YAML header:
 
@@ -181,21 +178,34 @@ to:
 
 This changes citations such as `[1,3]` to `[1, 3]`. It does not control collapsed ranges such as `[1-3]`, which are handled by `citation-number-range-delimiter`.
 
-The DOCX post-processing step can update the `Body Text` paragraph style from the merged YAML metadata. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
+The DOCX post-processing step can update paragraph styles from the merged YAML metadata. Add style names under `docxStyle`; each key is matched against an existing DOCX style name, and missing styles are reported as warnings without stopping the build. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
+
+Common Chinese built-in names such as `标题 1`, `正文文本`, and `正文` are automatically mapped to the corresponding Word built-in style names like `Heading 1`, `Body Text`, and `Normal`. Custom styles still need to use their exact DOCX style names.
 
 ```yaml
-bodyText:
-  firstLineIndentChars: 2
-  paragraphSpacing:
-    before: 0pt
-    after: 0pt
+docxStyle:
+  正文文本:
+    firstLineIndentChars: 2
+    paragraphSpacing:
+      before: 0pt
+      after: 0pt
 ```
 
-Use point values for paragraph spacing, such as `6pt`. The first-line indent is written as a Word character-based indent, so `2` means two characters rather than a fixed centimeter or inch value.
+Use point values for paragraph spacing, such as `6pt`. The first-line indent is written as a Word character-based indent, so `2` means two characters rather than a fixed centimeter or inch value. Fields that are omitted from a style block are left unchanged in the DOCX style.
+
+Common style fields under `docxStyle` include:
+
+- `fontSize`: font size such as `10.5pt` or Chinese Word sizes like `小五` and `四号`
+- `fontColor`: font color such as `#000000` or `rgb(0, 0, 0)`
+- `lineSpacing`: paragraph line spacing such as `1.5` or `18pt`
+- `alignment`: `left`, `center`, `right`, or `justify`
+- `firstLineIndentChars`: Word character-based first-line indent
+- `indentation`: length-based `left`, `right`, `firstLine`, or `hanging` indent values such as `0.5cm`
+- `paragraphSpacing`: `before` and `after` spacing values such as `6pt`
 
 ### Optional LaTeX Source Configuration
 
-The primary workflow is DOCX generation. If you also generate LaTeX source with `make latex`, you can edit the YAML header in `manuscript.md` for document-class-specific output:
+The primary workflow is DOCX generation. If you also generate LaTeX source, you can edit the YAML header in `manuscript.md` for document-class-specific output:
 
 #### Example 1: Elsevier Journal
 
@@ -342,7 +352,7 @@ Use standard Pandoc citation syntax:
 
 ### Advanced Table Formatting (DOCX Post-Processing)
 
-When generating DOCX output with `make docx`, three post-processing scripts automatically enhance table formatting:
+When generating DOCX output, three post-processing scripts automatically enhance table formatting:
 
 #### 1. Table Metadata
 
@@ -399,64 +409,92 @@ In this example, "Group A" will span two rows (merging with the cell below conta
 
 All tables are automatically fitted to window width and centered. This can be overridden using the `autofit` metadata key.
 
-**Post-processing scripts location**: `scripts/`
-- `process-table-metadata.ps1` - Applies metadata from captions
-- `merge-table-cells.ps1` - Merges cells based on markers
-- `autofit-tables.ps1` - Auto-fits tables to window
+**Post-processing modules location**: `src/pandoc_manuscript/postprocess/`
+- `process_table_metadata.py` - Applies metadata from captions
+- `merge_table_cells.py` - Merges cells based on markers
+- `autofit_tables.py` - Auto-fits tables to window
 
-These scripts run automatically when `ENABLE_DOCX_POSTPROCESS = true` in the Makefile (Windows only, requires Microsoft Word).
+These modules run automatically during `pmt build docx` and `pmt build-reply` when DOCX post-processing is enabled.
 
 ## Build System
 
-### Using Make (Recommended)
+### Using pmt (Recommended)
+
+The package CLI is the preferred entry point for new projects. It can initialize
+a manuscript directory, check external tools, and run the existing Pandoc build
+pipeline.
 
 ```bash
-make docx          # Generate DOCX
-make latex         # Generate LaTeX source only
-make json          # Generate Pandoc JSON AST for debugging
-make clean         # Remove generated files
-make help          # Show available commands
+pmt init my-paper     # Create a manuscript project
+pmt doctor            # Check Pandoc, pandoc-crossref, Python dependencies, and project files
+pmt build docx        # Generate output/docx/manuscript.docx
+pmt build latex       # Generate output/latex/manuscript.tex
+pmt build json        # Generate output/json/manuscript.json
+pmt clean             # Remove generated files
 ```
 
-### Using the Python Build Script
-
-The Python build script is the most flexible direct entry point. It uses the
-same Pandoc defaults as Make, but it can also build a markdown file specified
-on the command line.
+Use `pmt build` for non-default inputs:
 
 ```bash
-uv run scripts/build.py docx              # Generate output/docx/manuscript.docx
-uv run scripts/build.py latex             # Generate output/latex/manuscript.tex
-uv run scripts/build.py json              # Generate output/json/manuscript.json
-uv run scripts/build.py docx paper.md     # Generate output/docx/paper.docx
-uv run scripts/build.py latex paper.md    # Generate output/latex/paper.tex
-uv run scripts/build.py json paper.md     # Generate output/json/paper.json
+pmt build docx paper.md -o build
+pmt build latex paper.md
+```
+
+For DOCX output, pass `--reference-doc custom-reference.docx` to override the
+bundled Word reference document. The option is supported by `pmt build docx`
+and `pmt build-reply`.
+
+Reviewer replies can be built with the same DOCX pipeline. The `build-reply` command resolves manuscript cross-references and citations against the manuscript before converting the reply letter:
+
+```bash
+pmt build-reply reply.md \
+  --reply-manuscript manuscript.md \
+  --output-file output/docx/reply.docx
+```
+
+The reply build reads its reply-specific defaults from the `reply:` section in
+`style.yml`, while `--manuscript-line-source` defaults to
+`output/docx/manuscript.docx`. The line source is only read when the reply uses
+``(Line `regex`)`` placeholders. The reply markdown path itself is required.
+
+```
+
+### Command Options
+
+The `pmt build` command can build a markdown file specified on the command
+line. When a markdown file is supplied, the output file name is derived from
+that file's stem.
+
+```bash
+pmt build docx              # Generate output/docx/manuscript.docx
+pmt build latex             # Generate output/latex/manuscript.tex
+pmt build json              # Generate output/json/manuscript.json
+pmt build docx paper.md     # Generate output/docx/paper.docx
+pmt build latex paper.md    # Generate output/latex/paper.tex
+pmt build json paper.md     # Generate output/json/paper.json
 ```
 
 You can also pass the markdown path with `--manuscript` or `-m`:
 
 ```bash
-uv run scripts/build.py docx --manuscript paper.md
-uv run scripts/build.py latex -m paper.md
+pmt build docx --manuscript paper.md
+pmt build latex -m paper.md
 ```
 
 Use `--output-dir` or `-o` to change the base output directory:
 
 ```bash
-uv run scripts/build.py docx paper.md --output-dir build  # Generate build/docx/paper.docx
-uv run scripts/build.py latex paper.md -o build           # Generate build/latex/paper.tex
-uv run scripts/build.py json paper.md -o build            # Generate build/json/paper.json
-uv run scripts/build.py clean --output-dir build          # Remove build/
+pmt build docx paper.md --output-dir build  # Generate build/docx/paper.docx
+pmt build latex paper.md -o build           # Generate build/latex/paper.tex
+pmt build json paper.md -o build            # Generate build/json/paper.json
+pmt clean --output-dir build                # Remove build/
 ```
 
-When a markdown file is supplied, the output file name is derived from that
-file's stem. The DOCX post-processing step reads YAML metadata from the same
-markdown file. When an output directory is supplied, `docx`, `latex`, and `json`
+The DOCX post-processing step reads YAML metadata from the same markdown file.
+When an output directory is supplied, `docx`, `latex`, and `json`
 subdirectories are created under it.
 
 ### Direct Pandoc Commands
-
-If Make is not available:
 
 ```bash
 # Generate DOCX
@@ -505,7 +543,6 @@ See the [manuscript-template submodule](pandoc/manuscript-template/) for advance
 - [ ] Add figures to appropriate directory and reference in text
 - [ ] Create/update bibliography file with all references
 - [ ] Select appropriate citation style (CSL file)
-- [ ] Generate DOCX: `make docx`
 - [ ] Review output in Word/LibreOffice
 - [ ] Verify all figures, tables, and references appear correctly
 - [ ] Run journal-specific formatting checks (line numbers, anonymization, etc.)

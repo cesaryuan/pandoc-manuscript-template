@@ -194,6 +194,16 @@ docxStyle:
 
 Use point values for paragraph spacing, such as `6pt`. The first-line indent is written as a Word character-based indent, so `2` means two characters rather than a fixed centimeter or inch value. Fields that are omitted from a style block are left unchanged in the DOCX style.
 
+Common style fields under `docxStyle` include:
+
+- `fontSize`: font size such as `10.5pt` or Chinese Word sizes like `小五` and `四号`
+- `fontColor`: font color such as `#000000` or `rgb(0, 0, 0)`
+- `lineSpacing`: paragraph line spacing such as `1.5` or `18pt`
+- `alignment`: `left`, `center`, `right`, or `justify`
+- `firstLineIndentChars`: Word character-based first-line indent
+- `indentation`: length-based `left`, `right`, `firstLine`, or `hanging` indent values such as `0.5cm`
+- `paragraphSpacing`: `before` and `after` spacing values such as `6pt`
+
 ### Optional LaTeX Source Configuration
 
 The primary workflow is DOCX generation. If you also generate LaTeX source with `make latex`, you can edit the YAML header in `manuscript.md` for document-class-specific output:

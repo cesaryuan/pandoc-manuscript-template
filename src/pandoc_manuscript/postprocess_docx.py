@@ -40,7 +40,7 @@ try:
     from .postprocess.insert_author_info import insert_author_info_to_doc
     from .postprocess.clear_subfigure_table_format import clear_subfigure_table_format
     from .postprocess.format_equation_layout_tables import format_equation_layout_tables
-    from .postprocess.docx_style import apply_docx_style_metadata
+    from .postprocess.docx_style import apply_docx_style_metadata, format_applied_style_summary
     from .postprocess.inline_math_spacing import add_space_after_standalone_inline_math
     from .postprocess.line_numbers import apply_line_number_metadata
     from .postprocess.where_paragraph_style import process_where_paragraph_styles
@@ -142,14 +142,7 @@ def postprocess_docx(
                 print_warning("No docxStyle metadata found, skipping")
                 return
             for applied in result["applied"]:
-                indent = applied.get("first_line_indent_chars", "unchanged")
-                before = applied.get("space_before_pt", "unchanged")
-                after = applied.get("space_after_pt", "unchanged")
-                print_debug_success(
-                    f"Style '{applied['applied_style_name']}': "
-                    f"first-line indent {indent} chars, "
-                    f"before {before} pt, after {after} pt"
-                )
+                print_debug_success(format_applied_style_summary(applied))
 
         def apply_line_number_step() -> None:
             """Apply merged YAML line-number metadata to all DOCX sections."""

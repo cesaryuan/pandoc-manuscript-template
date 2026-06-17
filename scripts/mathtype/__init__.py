@@ -1,1 +1,0 @@
-"""MathType DOCX conversion helpers."""

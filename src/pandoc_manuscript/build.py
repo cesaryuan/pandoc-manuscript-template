@@ -80,7 +80,6 @@ class BuildSettings(BaseSettings):
     reference_doc: str | None = None
     reply_manuscript_file: str = "manuscript.md"
     reply_line_source: str = "output/docx/manuscript.docx"
-    reply_style_file: str = "style.reply.yml"
     reply_from_format: str = "markdown"
     reply_output_file: str | None = None
 
@@ -107,7 +106,6 @@ class BuildCliSettings(BaseSettings):
     output_dir: str | None = None
     reply_manuscript: str | None = None
     manuscript_line_source: str | None = None
-    reply_style: str | None = None
     from_format: str | None = None
     reference_doc: str | None = None
     output_file: str | None = None
@@ -226,7 +224,6 @@ def configure_reply_options(
     *,
     manuscript: str | None = None,
     line_source: str | None = None,
-    style: str | None = None,
     from_format: str | None = None,
     output_file: str | None = None,
 ) -> None:
@@ -235,8 +232,6 @@ def configure_reply_options(
         SETTINGS.reply_manuscript_file = manuscript
     if line_source:
         SETTINGS.reply_line_source = line_source
-    if style:
-        SETTINGS.reply_style_file = style
     if from_format:
         SETTINGS.reply_from_format = from_format
     if output_file:
@@ -495,7 +490,7 @@ def build_reply_docx_target() -> None:
         manuscript_line_source=Path(SETTINGS.reply_line_source),
         output=output,
         reference_doc=reply_reference_doc_path(),
-        style=Path(SETTINGS.reply_style_file),
+        style=Path(SETTINGS.style_file),
         from_format=SETTINGS.reply_from_format,
     )
 
@@ -608,7 +603,6 @@ def run_build_command(args: BuildCliSettings) -> int:
     configure_reply_options(
         manuscript=args.reply_manuscript,
         line_source=args.manuscript_line_source,
-        style=args.reply_style,
         from_format=args.from_format,
         output_file=args.output_file,
     )
@@ -623,7 +617,7 @@ def run_build_command(args: BuildCliSettings) -> int:
         raise ValueError("--output-file is only supported by the reply target.")
     if args.reference_doc and args.target not in {'docx', 'reply'}:
         raise ValueError("--reference-doc is only supported by docx and reply targets.")
-    if any([args.reply_manuscript, args.manuscript_line_source, args.reply_style, args.from_format]) and args.target != 'reply':
+    if any([args.reply_manuscript, args.manuscript_line_source, args.from_format]) and args.target != 'reply':
         raise ValueError("Reply-specific options require the reply target.")
 
     if args.target in {'docx', 'reply', 'latex', 'json'}:

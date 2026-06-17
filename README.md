@@ -159,7 +159,7 @@ Avoid Pandoc's compact string-only author syntax, such as `author: [First Author
 
 Style-oriented metadata lives in `style.yml` so the manuscript YAML header can stay focused on the paper itself. During `pmt build docx`, `pmt build latex`, `make docx`, or `make latex`, the build loads `style.yml` before `manuscript.md`; any field already defined in the manuscript YAML header overrides the style default.
 
-If you want to change style-related content, edit `style.yml`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
+If you want to change style-related content, edit `style.yml`. This file is also the project marker for `pmt`, similar to `pyproject.toml` in a Python package. The top-level keys cover the normal manuscript build, while the optional `reply:` section stores reply-specific overrides used by `pmt build reply`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
 
 Collapsed numeric citation ranges can use a journal-specific delimiter after Pandoc citeproc renders them. Set `citation-number-range-delimiter` in `style.yml`, or override it in the manuscript YAML header:
 
@@ -446,9 +446,10 @@ pmt build reply reply.md \
 
 If no reply markdown path is supplied, the reply target first looks for
 `submissions/dbe/reply_to_reviewers_first.md`, then falls back to `reply.md`.
-`--reply-style` defaults to `style.reply.yml`, and `--manuscript-line-source`
-defaults to `output/docx/manuscript.docx`. The line source is only read when the
-reply uses ``(Line `regex`)`` placeholders.
+The reply build reads its reply-specific defaults from the `reply:` section in
+`style.yml`, while `--manuscript-line-source` defaults to
+`output/docx/manuscript.docx`. The line source is only read when the reply uses
+``(Line `regex`)`` placeholders.
 
 ### Using Make
 

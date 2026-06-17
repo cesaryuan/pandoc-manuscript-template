@@ -65,6 +65,20 @@ subfigGrid: true            # Subfigure grid layout support
 subfigureChildTemplate: ($$i$$) $$t$$
 subfigureTemplate: $$figureTitle$$ $$i$$$$titleDelim$$ $$t$$
 
+# Reviewer reply output overrides. `pmt build reply` merges the top-level
+# metadata above with this section, and these values take precedence for replies.
+reply:
+  mathtype: true
+  bodyText:
+    firstLineIndentChars: 0
+    paragraphSpacing:
+      before: 6pt
+      after: 6pt
+  figPrefix: "Figure"
+  tblPrefix: "Table"
+  secPrefix: "Section"
+  eqnPrefix: "Equation"
+
 # =============================================================================
 # JOURNAL-SPECIFIC CONFIGURATION (Uncomment and customize as needed)
 # =============================================================================

@@ -14,8 +14,10 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from .logging_utils import log_debug, log_error, log_info, log_success, log_warning
-from .metadata import load_merged_metadata_with_status
+from .metadata import load_merged_metadata_with_status, merge_metadata, parse_yaml_file
 from .mathtype.convert_marked_docx import convert_marked_docx
 from .mathtype.marked_docx import extract_marked_equation_requests
 from .mathtype.ole_parts import build_helper, check_mathtype_availability
@@ -50,11 +52,34 @@ def to_pandoc_path(path: Path) -> str:
     return path.as_posix()
 
 
-def load_reply_metadata(reply: Path, style: Path) -> dict[str, Any]:
-    """Load reply style metadata, silently allowing reply markdown without YAML."""
+def load_reply_style_metadata(style: Path) -> dict[str, Any]:
+    """Load style.yml and apply its optional reply-specific metadata section."""
+    metadata = parse_yaml_file(style)
+    reply_metadata = metadata.pop("reply", None)
+    if reply_metadata is None:
+        return metadata
+    if not isinstance(reply_metadata, dict):
+        raise ValueError(f"The `reply` section in {style} must be a YAML mapping")
+    return merge_metadata(metadata, reply_metadata)
+
+
+def write_reply_style_metadata_file(style: Path) -> Path:
+    """Write flattened reply metadata for Pandoc filters that require top-level keys."""
+    REPLY_PROBE_DIR.mkdir(parents=True, exist_ok=True)
+    metadata = load_reply_style_metadata(style)
+    flattened_style = REPLY_PROBE_DIR / "style.reply.flat.yml"
+    flattened_style.write_text(
+        yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    return flattened_style
+
+
+def load_reply_metadata(reply: Path, flattened_style: Path) -> dict[str, Any]:
+    """Load flattened reply style metadata, allowing reply markdown without YAML."""
     metadata, _ = load_merged_metadata_with_status(
         reply,
-        [style],
+        [flattened_style],
         allow_missing_header=True,
     )
     return metadata
@@ -612,7 +637,8 @@ def build_reply_docx(
     """Build a reviewer-reply DOCX with manuscript references resolved first."""
     ensure_output_writable(output)
     reply_text = reply.read_text(encoding="utf-8")
-    metadata = load_reply_metadata(reply, style)
+    flattened_style = write_reply_style_metadata_file(style)
+    metadata = load_reply_metadata(reply, flattened_style)
     use_mathtype = resolve_mathtype_enabled(metadata_bool(metadata.get("mathtype")))
     pandoc_output = mathtype_marked_docx_path(output) if use_mathtype else output
     if use_mathtype:
@@ -620,8 +646,8 @@ def build_reply_docx(
 
     labels = extract_reference_labels(reply_text)
     citations = extract_citation_keys(reply_text)
-    reference_map = resolve_reference_map(manuscript, style, labels, from_format)
-    citation_map = resolve_citation_map(manuscript, style, citations, from_format)
+    reference_map = resolve_reference_map(manuscript, flattened_style, labels, from_format)
+    citation_map = resolve_citation_map(manuscript, flattened_style, citations, from_format)
     resolved_text = resolve_line_regexes(reply_text, manuscript_line_source)
     resolved_text = replace_references(resolved_text, reference_map)
     resolved_text = replace_citations(resolved_text, citation_map)

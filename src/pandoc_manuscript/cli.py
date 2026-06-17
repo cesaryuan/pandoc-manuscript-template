@@ -128,7 +128,6 @@ class BuildCommandSettings(BaseSettings):
     project_dir: Path = Path(".")
     reply_manuscript: str | None = None
     manuscript_line_source: str | None = None
-    reply_style: str | None = None
     from_format: str | None = None
     reference_doc: str | None = None
     output_file: str | None = None
@@ -147,7 +146,6 @@ class BuildCommandSettings(BaseSettings):
                 output_dir=self.output_dir,
                 reply_manuscript=self.reply_manuscript,
                 manuscript_line_source=self.manuscript_line_source,
-                reply_style=self.reply_style,
                 from_format=self.from_format,
                 reference_doc=self.reference_doc,
                 output_file=self.output_file,
@@ -167,7 +165,6 @@ class ReplySettings(BaseSettings):
     project_dir: Path = Path(".")
     reply_manuscript: str | None = None
     manuscript_line_source: str | None = None
-    reply_style: str | None = None
     from_format: str | None = None
     reference_doc: str | None = None
     output_file: str | None = None
@@ -186,7 +183,6 @@ class ReplySettings(BaseSettings):
                 output_dir=self.output_dir,
                 reply_manuscript=self.reply_manuscript,
                 manuscript_line_source=self.manuscript_line_source,
-                reply_style=self.reply_style,
                 from_format=self.from_format,
                 reference_doc=self.reference_doc,
                 output_file=self.output_file,

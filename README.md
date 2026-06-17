@@ -159,7 +159,7 @@ Avoid Pandoc's compact string-only author syntax, such as `author: [First Author
 
 Style-oriented metadata lives in `style.yml` so the manuscript YAML header can stay focused on the paper itself. During `pmt build docx`, `pmt build latex`, `make docx`, or `make latex`, the build loads `style.yml` before `manuscript.md`; any field already defined in the manuscript YAML header overrides the style default.
 
-If you want to change style-related content, edit `style.yml`. This file is also the project marker for `pmt`, similar to `pyproject.toml` in a Python package. The top-level keys cover the normal manuscript build, while the optional `reply:` section stores reply-specific overrides used by `pmt build reply`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
+If you want to change style-related content in a generated manuscript project, edit `style.yml`. The top-level keys cover the normal manuscript build, while the optional `reply:` section stores reply-specific overrides used by `pmt build reply`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
 
 Collapsed numeric citation ranges can use a journal-specific delimiter after Pandoc citeproc renders them. Set `citation-number-range-delimiter` in `style.yml`, or override it in the manuscript YAML header:
 

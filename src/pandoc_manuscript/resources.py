@@ -21,9 +21,10 @@ def package_resource_path(relative_path: str | Path) -> Path:
 
 
 def source_tree_root() -> Path | None:
-    """Return the repository root when pmt is running from this source checkout."""
+    """Return the pmt repository root when running from this source checkout."""
     root = Path(__file__).resolve().parents[2]
-    if (root / "pandoc").is_dir() and (root / "manuscript.md").is_file():
+    # Detect the tool repository itself, not a generated manuscript project.
+    if (root / "pyproject.toml").is_file() and (root / "src" / PACKAGE_NAME).is_dir():
         return root
     return None
 

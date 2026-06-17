@@ -18,18 +18,18 @@ A simple and readable build system for academic manuscripts.
 Replaces the complex Makefile with clean Python code.
 
 Usage:
-    python build.py docx       # Generate DOCX (default)
-    python build.py docx paper.md  # Generate DOCX from a specific markdown file
-    python build.py docx paper.md --output-dir build  # Generate DOCX in build/docx
-    python build.py reply reply.md  # Generate reviewer reply DOCX
-    python build.py latex      # Generate LaTeX
-    python build.py latex paper.md # Generate LaTeX from a specific markdown file
-    python build.py latex paper.md --output-dir build # Generate LaTeX in build/latex
-    python build.py json       # Generate Pandoc JSON AST for debugging
-    python build.py json paper.md --output-dir build  # Generate JSON in build/json
-    python build.py clean      # Remove generated files
-    python build.py distclean  # Deep clean (including cache)
-    python build.py help       # Show this help
+    pmt build docx       # Generate DOCX (default)
+    pmt build docx paper.md  # Generate DOCX from a specific markdown file
+    pmt build docx paper.md --output-dir build  # Generate DOCX in build/docx
+    pmt build reply reply.md  # Generate reviewer reply DOCX
+    pmt build latex      # Generate LaTeX
+    pmt build latex paper.md # Generate LaTeX from a specific markdown file
+    pmt build latex paper.md --output-dir build # Generate LaTeX in build/latex
+    pmt build json       # Generate Pandoc JSON AST for debugging
+    pmt build json paper.md --output-dir build  # Generate JSON in build/json
+    pmt build clean      # Remove generated files
+    pmt build distclean  # Deep clean (including cache)
+    pmt build --help     # Show CLI help
 
 Configuration:
     Build settings are typed by BuildSettings below and can be overridden by CLI args.
@@ -86,7 +86,7 @@ class BuildSettings(BaseSettings):
 
 SETTINGS = BuildSettings()
 
-BuildTarget = Literal["docx", "reply", "latex", "json", "clean", "distclean", "help"]
+BuildTarget = Literal["docx", "reply", "latex", "json", "clean", "distclean"]
 
 
 class BuildCliSettings(BaseSettings):
@@ -581,16 +581,6 @@ def distclean():
     log_success("\n[OK] Deep clean complete.")
 
 
-def show_help():
-    """Show help information."""
-    print(__doc__)
-    print("\nCurrent Settings:")
-    for key, value in SETTINGS.model_dump().items():
-        print(f"  {key}: {value}")
-    print("\nTo disable DOCX post-processing:")
-    print("  Set PMT_ENABLE_DOCX_POSTPROCESS=false in the environment, or adjust BuildSettings.")
-
-
 # ============================================================================
 # MAIN
 # ============================================================================
@@ -633,7 +623,6 @@ def run_build_command(args: BuildCliSettings) -> int:
         'json': build_json,
         'clean': clean,
         'distclean': distclean,
-        'help': show_help,
     }
 
     try:

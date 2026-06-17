@@ -25,7 +25,7 @@ from .build import BuildCliSettings, run_build_command
 from .resources import iter_project_template_entries, package_resource_path, template_root
 
 
-BuildTarget = Literal["docx", "reply", "latex", "json", "clean", "distclean", "help"]
+BuildTarget = Literal["docx", "reply", "latex", "json", "clean", "distclean"]
 
 BUILD_CLI_CONFIG = SettingsConfigDict(
     cli_kebab_case=True,

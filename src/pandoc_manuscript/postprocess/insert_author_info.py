@@ -226,20 +226,15 @@ def ensure_affiliation_style_exists(doc) -> None:
     """Ensure the document contains an 'Affiliation' paragraph style."""
     styles = doc.styles
 
-    try:
-        _ = styles['Affiliation']
+    if 'Affiliation' in styles:
         return
-    except KeyError:
-        pass
 
     affiliation_style = styles.add_style('Affiliation', WD_STYLE_TYPE.PARAGRAPH)
 
-    for base_style_name in ('Normal'):
-        try:
-            affiliation_style.base_style = styles[base_style_name]
-            break
-        except KeyError:
-            continue
+    # Avoid styles['Normal']: some reference DOCX files expose Normal by style_id
+    # only, which triggers python-docx's deprecated style_id lookup warning.
+    if base_style := styles.default(WD_STYLE_TYPE.PARAGRAPH):
+        affiliation_style.base_style = base_style
 
     affiliation_style.font.name = 'Times New Roman'
     affiliation_style.font.size = Pt(10)

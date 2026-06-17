@@ -181,17 +181,18 @@ to:
 
 This changes citations such as `[1,3]` to `[1, 3]`. It does not control collapsed ranges such as `[1-3]`, which are handled by `citation-number-range-delimiter`.
 
-The DOCX post-processing step can update the `Body Text` paragraph style from the merged YAML metadata. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
+The DOCX post-processing step can update paragraph styles from the merged YAML metadata. Add style names under `docxStyle`; each key is matched against an existing DOCX style name, and missing styles are reported as warnings without stopping the build. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
 
 ```yaml
-bodyText:
-  firstLineIndentChars: 2
-  paragraphSpacing:
-    before: 0pt
-    after: 0pt
+docxStyle:
+  '正文文本':
+    firstLineIndentChars: 2
+    paragraphSpacing:
+      before: 0pt
+      after: 0pt
 ```
 
-Use point values for paragraph spacing, such as `6pt`. The first-line indent is written as a Word character-based indent, so `2` means two characters rather than a fixed centimeter or inch value.
+Use point values for paragraph spacing, such as `6pt`. The first-line indent is written as a Word character-based indent, so `2` means two characters rather than a fixed centimeter or inch value. Fields that are omitted from a style block are left unchanged in the DOCX style.
 
 ### Optional LaTeX Source Configuration
 

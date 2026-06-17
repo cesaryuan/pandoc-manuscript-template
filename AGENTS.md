@@ -112,6 +112,7 @@ Write pseudocode as a one-column pipe table. Use bold control words such as `**f
 1. 引用原文时应该用 _强调_ 标签包裹起来，以示区分。引用的原文应该和文章完全一致。
 2. 引用的原文如果是图片或者表格，应该在其题注的最前面加上 `Figure @itslabel` 或者 `Table @itslabel` 来表明这是一个图片或者表格的引用。比如对于图片 `![caption](path){#fig:label}`，在回复信中应该写成 `![Figure @fig:label caption](path){#fig:label}`，这样才能保证编译出来的回复信 DOCX 中的图片编号和文章一致。
 3. 应该用 ``(Line `regex`)`` 来引用手稿中的位置，其中 `regex` 指的是一个能够在最终手稿 PDF 或由 Word DOCX 转换得到的 PDF 文本层中唯一匹配到目标修改位置的正则表达式。构建回复信时，脚本会用这个正则表达式在手稿 PDF 中查找对应文本：如果唯一匹配，则自动替换为实际行号；如果匹配 0 个或多个位置，则在日志中输出红色提示并保留原占位符，等待人工修正。
+4. 你的回复需要用 ::: {custom-style="Reply to Reviewers"} 包裹起来，以便在 DOCX 中应用特定样式。
 
 `regex` 的写法必须遵守以下原则：
 
@@ -153,7 +154,7 @@ I have completed my evaluation of your manuscript. The reviewers recommend ...
 ::: {custom-style="Reply to Reviewers"}
 _Answer:_
 
-...
+...[Your reply]...
 :::
 
 <br>
@@ -165,7 +166,7 @@ This paper introduces ... there are several improvements needed before potential
 ::: {custom-style="Reply to Reviewers"}
 _Answer:_
 
-Thank you for ...
+...[Your reply]...
 :::
 
 <br>
@@ -175,7 +176,7 @@ Thank you for ...
 ::: {custom-style="Reply to Reviewers"}
 _Answer:_
 
-We have ...
+...[Your reply]...
 
 The added explanation is as follows (Line `Figure\s+\d+\s+Visual comparison of standard and high-density COLMAP`):
 

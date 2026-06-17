@@ -26,7 +26,6 @@ from .resources import iter_project_template_entries, package_resource_path, tem
 
 
 BuildTarget = Literal["docx", "reply", "latex", "json", "clean", "distclean", "help"]
-ShortcutTarget = Literal["docx", "reply", "latex", "json"]
 
 BUILD_CLI_CONFIG = SettingsConfigDict(
     cli_kebab_case=True,
@@ -165,11 +164,11 @@ class BuildCommandSettings(BaseSettings):
         }
 
 
-class BuildShortcutSettings(BaseSettings):
-    """Shared settings for `pmt docx/reply/latex/json` shortcuts."""
+class ReplyShortcutSettings(BaseSettings):
+    """Shared settings for the `pmt reply` shortcut."""
 
     model_config = BUILD_CLI_CONFIG
-    target: ClassVar[ShortcutTarget] = "docx"
+    target: ClassVar[Literal["reply"]] = "reply"
 
     markdown: CliPositionalArg[str | None] = None
     manuscript_option: str | None = Field(default=None, validation_alias=AliasChoices("m", "manuscript"))
@@ -202,28 +201,8 @@ class BuildShortcutSettings(BaseSettings):
         }
 
 
-class DocxSettings(BuildShortcutSettings):
-    """Settings for `pmt docx`."""
-
-    target: ClassVar[ShortcutTarget] = "docx"
-
-
-class ReplySettings(BuildShortcutSettings):
+class ReplySettings(ReplyShortcutSettings):
     """Settings for `pmt reply`."""
-
-    target: ClassVar[ShortcutTarget] = "reply"
-
-
-class LatexSettings(BuildShortcutSettings):
-    """Settings for `pmt latex`."""
-
-    target: ClassVar[ShortcutTarget] = "latex"
-
-
-class JsonSettings(BuildShortcutSettings):
-    """Settings for `pmt json`."""
-
-    target: ClassVar[ShortcutTarget] = "json"
 
 
 class CleanSettings(BaseSettings):
@@ -341,10 +320,7 @@ class PmtCli(BaseSettings):
     version_flag: bool = Field(default=False, alias="version")
     init: CliSubCommand[InitSettings | None]
     build: CliSubCommand[BuildCommandSettings | None]
-    docx: CliSubCommand[DocxSettings | None]
     reply: CliSubCommand[ReplySettings | None]
-    latex: CliSubCommand[LatexSettings | None]
-    json_command: CliSubCommand[JsonSettings | None] = Field(alias="json")
     clean: CliSubCommand[CleanSettings | None]
     distclean: CliSubCommand[DistcleanSettings | None]
     doctor: CliSubCommand[DoctorSettings | None]

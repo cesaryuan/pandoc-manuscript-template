@@ -423,11 +423,11 @@ pmt build json        # Generate output/json/manuscript.json
 pmt clean             # Remove generated files
 ```
 
-Shortcuts are also available:
+Use `pmt build` for non-default inputs:
 
 ```bash
-pmt docx paper.md -o build
-pmt latex paper.md
+pmt build docx paper.md -o build
+pmt build latex paper.md
 ```
 
 For DOCX output, pass `--reference-doc custom-reference.docx` to override the

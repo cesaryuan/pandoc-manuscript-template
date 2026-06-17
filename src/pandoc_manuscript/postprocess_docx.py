@@ -40,7 +40,7 @@ try:
     from .postprocess.insert_author_info import insert_author_info_to_doc
     from .postprocess.clear_subfigure_table_format import clear_subfigure_table_format
     from .postprocess.format_equation_layout_tables import format_equation_layout_tables
-    from .postprocess.body_text_style import apply_body_text_style_metadata
+    from .postprocess.docx_style import apply_docx_style_metadata
     from .postprocess.inline_math_spacing import add_space_after_standalone_inline_math
     from .postprocess.line_numbers import apply_line_number_metadata
     from .postprocess.where_paragraph_style import process_where_paragraph_styles
@@ -57,7 +57,7 @@ except ImportError as e:
     print("  - insert_author_info.py")
     print("  - clear_subfigure_table_format.py")
     print("  - format_equation_layout_tables.py")
-    print("  - body_text_style.py")
+    print("  - docx_style.py")
     print("  - inline_math_spacing.py")
     print("  - line_numbers.py")
     print("  - where_paragraph_style.py")
@@ -135,18 +135,21 @@ def postprocess_docx(
 
             run_pipeline_step("Inserting author information", insert_author_info_step)
 
-        def apply_body_text_style_step() -> None:
-            """Apply merged YAML bodyText metadata to the DOCX body style."""
-            result = apply_body_text_style_metadata(doc, metadata)
+        def apply_docx_style_step() -> None:
+            """Apply merged YAML docxStyle metadata to configured DOCX paragraph styles."""
+            result = apply_docx_style_metadata(doc, metadata)
             if result is None:
-                print_warning("No bodyText metadata found, skipping")
+                print_warning("No docxStyle metadata found, skipping")
                 return
-            print_debug_success(
-                f"Style '{result['style_name']}': "
-                f"first-line indent {result['first_line_indent_chars']} chars, "
-                f"before {result['space_before_pt']} pt, "
-                f"after {result['space_after_pt']} pt"
-            )
+            for applied in result["applied"]:
+                indent = applied.get("first_line_indent_chars", "unchanged")
+                before = applied.get("space_before_pt", "unchanged")
+                after = applied.get("space_after_pt", "unchanged")
+                print_debug_success(
+                    f"Style '{applied['applied_style_name']}': "
+                    f"first-line indent {indent} chars, "
+                    f"before {before} pt, after {after} pt"
+                )
 
         def apply_line_number_step() -> None:
             """Apply merged YAML line-number metadata to all DOCX sections."""
@@ -223,7 +226,7 @@ def postprocess_docx(
         # Keep this ordered list explicit because DOCX post-processing steps are order-sensitive.
         pipeline_steps: list[tuple[str, Callable[[], None]]] = [
             # Metadata-driven document-wide settings must run before table-specific cleanup.
-            ("Applying body text style metadata", apply_body_text_style_step),
+            ("Applying DOCX style metadata", apply_docx_style_step),
             ("Applying line-number metadata", apply_line_number_step),
             ("Merging table cells", merge_table_cells_step),
             ("Processing table metadata", process_table_metadata_step),
@@ -271,7 +274,7 @@ Examples:
 
 Processing steps:
   - Insert author information from merged metadata (if metadata provided)
-  - Apply Body Text style settings from merged metadata (if metadata provided)
+  - Apply DOCX paragraph style settings from merged metadata (if metadata provided)
   - Apply line numbers from show-line-numbers metadata (if metadata provided)
   - Merge table cells based on markers (!<! and !^!)
   - Process table metadata from captions (|key=value|)

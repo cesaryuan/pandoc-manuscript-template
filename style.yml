@@ -22,12 +22,13 @@ mathtype: true
 # Set to true for continuous DOCX line numbers, or use a string such as
 # '连续', '每页重编', '每节重编', 'continuous', 'restart-page', or 'restart-section'.
 show-line-numbers: '连续'
-# DOCX body text formatting (applied to the Body Text style in post-processing)
-bodyText:
-  firstLineIndentChars: 2
-  paragraphSpacing:
-    before: 0pt
-    after: 0pt
+# DOCX paragraph style formatting (applied by exact style name in post-processing)
+docxStyle:
+  '正文文本':
+    firstLineIndentChars: 2
+    paragraphSpacing:
+      before: 0pt
+      after: 0pt
 
 # Pandoc-crossref settings for cross-references
 ## Item caption prefix format
@@ -69,11 +70,12 @@ subfigureTemplate: $$figureTitle$$ $$i$$$$titleDelim$$ $$t$$
 # metadata above with this section, and these values take precedence for replies.
 reply:
   mathtype: true
-  bodyText:
-    firstLineIndentChars: 0
-    paragraphSpacing:
-      before: 6pt
-      after: 6pt
+  docxStyle:
+    '正文文本':
+      firstLineIndentChars: 0
+      paragraphSpacing:
+        before: 6pt
+        after: 6pt
   figPrefix: "Figure"
   tblPrefix: "Table"
   secPrefix: "Section"

@@ -16,6 +16,7 @@ from pydantic_settings import (
     CliApp,
     CliPositionalArg,
     CliSubCommand,
+    CliSuppress,
     SettingsConfigDict,
     get_subcommand,
 )
@@ -23,7 +24,6 @@ from pydantic_settings import (
 from . import __version__
 from .build import (
     DEFAULT_OUTPUT_DIR,
-    DEFAULT_REFERENCE_DOC,
     DEFAULT_REPLY_FROM_FORMAT,
     DEFAULT_REPLY_LINE_SOURCE,
     DEFAULT_REPLY_MANUSCRIPT_FILE,
@@ -149,9 +149,9 @@ class BuildCommandSettings(BaseSettings):
         description="Base output directory.",
     )
     project_dir: Path = Field(default=Path("."), description="Manuscript project directory.")
-    reference_doc: str | None = Field(
-        default=DEFAULT_REFERENCE_DOC,
-        description="DOCX reference document for DOCX output.",
+    reference_doc: CliSuppress[str | None] = Field(
+        default=None,
+        description="Override the bundled DOCX reference document.",
     )
 
     def run(self) -> int:
@@ -202,7 +202,10 @@ class BuildReplySettings(BaseSettings):
         default=DEFAULT_REPLY_FROM_FORMAT,
         description="Pandoc input format for reply reference probes.",
     )
-    reference_doc: str | None = Field(default=DEFAULT_REFERENCE_DOC, description="DOCX reference document.")
+    reference_doc: CliSuppress[str | None] = Field(
+        default=None,
+        description="Override the bundled DOCX reference document.",
+    )
     output_file: str = Field(
         default=DEFAULT_REPLY_OUTPUT_FILE,
         description="Explicit reply DOCX output path.",

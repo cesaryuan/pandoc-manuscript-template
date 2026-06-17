@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any, Literal, Tuple
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, CliApp, CliPositionalArg, SettingsConfigDict
+from pydantic_settings import BaseSettings, CliApp, CliPositionalArg, CliSuppress, SettingsConfigDict
 
 from .logging_utils import log_error, log_info, log_success, log_warning
 from .metadata import (
@@ -64,7 +64,6 @@ from .resources import package_resource_path, template_root
 
 
 DEFAULT_OUTPUT_DIR = "output"
-DEFAULT_REFERENCE_DOC = "pandoc/manuscript-template/reference-doc.docx"
 DEFAULT_REPLY_MANUSCRIPT_FILE = "manuscript.md"
 DEFAULT_REPLY_LINE_SOURCE = "output/docx/manuscript.docx"
 DEFAULT_REPLY_FROM_FORMAT = "markdown"
@@ -121,9 +120,9 @@ class BuildCliSettings(BaseSettings):
         description="Input markdown file, equivalent to the positional MARKDOWN argument.",
     )
     output_dir: str = Field(default=DEFAULT_OUTPUT_DIR, description="Base output directory.")
-    reference_doc: str | None = Field(
-        default=DEFAULT_REFERENCE_DOC,
-        description="DOCX reference document for DOCX output.",
+    reference_doc: CliSuppress[str | None] = Field(
+        default=None,
+        description="Override the bundled DOCX reference document.",
     )
 
     def cli_cmd(self) -> None:
@@ -232,7 +231,7 @@ def configure_output_dir(output_dir: str | Path) -> None:
 
 def configure_reference_doc(reference_doc: str | None) -> None:
     """Configure a user-supplied reference DOCX for DOCX-producing targets."""
-    if reference_doc and reference_doc != DEFAULT_REFERENCE_DOC:
+    if reference_doc:
         SETTINGS.reference_doc = reference_doc
 
 
@@ -652,7 +651,6 @@ def run_build_command(args: BuildCliSettings) -> int:
     """Apply parsed CLI settings and run the selected build target."""
     if args.output_dir:
         configure_output_dir(args.output_dir)
-    configure_reference_doc(args.reference_doc)
 
     if args.markdown and args.manuscript_option:
         raise ValueError("Specify the markdown file either positionally or with --manuscript, not both.")
@@ -660,8 +658,9 @@ def run_build_command(args: BuildCliSettings) -> int:
     manuscript_arg = args.manuscript_option or args.markdown
     if manuscript_arg and args.target not in {'docx', 'latex', 'json'}:
         raise ValueError("A markdown file can only be specified for docx, latex, or json targets.")
-    if args.reference_doc != DEFAULT_REFERENCE_DOC and args.target != 'docx':
+    if args.reference_doc and args.target != 'docx':
         raise ValueError("--reference-doc is only supported by the docx target.")
+    configure_reference_doc(args.reference_doc)
 
     if args.target in {'docx', 'latex', 'json'}:
         configure_manuscript(manuscript_arg or default_input_for_target(), derive_project_name=bool(manuscript_arg))

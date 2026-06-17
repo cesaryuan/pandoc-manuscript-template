@@ -24,14 +24,16 @@ mathtype: true
 show-line-numbers: '连续'
 # DOCX paragraph style formatting (applied by exact style name in post-processing)
 docxStyle:
-  '正文文本':
+  标题 1: { fontSize: 小四 }
+  标题 2: { fontSize: 小四 }
+  正文文本:
     firstLineIndentChars: 2
     paragraphSpacing:
       before: 0pt
       after: 0pt
 
 # Pandoc-crossref settings for cross-references
-## Item caption prefix format
+## Item caption prefix format: {figureTitle} {number}{titleDelim} {caption}
 figureTitle: "Figure "
 tableTitle: "Table "
 titleDelim: ""
@@ -71,7 +73,7 @@ subfigureTemplate: $$figureTitle$$ $$i$$$$titleDelim$$ $$t$$
 reply:
   mathtype: true
   docxStyle:
-    '正文文本':
+    正文文本:
       firstLineIndentChars: 0
       paragraphSpacing:
         before: 6pt

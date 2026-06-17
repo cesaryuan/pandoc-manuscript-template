@@ -22,16 +22,8 @@ from pydantic_settings import (
 )
 
 from . import __version__
-from .build import (
-    DEFAULT_OUTPUT_DIR,
-    DEFAULT_REPLY_FROM_FORMAT,
-    DEFAULT_REPLY_LINE_SOURCE,
-    DEFAULT_REPLY_MANUSCRIPT_FILE,
-    DEFAULT_REPLY_OUTPUT_FILE,
-    BuildCliSettings,
-    run_build_reply_command,
-    run_build_command,
-)
+from .build import DEFAULT_OUTPUT_DIR, run_build_command
+from .reply_build import BuildReplySettings
 from .resources import iter_project_template_entries, package_resource_path, template_root
 
 
@@ -161,73 +153,13 @@ class BuildCommandSettings(BaseSettings):
             raise FileNotFoundError(f"Project directory not found: {project_dir}")
 
         with project_directory(project_dir):
-            build_settings = BuildCliSettings(
-                target=self.target,
-                markdown=self.markdown,
-                manuscript_option=self.manuscript_option,
-                output_dir=self.output_dir,
-                reference_doc=self.reference_doc,
-            )
-            return int(run_build_command(build_settings))
-
-
-class BuildReplySettings(BaseSettings):
-    """Settings for `pmt build-reply`."""
-
-    model_config = BUILD_CLI_CONFIG
-    markdown: CliPositionalArg[str | None] = Field(
-        default=None,
-        description="Reply markdown file. Auto: submissions/dbe/reply_to_reviewers_first.md, then reply.md.",
-    )
-    manuscript_option: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("m", "manuscript"),
-        description="Reply markdown file, equivalent to the positional MARKDOWN argument.",
-    )
-    output_dir: str = Field(
-        default=DEFAULT_OUTPUT_DIR,
-        validation_alias=AliasChoices("o", "output-dir"),
-        description="Base output directory.",
-    )
-    project_dir: Path = Field(default=Path("."), description="Manuscript project directory.")
-    reply_manuscript: str | None = Field(
-        default=DEFAULT_REPLY_MANUSCRIPT_FILE,
-        description="Manuscript source used to resolve reply references.",
-    )
-    manuscript_line_source: str | None = Field(
-        default=DEFAULT_REPLY_LINE_SOURCE,
-        description="DOCX source used for reply line placeholders.",
-    )
-    from_format: str | None = Field(
-        default=DEFAULT_REPLY_FROM_FORMAT,
-        description="Pandoc input format for reply reference probes.",
-    )
-    reference_doc: CliSuppress[str | None] = Field(
-        default=None,
-        description="Override the bundled DOCX reference document.",
-    )
-    output_file: str = Field(
-        default=DEFAULT_REPLY_OUTPUT_FILE,
-        description="Explicit reply DOCX output path.",
-    )
-
-    def run(self) -> int:
-        """Run the standalone reply build target."""
-        project_dir = self.project_dir.resolve()
-        if not project_dir.exists():
-            raise FileNotFoundError(f"Project directory not found: {project_dir}")
-
-        with project_directory(project_dir):
             return int(
-                run_build_reply_command(
+                run_build_command(
+                    target=self.target,
                     markdown=self.markdown,
                     manuscript_option=self.manuscript_option,
                     output_dir=self.output_dir,
-                    reply_manuscript=self.reply_manuscript,
-                    manuscript_line_source=self.manuscript_line_source,
-                    from_format=self.from_format,
                     reference_doc=self.reference_doc,
-                    output_file=self.output_file,
                 )
             )
 
@@ -258,11 +190,12 @@ class CleanSettings(BaseSettings):
             raise FileNotFoundError(f"Project directory not found: {project_dir}")
 
         with project_directory(project_dir):
-            build_settings = BuildCliSettings(
+            return int(
+                run_build_command(
                 target=self.target,
                 output_dir=self.output_dir,
+                )
             )
-            return int(run_build_command(build_settings))
 
 
 class DistcleanSettings(CleanSettings):

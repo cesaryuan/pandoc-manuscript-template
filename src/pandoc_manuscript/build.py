@@ -1,48 +1,14 @@
-#!/usr/bin/env python3
-# /// script
-# requires-python = ">=3.11"
-# dependencies = [
-#   "python-docx>=1.1.0",
-#   "pyyaml>=6.0",
-#   "lxml>=4.9.0",
-#   "panflute>=2.3.0",
-#   "pymupdf>=1.26.0",
-#   "pydantic-settings>=2.0.0",
-#   "dotenv>=0.9.0",
-# ]
-# ///
 """
-Pandoc Manuscript Template - Build Script
-
-A simple and readable build system for academic manuscripts.
-Replaces the complex Makefile with clean Python code.
-
-Usage:
-    pmt build docx       # Generate DOCX (default)
-    pmt build docx paper.md  # Generate DOCX from a specific markdown file
-    pmt build docx paper.md --output-dir build  # Generate DOCX in build/docx
-    pmt build-reply reply.md  # Generate reviewer reply DOCX
-    pmt build latex      # Generate LaTeX
-    pmt build latex paper.md # Generate LaTeX from a specific markdown file
-    pmt build latex paper.md --output-dir build # Generate LaTeX in build/latex
-    pmt build json       # Generate Pandoc JSON AST for debugging
-    pmt build json paper.md --output-dir build  # Generate JSON in build/json
-    pmt build clean      # Remove generated files
-    pmt build distclean  # Deep clean (including cache)
-    pmt build --help     # Show CLI help
-
-Configuration:
-    Build settings are typed by BuildSettings below and can be overridden by CLI args.
+Build normal manuscript targets for the Pandoc manuscript template.
 """
 
 import errno
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Literal, Tuple
+from typing import Any, Tuple
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, CliApp, CliPositionalArg, CliSuppress, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .logging_utils import log_error, log_info, log_success, log_warning
 from .metadata import (
@@ -55,7 +21,6 @@ from .mathtype.convert_marked_docx import convert_marked_docx
 from .mathtype.ole_parts import build_helper, check_mathtype_availability
 from .postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from .postprocess_docx import postprocess_docx as run_docx_postprocess
-from .reply_build import build_reply_docx
 from .resources import package_resource_path, template_root
 
 # ============================================================================
@@ -64,10 +29,6 @@ from .resources import package_resource_path, template_root
 
 
 DEFAULT_OUTPUT_DIR = "output"
-DEFAULT_REPLY_MANUSCRIPT_FILE = "manuscript.md"
-DEFAULT_REPLY_LINE_SOURCE = "output/docx/manuscript.docx"
-DEFAULT_REPLY_FROM_FORMAT = "markdown"
-DEFAULT_REPLY_OUTPUT_FILE = "output/docx/<reply-name>.docx"
 
 
 class BuildSettings(BaseSettings):
@@ -86,48 +47,9 @@ class BuildSettings(BaseSettings):
     mathtype_marker_filter: str = "mathtype/mathtype_markers.lua"
     mathtype_work_dir: str = "tmp/mathtype-build"
     reference_doc: str | None = None
-    reply_manuscript_file: str = DEFAULT_REPLY_MANUSCRIPT_FILE
-    reply_line_source: str = DEFAULT_REPLY_LINE_SOURCE
-    reply_from_format: str = DEFAULT_REPLY_FROM_FORMAT
-    reply_output_file: str | None = None
 
 
 SETTINGS = BuildSettings()
-
-BuildTarget = Literal["docx", "latex", "json", "clean", "distclean"]
-
-
-class BuildCliSettings(BaseSettings):
-    """CLI settings for manuscript builds parsed by pydantic-settings."""
-
-    model_config = SettingsConfigDict(
-        cli_kebab_case=True,
-        cli_hide_none_type=True,
-        cli_parse_none_str="auto",
-        cli_shortcuts={
-            "manuscript_option": ["-m", "--manuscript"],
-            "output_dir": ["-o", "--output-dir"],
-        },
-    )
-
-    target: CliPositionalArg[BuildTarget] = Field(default="docx", description="Build target.")
-    markdown: CliPositionalArg[str | None] = Field(
-        default=None,
-        description="Input markdown file. Auto: manuscript.md.",
-    )
-    manuscript_option: str | None = Field(
-        default=None,
-        description="Input markdown file, equivalent to the positional MARKDOWN argument.",
-    )
-    output_dir: str = Field(default=DEFAULT_OUTPUT_DIR, description="Base output directory.")
-    reference_doc: CliSuppress[str | None] = Field(
-        default=None,
-        description="Override the bundled DOCX reference document.",
-    )
-
-    def cli_cmd(self) -> None:
-        """Execute the parsed build command when run through CliApp."""
-        raise SystemExit(run_build_command(self))
 
 # ============================================================================
 # UTILITY FUNCTIONS
@@ -386,13 +308,6 @@ def reference_doc_args() -> list[str]:
     return ['--reference-doc', to_pandoc_path(Path(SETTINGS.reference_doc))]
 
 
-def reply_reference_doc_path() -> Path:
-    """Return the active reference DOCX path for reviewer reply builds."""
-    if SETTINGS.reference_doc:
-        return Path(SETTINGS.reference_doc)
-    return resource_path('pandoc/manuscript-template/reference-doc.docx')
-
-
 def style_metadata_args() -> list[str]:
     """Return Pandoc CLI args for project style metadata when style.yml exists."""
     return [
@@ -422,10 +337,6 @@ def project_metadata_csl() -> Any:
         pass
     return csl
 
-
-# ============================================================================
-# BUILD TARGETS
-# ============================================================================
 
 def build_docx():
     """Generate DOCX file with optional post-processing."""
@@ -475,95 +386,6 @@ def build_docx():
         raise RuntimeError("Final DOCX still contains unrendered Pandoc syntax")
 
     log_success(f"\n[OK] DOCX created: {SETTINGS.docx_dir}/{SETTINGS.project_name}.docx")
-
-
-def build_reply_docx_target() -> None:
-    """Generate a reviewer-reply DOCX using manuscript numbering and reply styling."""
-    log_info("\n[DOCX] Building reviewer reply DOCX...\n")
-    output = reply_output_path()
-    build_reply_docx(
-        reply=Path(SETTINGS.manuscript_file),
-        manuscript=Path(SETTINGS.reply_manuscript_file),
-        manuscript_line_source=Path(SETTINGS.reply_line_source),
-        output=output,
-        reference_doc=reply_reference_doc_path(),
-        style=Path(SETTINGS.style_file),
-        from_format=SETTINGS.reply_from_format,
-    )
-
-
-def configure_reply_options(
-    *,
-    manuscript: str | None = None,
-    line_source: str | None = None,
-    from_format: str | None = None,
-    output_file: str | None = None,
-) -> None:
-    """Configure reviewer-reply build inputs while keeping manuscript defaults stable."""
-    if manuscript:
-        SETTINGS.reply_manuscript_file = manuscript
-    if line_source:
-        SETTINGS.reply_line_source = line_source
-    if from_format:
-        SETTINGS.reply_from_format = from_format
-    if output_file and output_file != DEFAULT_REPLY_OUTPUT_FILE:
-        SETTINGS.reply_output_file = output_file
-
-
-def default_reply_markdown() -> str:
-    """Return the default reply markdown path used by `pmt build-reply`."""
-    legacy_reply = Path('submissions/dbe/reply_to_reviewers_first.md')
-    if legacy_reply.exists():
-        return to_pandoc_path(legacy_reply)
-    return 'reply.md'
-
-
-def run_build_reply_command(
-    *,
-    markdown: str | None = None,
-    manuscript_option: str | None = None,
-    output_dir: str | None = None,
-    reply_manuscript: str | None = None,
-    manuscript_line_source: str | None = None,
-    from_format: str | None = None,
-    reference_doc: str | None = None,
-    output_file: str | None = None,
-) -> int:
-    """Apply parsed `pmt build-reply` settings and run the reply build."""
-    if output_dir:
-        configure_output_dir(output_dir)
-    configure_reference_doc(reference_doc)
-    configure_reply_options(
-        manuscript=reply_manuscript,
-        line_source=manuscript_line_source,
-        from_format=from_format,
-        output_file=output_file,
-    )
-
-    if markdown and manuscript_option:
-        raise ValueError("Specify the reply markdown file either positionally or with --manuscript, not both.")
-
-    reply_markdown = manuscript_option or markdown or default_reply_markdown()
-    configure_manuscript(reply_markdown, derive_project_name=True)
-
-    try:
-        build_reply_docx_target()
-        return 0
-    except KeyboardInterrupt:
-        log_warning("\n\n[WARN] Build interrupted by user.")
-        return 1
-    except Exception as e:
-        log_error(f"\n[ERROR] {e}")
-        return 1
-
-
-def reply_output_path() -> Path:
-    """Return the output DOCX path for reply builds."""
-    if SETTINGS.reply_output_file:
-        return Path(SETTINGS.reply_output_file)
-    docx_dir = Path(SETTINGS.docx_dir)
-    docx_dir.mkdir(parents=True, exist_ok=True)
-    return docx_dir / f"{SETTINGS.project_name}.docx"
 
 
 def build_latex():
@@ -643,38 +465,41 @@ def distclean():
     log_success("\n[OK] Deep clean complete.")
 
 
-# ============================================================================
-# MAIN
-# ============================================================================
+def run_build_command(
+    *,
+    target: str = "docx",
+    markdown: str | None = None,
+    manuscript_option: str | None = None,
+    output_dir: str | None = None,
+    reference_doc: str | None = None,
+) -> int:
+    """Run the selected manuscript build target with direct settings values."""
+    if output_dir:
+        configure_output_dir(output_dir)
 
-def run_build_command(args: BuildCliSettings) -> int:
-    """Apply parsed CLI settings and run the selected build target."""
-    if args.output_dir:
-        configure_output_dir(args.output_dir)
-
-    if args.markdown and args.manuscript_option:
+    if markdown and manuscript_option:
         raise ValueError("Specify the markdown file either positionally or with --manuscript, not both.")
 
-    manuscript_arg = args.manuscript_option or args.markdown
-    if manuscript_arg and args.target not in {'docx', 'latex', 'json'}:
+    manuscript_arg = manuscript_option or markdown
+    if manuscript_arg and target not in {"docx", "latex", "json"}:
         raise ValueError("A markdown file can only be specified for docx, latex, or json targets.")
-    if args.reference_doc and args.target != 'docx':
+    if reference_doc and target != "docx":
         raise ValueError("--reference-doc is only supported by the docx target.")
-    configure_reference_doc(args.reference_doc)
+    configure_reference_doc(reference_doc)
 
-    if args.target in {'docx', 'latex', 'json'}:
-        configure_manuscript(manuscript_arg or default_input_for_target(), derive_project_name=bool(manuscript_arg))
+    if target in {"docx", "latex", "json"}:
+        configure_manuscript(manuscript_arg or SETTINGS.manuscript_file, derive_project_name=bool(manuscript_arg))
 
     targets = {
-        'docx': build_docx,
-        'latex': build_latex,
-        'json': build_json,
-        'clean': clean,
-        'distclean': distclean,
+        "docx": build_docx,
+        "latex": build_latex,
+        "json": build_json,
+        "clean": clean,
+        "distclean": distclean,
     }
 
     try:
-        targets[args.target]()
+        targets[target]()
         return 0
     except KeyboardInterrupt:
         log_warning("\n\n[WARN] Build interrupted by user.")
@@ -682,17 +507,3 @@ def run_build_command(args: BuildCliSettings) -> int:
     except Exception as e:
         log_error(f"\n[ERROR] {e}")
         return 1
-
-
-def main(argv: list[str] | None = None) -> None:
-    """Run the build CLI using pydantic-settings."""
-    CliApp.run(BuildCliSettings, cli_args=argv, cli_parse_args=True)
-
-
-def default_input_for_target() -> str:
-    """Return the default markdown input for non-reply build targets."""
-    return SETTINGS.manuscript_file
-
-
-if __name__ == '__main__':
-    main()

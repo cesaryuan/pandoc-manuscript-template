@@ -11,10 +11,13 @@ import subprocess
 import sys
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import yaml
+from pydantic import AliasChoices, Field
+from pydantic_settings import BaseSettings, CliPositionalArg, CliSuppress, SettingsConfigDict
 
 from .logging_utils import log_debug, log_error, log_info, log_success, log_warning
 from .metadata import load_merged_metadata_with_status, merge_metadata, parse_yaml_file
@@ -23,9 +26,15 @@ from .mathtype.marked_docx import extract_marked_equation_requests
 from .mathtype.ole_parts import build_helper, check_mathtype_availability
 from .postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from .postprocess_docx import postprocess_docx
-from .resources import package_resource_path
+from .resources import package_resource_path, template_root
 
 
+DEFAULT_OUTPUT_DIR = "output"
+DEFAULT_STYLE_FILE = "style.yml"
+DEFAULT_REPLY_MANUSCRIPT_FILE = "manuscript.md"
+DEFAULT_REPLY_LINE_SOURCE = "output/docx/manuscript.docx"
+DEFAULT_REPLY_FROM_FORMAT = "markdown"
+DEFAULT_REPLY_OUTPUT_FILE = "output/docx/<reply-name>.docx"
 LINE_SOURCE_PDF_DIR = Path("tmp/reply-line-source-pdf")
 REPLY_PROBE_DIR = Path("tmp/reply-probes")
 LABEL_CHARS_NO_DOT = r"A-Za-z0-9_:\-"
@@ -45,6 +54,87 @@ PREFIX_WORDS = {
     "tbl": "Table",
     "eq": "Equation",
 }
+BUILD_REPLY_CLI_CONFIG = SettingsConfigDict(
+    cli_kebab_case=True,
+    cli_implicit_flags=True,
+    cli_hide_none_type=True,
+    cli_parse_none_str="auto",
+    cli_shortcuts={
+        "manuscript_option": ["-m", "--manuscript"],
+        "output_dir": ["-o", "--output-dir"],
+    },
+)
+
+
+@contextmanager
+def project_directory(project_dir: Path) -> Iterator[None]:
+    """Temporarily run reply builds from the selected manuscript project."""
+    previous_cwd = Path.cwd()
+    os.chdir(project_dir)
+    try:
+        yield
+    finally:
+        os.chdir(previous_cwd)
+
+
+class BuildReplySettings(BaseSettings):
+    """Settings for `pmt build-reply`."""
+
+    model_config = BUILD_REPLY_CLI_CONFIG
+
+    markdown: CliPositionalArg[str | None] = Field(
+        default=None,
+        description="Reply markdown file. Auto: submissions/dbe/reply_to_reviewers_first.md, then reply.md.",
+    )
+    manuscript_option: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("m", "manuscript"),
+        description="Reply markdown file, equivalent to the positional MARKDOWN argument.",
+    )
+    output_dir: str = Field(
+        default=DEFAULT_OUTPUT_DIR,
+        validation_alias=AliasChoices("o", "output-dir"),
+        description="Base output directory.",
+    )
+    project_dir: Path = Field(default=Path("."), description="Manuscript project directory.")
+    reply_manuscript: str | None = Field(
+        default=DEFAULT_REPLY_MANUSCRIPT_FILE,
+        description="Manuscript source used to resolve reply references.",
+    )
+    manuscript_line_source: str | None = Field(
+        default=DEFAULT_REPLY_LINE_SOURCE,
+        description="DOCX source used for reply line placeholders.",
+    )
+    from_format: str | None = Field(
+        default=DEFAULT_REPLY_FROM_FORMAT,
+        description="Pandoc input format for reply reference probes.",
+    )
+    reference_doc: CliSuppress[str | None] = Field(
+        default=None,
+        description="Override the bundled DOCX reference document.",
+    )
+    output_file: str = Field(
+        default=DEFAULT_REPLY_OUTPUT_FILE,
+        description="Explicit reply DOCX output path.",
+    )
+
+    def run(self) -> int:
+        """Run the standalone reply build target."""
+        project_dir = self.project_dir.resolve()
+        if not project_dir.exists():
+            raise FileNotFoundError(f"Project directory not found: {project_dir}")
+
+        with project_directory(project_dir):
+            return run_build_reply_command(
+                markdown=self.markdown,
+                manuscript_option=self.manuscript_option,
+                output_dir=self.output_dir,
+                reply_manuscript=self.reply_manuscript,
+                manuscript_line_source=self.manuscript_line_source,
+                from_format=self.from_format,
+                reference_doc=self.reference_doc,
+                output_file=self.output_file,
+            )
 
 
 def to_pandoc_path(path: Path) -> str:
@@ -693,3 +783,81 @@ def build_reply_docx(
         cleanup_resolved_reply_path(temp_reply_path)
 
     log_success(f"[OK] Reply DOCX created: {output}")
+
+
+def checked_markdown_path(markdown_path: str | Path) -> Path:
+    """Return an existing reply markdown path, raising clear input errors."""
+    path = Path(markdown_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Reply markdown file not found: {path}")
+    if not path.is_file():
+        raise ValueError(f"Reply markdown path is not a file: {path}")
+    return path
+
+
+def default_reply_markdown() -> str:
+    """Return the default reply markdown path used by `pmt build-reply`."""
+    legacy_reply = Path("submissions/dbe/reply_to_reviewers_first.md")
+    if legacy_reply.exists():
+        return to_pandoc_path(legacy_reply)
+    return "reply.md"
+
+
+def validate_output_dir(output_dir: str | Path) -> Path:
+    """Return the base output directory after rejecting file paths."""
+    path = Path(output_dir)
+    if path.exists() and not path.is_dir():
+        raise ValueError(f"Output path exists but is not a directory: {path}")
+    return path
+
+
+def reply_output_path(output_dir: str | Path, reply: Path, output_file: str | None) -> Path:
+    """Return the DOCX output path for a reply build."""
+    if output_file and output_file != DEFAULT_REPLY_OUTPUT_FILE:
+        return Path(output_file)
+    return validate_output_dir(output_dir) / "docx" / f"{reply.stem}.docx"
+
+
+def reply_reference_doc_path(reference_doc: str | None) -> Path:
+    """Return the active reference DOCX for reply builds."""
+    if reference_doc:
+        return Path(reference_doc)
+    return template_root() / "pandoc" / "manuscript-template" / "reference-doc.docx"
+
+
+def run_build_reply_command(
+    *,
+    markdown: str | None = None,
+    manuscript_option: str | None = None,
+    output_dir: str | None = None,
+    reply_manuscript: str | None = None,
+    manuscript_line_source: str | None = None,
+    from_format: str | None = None,
+    reference_doc: str | None = None,
+    output_file: str | None = None,
+) -> int:
+    """Apply parsed `pmt build-reply` settings and run the reply build."""
+    if markdown and manuscript_option:
+        raise ValueError("Specify the reply markdown file either positionally or with --manuscript, not both.")
+
+    reply = checked_markdown_path(manuscript_option or markdown or default_reply_markdown())
+    base_output_dir = output_dir or DEFAULT_OUTPUT_DIR
+
+    try:
+        log_info("\n[DOCX] Building reviewer reply DOCX...\n")
+        build_reply_docx(
+            reply=reply,
+            manuscript=Path(reply_manuscript or DEFAULT_REPLY_MANUSCRIPT_FILE),
+            manuscript_line_source=Path(manuscript_line_source or DEFAULT_REPLY_LINE_SOURCE),
+            output=reply_output_path(base_output_dir, reply, output_file),
+            reference_doc=reply_reference_doc_path(reference_doc),
+            style=Path(DEFAULT_STYLE_FILE),
+            from_format=from_format or DEFAULT_REPLY_FROM_FORMAT,
+        )
+        return 0
+    except KeyboardInterrupt:
+        log_warning("\n\n[WARN] Build interrupted by user.")
+        return 1
+    except Exception as exc:
+        log_error(f"\n[ERROR] {exc}")
+        return 1

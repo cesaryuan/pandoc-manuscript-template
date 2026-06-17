@@ -23,9 +23,11 @@ from pydantic_settings import (
 from . import __version__
 from .build import (
     DEFAULT_OUTPUT_DIR,
+    DEFAULT_REFERENCE_DOC,
     DEFAULT_REPLY_FROM_FORMAT,
     DEFAULT_REPLY_LINE_SOURCE,
     DEFAULT_REPLY_MANUSCRIPT_FILE,
+    DEFAULT_REPLY_OUTPUT_FILE,
     BuildCliSettings,
     run_build_command,
 )
@@ -38,6 +40,7 @@ BUILD_CLI_CONFIG = SettingsConfigDict(
     cli_kebab_case=True,
     cli_implicit_flags=True,
     cli_hide_none_type=True,
+    cli_parse_none_str="auto",
     cli_shortcuts={
         "manuscript_option": ["-m", "--manuscript"],
         "output_dir": ["-o", "--output-dir"],
@@ -132,7 +135,7 @@ class BuildCommandSettings(BaseSettings):
     target: CliPositionalArg[BuildTarget] = Field(default="docx", description="Build target.")
     markdown: CliPositionalArg[str | None] = Field(
         default=None,
-        description="Input markdown file. Omit to use manuscript.md, or the default reply file for reply builds.",
+        description="Input markdown file. Auto: manuscript.md, or submissions/dbe/reply_to_reviewers_first.md then reply.md for reply builds.",
     )
     manuscript_option: str | None = Field(
         default=None,
@@ -158,12 +161,12 @@ class BuildCommandSettings(BaseSettings):
         description="Pandoc input format for reply reference probes.",
     )
     reference_doc: str | None = Field(
-        default=None,
-        description="Optional DOCX reference document for DOCX-producing targets.",
+        default=DEFAULT_REFERENCE_DOC,
+        description="DOCX reference document for DOCX-producing targets.",
     )
-    output_file: str | None = Field(
-        default=None,
-        description="Explicit reply DOCX output path. Runtime default: output/docx/<reply-name>.docx.",
+    output_file: str = Field(
+        default=DEFAULT_REPLY_OUTPUT_FILE,
+        description="Explicit reply DOCX output path.",
     )
 
     def run(self) -> int:
@@ -195,7 +198,7 @@ class ReplySettings(BaseSettings):
 
     markdown: CliPositionalArg[str | None] = Field(
         default=None,
-        description="Reply markdown file. Omit to use the default reply file.",
+        description="Reply markdown file. Auto: submissions/dbe/reply_to_reviewers_first.md, then reply.md.",
     )
     manuscript_option: str | None = Field(
         default=None,
@@ -220,10 +223,10 @@ class ReplySettings(BaseSettings):
         default=DEFAULT_REPLY_FROM_FORMAT,
         description="Pandoc input format for reply reference probes.",
     )
-    reference_doc: str | None = Field(default=None, description="Optional DOCX reference document.")
-    output_file: str | None = Field(
-        default=None,
-        description="Explicit reply DOCX output path. Runtime default: output/docx/<reply-name>.docx.",
+    reference_doc: str | None = Field(default=DEFAULT_REFERENCE_DOC, description="DOCX reference document.")
+    output_file: str = Field(
+        default=DEFAULT_REPLY_OUTPUT_FILE,
+        description="Explicit reply DOCX output path.",
     )
 
     def run(self) -> int:
@@ -253,12 +256,18 @@ class CleanSettings(BaseSettings):
     model_config = SettingsConfigDict(
         cli_kebab_case=True,
         cli_implicit_flags=True,
+        cli_hide_none_type=True,
+        cli_parse_none_str="auto",
         cli_shortcuts={"output_dir": ["-o", "--output-dir"]},
     )
     target: ClassVar[Literal["clean", "distclean"]] = "clean"
 
-    output_dir: str | None = Field(default=None, validation_alias=AliasChoices("o", "output-dir"))
-    project_dir: Path = Path(".")
+    output_dir: str = Field(
+        default=DEFAULT_OUTPUT_DIR,
+        validation_alias=AliasChoices("o", "output-dir"),
+        description="Base output directory.",
+    )
+    project_dir: Path = Field(default=Path("."), description="Manuscript project directory.")
 
     def run(self) -> int:
         """Run the clean target."""
@@ -360,6 +369,7 @@ class PmtCli(BaseSettings):
         cli_kebab_case=True,
         cli_implicit_flags=True,
         cli_hide_none_type=True,
+        cli_parse_none_str="auto",
         extra="ignore",
     )
 

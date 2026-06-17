@@ -64,9 +64,11 @@ from .resources import package_resource_path, template_root
 
 
 DEFAULT_OUTPUT_DIR = "output"
+DEFAULT_REFERENCE_DOC = "pandoc/manuscript-template/reference-doc.docx"
 DEFAULT_REPLY_MANUSCRIPT_FILE = "manuscript.md"
 DEFAULT_REPLY_LINE_SOURCE = "output/docx/manuscript.docx"
 DEFAULT_REPLY_FROM_FORMAT = "markdown"
+DEFAULT_REPLY_OUTPUT_FILE = "output/docx/<reply-name>.docx"
 
 
 class BuildSettings(BaseSettings):
@@ -102,6 +104,7 @@ class BuildCliSettings(BaseSettings):
     model_config = SettingsConfigDict(
         cli_kebab_case=True,
         cli_hide_none_type=True,
+        cli_parse_none_str="auto",
         cli_shortcuts={
             "manuscript_option": ["-m", "--manuscript"],
             "output_dir": ["-o", "--output-dir"],
@@ -111,7 +114,7 @@ class BuildCliSettings(BaseSettings):
     target: CliPositionalArg[BuildTarget] = Field(default="docx", description="Build target.")
     markdown: CliPositionalArg[str | None] = Field(
         default=None,
-        description="Input markdown file. Omit to use manuscript.md, or the default reply file for reply builds.",
+        description="Input markdown file. Auto: manuscript.md, or submissions/dbe/reply_to_reviewers_first.md then reply.md for reply builds.",
     )
     manuscript_option: str | None = Field(
         default=None,
@@ -131,12 +134,12 @@ class BuildCliSettings(BaseSettings):
         description="Pandoc input format for reply reference probes.",
     )
     reference_doc: str | None = Field(
-        default=None,
-        description="Optional DOCX reference document for DOCX-producing targets.",
+        default=DEFAULT_REFERENCE_DOC,
+        description="DOCX reference document for DOCX-producing targets.",
     )
-    output_file: str | None = Field(
-        default=None,
-        description="Explicit reply DOCX output path. Runtime default: output/docx/<reply-name>.docx.",
+    output_file: str = Field(
+        default=DEFAULT_REPLY_OUTPUT_FILE,
+        description="Explicit reply DOCX output path.",
     )
 
     def cli_cmd(self) -> None:
@@ -245,7 +248,7 @@ def configure_output_dir(output_dir: str | Path) -> None:
 
 def configure_reference_doc(reference_doc: str | None) -> None:
     """Configure a user-supplied reference DOCX for DOCX-producing targets."""
-    if reference_doc:
+    if reference_doc and reference_doc != DEFAULT_REFERENCE_DOC:
         SETTINGS.reference_doc = reference_doc
 
 
@@ -263,7 +266,7 @@ def configure_reply_options(
         SETTINGS.reply_line_source = line_source
     if from_format:
         SETTINGS.reply_from_format = from_format
-    if output_file:
+    if output_file and output_file != DEFAULT_REPLY_OUTPUT_FILE:
         SETTINGS.reply_output_file = output_file
 
 
@@ -632,9 +635,9 @@ def run_build_command(args: BuildCliSettings) -> int:
     manuscript_arg = args.manuscript_option or args.markdown
     if manuscript_arg and args.target not in {'docx', 'reply', 'latex', 'json'}:
         raise ValueError("A markdown file can only be specified for docx, reply, latex, or json targets.")
-    if args.output_file and args.target != 'reply':
+    if args.output_file != DEFAULT_REPLY_OUTPUT_FILE and args.target != 'reply':
         raise ValueError("--output-file is only supported by the reply target.")
-    if args.reference_doc and args.target not in {'docx', 'reply'}:
+    if args.reference_doc != DEFAULT_REFERENCE_DOC and args.target not in {'docx', 'reply'}:
         raise ValueError("--reference-doc is only supported by docx and reply targets.")
     reply_option_overridden = any(
         [

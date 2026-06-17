@@ -7,11 +7,9 @@ reference-section-title: References
 link-citations: true
 # Citation Style Language (CSL) file
 # Default: Vancouver style (numeric citations)
-# Common alternatives:
-#   - pandoc/csl/elsevier-vancouver.csl (Vancouver)
-#   - pandoc/csl/engineering-applications-of-artificial-intelligence.csl (EA-AI journal)
-#   - Or download from https://www.zotero.org/styles
-csl: pandoc/csl/elsevier-vancouver.csl
+# You can download csl files from https://www.zotero.org/styles
+# csl: path/to/your.csl
+
 # Override citeproc's fixed en dash in collapsed numeric citation ranges.
 # Set "-" for hyphen ranges such as [1-3], or "–" to keep the CSL default.
 citation-number-range-delimiter: "–"

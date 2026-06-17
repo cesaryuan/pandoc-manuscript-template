@@ -180,9 +180,11 @@ This changes citations such as `[1,3]` to `[1, 3]`. It does not control collapse
 
 The DOCX post-processing step can update paragraph styles from the merged YAML metadata. Add style names under `docxStyle`; each key is matched against an existing DOCX style name, and missing styles are reported as warnings without stopping the build. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
 
+Common Chinese built-in names such as `标题 1`, `正文文本`, and `正文` are automatically mapped to the corresponding Word built-in style names like `Heading 1`, `Body Text`, and `Normal`. Custom styles still need to use their exact DOCX style names.
+
 ```yaml
 docxStyle:
-  '正文文本':
+  正文文本:
     firstLineIndentChars: 2
     paragraphSpacing:
       before: 0pt

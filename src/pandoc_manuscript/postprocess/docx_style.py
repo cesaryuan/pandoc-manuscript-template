@@ -95,6 +95,30 @@ CHINESE_FONT_SIZE_POINTS = {
     "七号": 5.5,
     "八号": 5.0,
 }
+# Word's built-in styles are localized in the UI, but python-docx looks them up by the
+# underlying built-in style names. Map common Chinese display names to those lookup names.
+BUILTIN_STYLE_NAME_ALIASES = {
+    "正文": "Normal",
+    "正文文本": "Body Text",
+    "标题": "Title",
+    "副标题": "Subtitle",
+    "题注": "Caption",
+    "页眉": "Header",
+    "页脚": "Footer",
+    "脚注文本": "Footnote Text",
+    "脚注引用": "Footnote Reference",
+    "尾注文本": "Endnote Text",
+    "尾注引用": "Endnote Reference",
+    "引用": "Quote",
+    "明显引用": "Intense Quote",
+    "列表段落": "List Paragraph",
+    "无间隔": "No Spacing",
+}
+for level in range(1, 10):
+    BUILTIN_STYLE_NAME_ALIASES[f"标题{level}"] = f"Heading {level}"
+    BUILTIN_STYLE_NAME_ALIASES[f"标题 {level}"] = f"Heading {level}"
+    BUILTIN_STYLE_NAME_ALIASES[f"目录{level}"] = f"TOC {level}"
+    BUILTIN_STYLE_NAME_ALIASES[f"目录 {level}"] = f"TOC {level}"
 DOCX_STYLE_METADATA_KEYS = ("docxStyle", "docx-style", "docx_style")
 # Keep legacy aliases so existing manuscripts with bodyText metadata continue to build.
 BODY_TEXT_METADATA_KEYS = ("bodyText", "body-text", "body_text", "docxBodyText", "docx-body-text")
@@ -115,6 +139,28 @@ def first_present_item(mapping: dict[str, Any], keys: tuple[str, ...]) -> tuple[
         if key in mapping:
             return key, mapping[key]
     return None
+
+
+def unique_ordered(values: tuple[str, ...]) -> tuple[str, ...]:
+    """Return values without duplicates while preserving lookup order."""
+    seen: set[str] = set()
+    unique_values: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique_values.append(value)
+    return tuple(unique_values)
+
+
+def candidate_style_names_for(style_name: str) -> tuple[str, ...]:
+    """Return exact style name plus common Chinese built-in style aliases."""
+    normalized_style_name = re.sub(r"\s+", "", style_name.strip())
+    alias = BUILTIN_STYLE_NAME_ALIASES.get(style_name.strip())
+    alias = alias or BUILTIN_STYLE_NAME_ALIASES.get(normalized_style_name)
+    if alias is None:
+        return (style_name,)
+    return unique_ordered((style_name, alias, alias.lower()))
 
 
 def parse_number(value: Any, field_name: str) -> float:
@@ -383,7 +429,7 @@ def normalize_docx_style_settings(metadata: dict[str, Any]) -> list[dict[str, An
         normalized_styles.append(
             {
                 "style_name": style_name,
-                "candidate_style_names": BODY_TEXT_STYLE_NAMES if uses_legacy_body_text else (style_name,),
+                "candidate_style_names": BODY_TEXT_STYLE_NAMES if uses_legacy_body_text else candidate_style_names_for(style_name),
                 **normalize_paragraph_style_settings(raw_settings, field_prefix),
             }
         )

@@ -29,12 +29,13 @@ from .build import (
     DEFAULT_REPLY_MANUSCRIPT_FILE,
     DEFAULT_REPLY_OUTPUT_FILE,
     BuildCliSettings,
+    run_build_reply_command,
     run_build_command,
 )
 from .resources import iter_project_template_entries, package_resource_path, template_root
 
 
-BuildTarget = Literal["docx", "reply", "latex", "json", "clean", "distclean"]
+BuildTarget = Literal["docx", "latex", "json", "clean", "distclean"]
 
 BUILD_CLI_CONFIG = SettingsConfigDict(
     cli_kebab_case=True,
@@ -135,7 +136,7 @@ class BuildCommandSettings(BaseSettings):
     target: CliPositionalArg[BuildTarget] = Field(default="docx", description="Build target.")
     markdown: CliPositionalArg[str | None] = Field(
         default=None,
-        description="Input markdown file. Auto: manuscript.md, or submissions/dbe/reply_to_reviewers_first.md then reply.md for reply builds.",
+        description="Input markdown file. Auto: manuscript.md.",
     )
     manuscript_option: str | None = Field(
         default=None,
@@ -148,25 +149,9 @@ class BuildCommandSettings(BaseSettings):
         description="Base output directory.",
     )
     project_dir: Path = Field(default=Path("."), description="Manuscript project directory.")
-    reply_manuscript: str | None = Field(
-        default=DEFAULT_REPLY_MANUSCRIPT_FILE,
-        description="Manuscript source used to resolve reply references.",
-    )
-    manuscript_line_source: str | None = Field(
-        default=DEFAULT_REPLY_LINE_SOURCE,
-        description="DOCX source used for reply line placeholders.",
-    )
-    from_format: str | None = Field(
-        default=DEFAULT_REPLY_FROM_FORMAT,
-        description="Pandoc input format for reply reference probes.",
-    )
     reference_doc: str | None = Field(
         default=DEFAULT_REFERENCE_DOC,
-        description="DOCX reference document for DOCX-producing targets.",
-    )
-    output_file: str = Field(
-        default=DEFAULT_REPLY_OUTPUT_FILE,
-        description="Explicit reply DOCX output path.",
+        description="DOCX reference document for DOCX output.",
     )
 
     def run(self) -> int:
@@ -181,21 +166,15 @@ class BuildCommandSettings(BaseSettings):
                 markdown=self.markdown,
                 manuscript_option=self.manuscript_option,
                 output_dir=self.output_dir,
-                reply_manuscript=self.reply_manuscript,
-                manuscript_line_source=self.manuscript_line_source,
-                from_format=self.from_format,
                 reference_doc=self.reference_doc,
-                output_file=self.output_file,
             )
             return int(run_build_command(build_settings))
 
 
-class ReplySettings(BaseSettings):
-    """Settings for the `pmt reply` shortcut."""
+class BuildReplySettings(BaseSettings):
+    """Settings for `pmt build-reply`."""
 
     model_config = BUILD_CLI_CONFIG
-    target: ClassVar[Literal["reply"]] = "reply"
-
     markdown: CliPositionalArg[str | None] = Field(
         default=None,
         description="Reply markdown file. Auto: submissions/dbe/reply_to_reviewers_first.md, then reply.md.",
@@ -230,24 +209,24 @@ class ReplySettings(BaseSettings):
     )
 
     def run(self) -> int:
-        """Run the reply shortcut target."""
+        """Run the standalone reply build target."""
         project_dir = self.project_dir.resolve()
         if not project_dir.exists():
             raise FileNotFoundError(f"Project directory not found: {project_dir}")
 
         with project_directory(project_dir):
-            build_settings = BuildCliSettings(
-                target=self.target,
-                markdown=self.markdown,
-                manuscript_option=self.manuscript_option,
-                output_dir=self.output_dir,
-                reply_manuscript=self.reply_manuscript,
-                manuscript_line_source=self.manuscript_line_source,
-                from_format=self.from_format,
-                reference_doc=self.reference_doc,
-                output_file=self.output_file,
+            return int(
+                run_build_reply_command(
+                    markdown=self.markdown,
+                    manuscript_option=self.manuscript_option,
+                    output_dir=self.output_dir,
+                    reply_manuscript=self.reply_manuscript,
+                    manuscript_line_source=self.manuscript_line_source,
+                    from_format=self.from_format,
+                    reference_doc=self.reference_doc,
+                    output_file=self.output_file,
+                )
             )
-            return int(run_build_command(build_settings))
 
 
 class CleanSettings(BaseSettings):
@@ -376,7 +355,7 @@ class PmtCli(BaseSettings):
     version_flag: bool = Field(default=False, alias="version")
     init: CliSubCommand[InitSettings | None]
     build: CliSubCommand[BuildCommandSettings | None]
-    reply: CliSubCommand[ReplySettings | None]
+    build_reply: CliSubCommand[BuildReplySettings | None]
     clean: CliSubCommand[CleanSettings | None]
     distclean: CliSubCommand[DistcleanSettings | None]
     doctor: CliSubCommand[DoctorSettings | None]

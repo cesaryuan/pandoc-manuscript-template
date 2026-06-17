@@ -156,7 +156,7 @@ Avoid Pandoc's compact string-only author syntax, such as `author: [First Author
 
 Style-oriented metadata lives in `style.yml` so the manuscript YAML header can stay focused on the paper itself. During `pmt build docx`, `pmt build latex`, the build loads `style.yml` before `manuscript.md`; any field already defined in the manuscript YAML header overrides the style default.
 
-If you want to change style-related content in a generated manuscript project, edit `style.yml`. The top-level keys cover the normal manuscript build, while the optional `reply:` section stores reply-specific overrides used by `pmt build reply`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
+If you want to change style-related content in a generated manuscript project, edit `style.yml`. The top-level keys cover the normal manuscript build, while the optional `reply:` section stores reply-specific overrides used by `pmt build-reply`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
 
 Collapsed numeric citation ranges can use a journal-specific delimiter after Pandoc citeproc renders them. Set `citation-number-range-delimiter` in `style.yml`, or override it in the manuscript YAML header:
 
@@ -414,7 +414,7 @@ All tables are automatically fitted to window width and centered. This can be ov
 - `merge_table_cells.py` - Merges cells based on markers
 - `autofit_tables.py` - Auto-fits tables to window
 
-These modules run automatically during `pmt build docx` and `pmt build reply` when DOCX post-processing is enabled.
+These modules run automatically during `pmt build docx` and `pmt build-reply` when DOCX post-processing is enabled.
 
 ## Build System
 
@@ -441,20 +441,18 @@ pmt build latex paper.md
 ```
 
 For DOCX output, pass `--reference-doc custom-reference.docx` to override the
-bundled Word reference document. The option is supported by both `docx` and
-`reply` targets.
+bundled Word reference document. The option is supported by `pmt build docx`
+and `pmt build-reply`.
 
-Reviewer replies can be built with the same DOCX pipeline. The `reply` target
-resolves manuscript cross-references and citations against the manuscript before
-converting the reply letter:
+Reviewer replies can be built with the same DOCX pipeline. The `build-reply` command resolves manuscript cross-references and citations against the manuscript before converting the reply letter:
 
 ```bash
-pmt build reply reply.md \
+pmt build-reply reply.md \
   --reply-manuscript manuscript.md \
   --output-file output/docx/reply.docx
 ```
 
-If no reply markdown path is supplied, the reply target first looks for
+If no reply markdown path is supplied, `pmt build-reply` first looks for
 `submissions/dbe/reply_to_reviewers_first.md`, then falls back to `reply.md`.
 The reply build reads its reply-specific defaults from the `reply:` section in
 `style.yml`, while `--manuscript-line-source` defaults to

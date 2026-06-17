@@ -21,7 +21,7 @@ Usage:
     pmt build docx       # Generate DOCX (default)
     pmt build docx paper.md  # Generate DOCX from a specific markdown file
     pmt build docx paper.md --output-dir build  # Generate DOCX in build/docx
-    pmt build reply reply.md  # Generate reviewer reply DOCX
+    pmt build-reply reply.md  # Generate reviewer reply DOCX
     pmt build latex      # Generate LaTeX
     pmt build latex paper.md # Generate LaTeX from a specific markdown file
     pmt build latex paper.md --output-dir build # Generate LaTeX in build/latex
@@ -95,7 +95,7 @@ class BuildSettings(BaseSettings):
 
 SETTINGS = BuildSettings()
 
-BuildTarget = Literal["docx", "reply", "latex", "json", "clean", "distclean"]
+BuildTarget = Literal["docx", "latex", "json", "clean", "distclean"]
 
 
 class BuildCliSettings(BaseSettings):
@@ -114,32 +114,16 @@ class BuildCliSettings(BaseSettings):
     target: CliPositionalArg[BuildTarget] = Field(default="docx", description="Build target.")
     markdown: CliPositionalArg[str | None] = Field(
         default=None,
-        description="Input markdown file. Auto: manuscript.md, or submissions/dbe/reply_to_reviewers_first.md then reply.md for reply builds.",
+        description="Input markdown file. Auto: manuscript.md.",
     )
     manuscript_option: str | None = Field(
         default=None,
         description="Input markdown file, equivalent to the positional MARKDOWN argument.",
     )
     output_dir: str = Field(default=DEFAULT_OUTPUT_DIR, description="Base output directory.")
-    reply_manuscript: str | None = Field(
-        default=DEFAULT_REPLY_MANUSCRIPT_FILE,
-        description="Manuscript source used to resolve reply references.",
-    )
-    manuscript_line_source: str | None = Field(
-        default=DEFAULT_REPLY_LINE_SOURCE,
-        description="DOCX source used for reply line placeholders.",
-    )
-    from_format: str | None = Field(
-        default=DEFAULT_REPLY_FROM_FORMAT,
-        description="Pandoc input format for reply reference probes.",
-    )
     reference_doc: str | None = Field(
         default=DEFAULT_REFERENCE_DOC,
-        description="DOCX reference document for DOCX-producing targets.",
-    )
-    output_file: str = Field(
-        default=DEFAULT_REPLY_OUTPUT_FILE,
-        description="Explicit reply DOCX output path.",
+        description="DOCX reference document for DOCX output.",
     )
 
     def cli_cmd(self) -> None:
@@ -250,24 +234,6 @@ def configure_reference_doc(reference_doc: str | None) -> None:
     """Configure a user-supplied reference DOCX for DOCX-producing targets."""
     if reference_doc and reference_doc != DEFAULT_REFERENCE_DOC:
         SETTINGS.reference_doc = reference_doc
-
-
-def configure_reply_options(
-    *,
-    manuscript: str | None = None,
-    line_source: str | None = None,
-    from_format: str | None = None,
-    output_file: str | None = None,
-) -> None:
-    """Configure reviewer-reply build inputs while keeping manuscript defaults stable."""
-    if manuscript:
-        SETTINGS.reply_manuscript_file = manuscript
-    if line_source:
-        SETTINGS.reply_line_source = line_source
-    if from_format:
-        SETTINGS.reply_from_format = from_format
-    if output_file and output_file != DEFAULT_REPLY_OUTPUT_FILE:
-        SETTINGS.reply_output_file = output_file
 
 
 def should_use_style_metadata_file() -> bool:
@@ -527,6 +493,71 @@ def build_reply_docx_target() -> None:
     )
 
 
+def configure_reply_options(
+    *,
+    manuscript: str | None = None,
+    line_source: str | None = None,
+    from_format: str | None = None,
+    output_file: str | None = None,
+) -> None:
+    """Configure reviewer-reply build inputs while keeping manuscript defaults stable."""
+    if manuscript:
+        SETTINGS.reply_manuscript_file = manuscript
+    if line_source:
+        SETTINGS.reply_line_source = line_source
+    if from_format:
+        SETTINGS.reply_from_format = from_format
+    if output_file and output_file != DEFAULT_REPLY_OUTPUT_FILE:
+        SETTINGS.reply_output_file = output_file
+
+
+def default_reply_markdown() -> str:
+    """Return the default reply markdown path used by `pmt build-reply`."""
+    legacy_reply = Path('submissions/dbe/reply_to_reviewers_first.md')
+    if legacy_reply.exists():
+        return to_pandoc_path(legacy_reply)
+    return 'reply.md'
+
+
+def run_build_reply_command(
+    *,
+    markdown: str | None = None,
+    manuscript_option: str | None = None,
+    output_dir: str | None = None,
+    reply_manuscript: str | None = None,
+    manuscript_line_source: str | None = None,
+    from_format: str | None = None,
+    reference_doc: str | None = None,
+    output_file: str | None = None,
+) -> int:
+    """Apply parsed `pmt build-reply` settings and run the reply build."""
+    if output_dir:
+        configure_output_dir(output_dir)
+    configure_reference_doc(reference_doc)
+    configure_reply_options(
+        manuscript=reply_manuscript,
+        line_source=manuscript_line_source,
+        from_format=from_format,
+        output_file=output_file,
+    )
+
+    if markdown and manuscript_option:
+        raise ValueError("Specify the reply markdown file either positionally or with --manuscript, not both.")
+
+    reply_markdown = manuscript_option or markdown or default_reply_markdown()
+    configure_manuscript(reply_markdown, derive_project_name=True)
+
+    try:
+        build_reply_docx_target()
+        return 0
+    except KeyboardInterrupt:
+        log_warning("\n\n[WARN] Build interrupted by user.")
+        return 1
+    except Exception as e:
+        log_error(f"\n[ERROR] {e}")
+        return 1
+
+
 def reply_output_path() -> Path:
     """Return the output DOCX path for reply builds."""
     if SETTINGS.reply_output_file:
@@ -622,42 +653,21 @@ def run_build_command(args: BuildCliSettings) -> int:
     if args.output_dir:
         configure_output_dir(args.output_dir)
     configure_reference_doc(args.reference_doc)
-    configure_reply_options(
-        manuscript=args.reply_manuscript,
-        line_source=args.manuscript_line_source,
-        from_format=args.from_format,
-        output_file=args.output_file,
-    )
 
     if args.markdown and args.manuscript_option:
         raise ValueError("Specify the markdown file either positionally or with --manuscript, not both.")
 
     manuscript_arg = args.manuscript_option or args.markdown
-    if manuscript_arg and args.target not in {'docx', 'reply', 'latex', 'json'}:
-        raise ValueError("A markdown file can only be specified for docx, reply, latex, or json targets.")
-    if args.output_file != DEFAULT_REPLY_OUTPUT_FILE and args.target != 'reply':
-        raise ValueError("--output-file is only supported by the reply target.")
-    if args.reference_doc != DEFAULT_REFERENCE_DOC and args.target not in {'docx', 'reply'}:
-        raise ValueError("--reference-doc is only supported by docx and reply targets.")
-    reply_option_overridden = any(
-        [
-            args.reply_manuscript != DEFAULT_REPLY_MANUSCRIPT_FILE,
-            args.manuscript_line_source != DEFAULT_REPLY_LINE_SOURCE,
-            args.from_format != DEFAULT_REPLY_FROM_FORMAT,
-        ]
-    )
-    if reply_option_overridden and args.target != 'reply':
-        raise ValueError("Reply-specific options require the reply target.")
+    if manuscript_arg and args.target not in {'docx', 'latex', 'json'}:
+        raise ValueError("A markdown file can only be specified for docx, latex, or json targets.")
+    if args.reference_doc != DEFAULT_REFERENCE_DOC and args.target != 'docx':
+        raise ValueError("--reference-doc is only supported by the docx target.")
 
-    if args.target in {'docx', 'reply', 'latex', 'json'}:
-        configure_manuscript(
-            manuscript_arg or default_input_for_target(args.target),
-            derive_project_name=bool(manuscript_arg) or args.target == 'reply',
-        )
+    if args.target in {'docx', 'latex', 'json'}:
+        configure_manuscript(manuscript_arg or default_input_for_target(), derive_project_name=bool(manuscript_arg))
 
     targets = {
         'docx': build_docx,
-        'reply': build_reply_docx_target,
         'latex': build_latex,
         'json': build_json,
         'clean': clean,
@@ -680,14 +690,9 @@ def main(argv: list[str] | None = None) -> None:
     CliApp.run(BuildCliSettings, cli_args=argv, cli_parse_args=True)
 
 
-def default_input_for_target(target: str) -> str:
-    """Return the default markdown input for the selected build target."""
-    if target != 'reply':
-        return SETTINGS.manuscript_file
-    legacy_reply = Path('submissions/dbe/reply_to_reviewers_first.md')
-    if legacy_reply.exists():
-        return to_pandoc_path(legacy_reply)
-    return 'reply.md'
+def default_input_for_target() -> str:
+    """Return the default markdown input for non-reply build targets."""
+    return SETTINGS.manuscript_file
 
 
 if __name__ == '__main__':

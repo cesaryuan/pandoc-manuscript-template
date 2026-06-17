@@ -452,12 +452,10 @@ pmt build-reply reply.md \
   --output-file output/docx/reply.docx
 ```
 
-If no reply markdown path is supplied, `pmt build-reply` first looks for
-`submissions/dbe/reply_to_reviewers_first.md`, then falls back to `reply.md`.
 The reply build reads its reply-specific defaults from the `reply:` section in
 `style.yml`, while `--manuscript-line-source` defaults to
 `output/docx/manuscript.docx`. The line source is only read when the reply uses
-``(Line `regex`)`` placeholders.
+``(Line `regex`)`` placeholders. The reply markdown path itself is required.
 
 ```
 

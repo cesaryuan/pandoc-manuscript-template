@@ -192,8 +192,8 @@ class CleanSettings(BaseSettings):
         with project_directory(project_dir):
             return int(
                 run_build_command(
-                target=self.target,
-                output_dir=self.output_dir,
+                    target=self.target,
+                    output_dir=self.output_dir,
                 )
             )
 

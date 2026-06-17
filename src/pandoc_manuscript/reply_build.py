@@ -60,7 +60,6 @@ BUILD_REPLY_CLI_CONFIG = SettingsConfigDict(
     cli_hide_none_type=True,
     cli_parse_none_str="auto",
     cli_shortcuts={
-        "manuscript_option": ["-m", "--manuscript"],
         "output_dir": ["-o", "--output-dir"],
     },
 )
@@ -82,15 +81,7 @@ class BuildReplySettings(BaseSettings):
 
     model_config = BUILD_REPLY_CLI_CONFIG
 
-    markdown: CliPositionalArg[str | None] = Field(
-        default=None,
-        description="Reply markdown file. Auto: submissions/dbe/reply_to_reviewers_first.md, then reply.md.",
-    )
-    manuscript_option: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("m", "manuscript"),
-        description="Reply markdown file, equivalent to the positional MARKDOWN argument.",
-    )
+    markdown: CliPositionalArg[str] = Field(description="Reply markdown file.")
     output_dir: str = Field(
         default=DEFAULT_OUTPUT_DIR,
         validation_alias=AliasChoices("o", "output-dir"),
@@ -127,7 +118,6 @@ class BuildReplySettings(BaseSettings):
         with project_directory(project_dir):
             return run_build_reply_command(
                 markdown=self.markdown,
-                manuscript_option=self.manuscript_option,
                 output_dir=self.output_dir,
                 reply_manuscript=self.reply_manuscript,
                 manuscript_line_source=self.manuscript_line_source,
@@ -795,14 +785,6 @@ def checked_markdown_path(markdown_path: str | Path) -> Path:
     return path
 
 
-def default_reply_markdown() -> str:
-    """Return the default reply markdown path used by `pmt build-reply`."""
-    legacy_reply = Path("submissions/dbe/reply_to_reviewers_first.md")
-    if legacy_reply.exists():
-        return to_pandoc_path(legacy_reply)
-    return "reply.md"
-
-
 def validate_output_dir(output_dir: str | Path) -> Path:
     """Return the base output directory after rejecting file paths."""
     path = Path(output_dir)
@@ -827,8 +809,7 @@ def reply_reference_doc_path(reference_doc: str | None) -> Path:
 
 def run_build_reply_command(
     *,
-    markdown: str | None = None,
-    manuscript_option: str | None = None,
+    markdown: str,
     output_dir: str | None = None,
     reply_manuscript: str | None = None,
     manuscript_line_source: str | None = None,
@@ -837,10 +818,7 @@ def run_build_reply_command(
     output_file: str | None = None,
 ) -> int:
     """Apply parsed `pmt build-reply` settings and run the reply build."""
-    if markdown and manuscript_option:
-        raise ValueError("Specify the reply markdown file either positionally or with --manuscript, not both.")
-
-    reply = checked_markdown_path(manuscript_option or markdown or default_reply_markdown())
+    reply = checked_markdown_path(markdown)
     base_output_dir = output_dir or DEFAULT_OUTPUT_DIR
 
     try:

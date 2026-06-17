@@ -21,7 +21,14 @@ from pydantic_settings import (
 )
 
 from . import __version__
-from .build import BuildCliSettings, run_build_command
+from .build import (
+    DEFAULT_OUTPUT_DIR,
+    DEFAULT_REPLY_FROM_FORMAT,
+    DEFAULT_REPLY_LINE_SOURCE,
+    DEFAULT_REPLY_MANUSCRIPT_FILE,
+    BuildCliSettings,
+    run_build_command,
+)
 from .resources import iter_project_template_entries, package_resource_path, template_root
 
 
@@ -30,6 +37,7 @@ BuildTarget = Literal["docx", "reply", "latex", "json", "clean", "distclean"]
 BUILD_CLI_CONFIG = SettingsConfigDict(
     cli_kebab_case=True,
     cli_implicit_flags=True,
+    cli_hide_none_type=True,
     cli_shortcuts={
         "manuscript_option": ["-m", "--manuscript"],
         "output_dir": ["-o", "--output-dir"],
@@ -121,16 +129,42 @@ class BuildCommandSettings(BaseSettings):
 
     model_config = BUILD_CLI_CONFIG
 
-    target: CliPositionalArg[BuildTarget] = "docx"
-    markdown: CliPositionalArg[str | None] = None
-    manuscript_option: str | None = Field(default=None, validation_alias=AliasChoices("m", "manuscript"))
-    output_dir: str | None = Field(default=None, validation_alias=AliasChoices("o", "output-dir"))
-    project_dir: Path = Path(".")
-    reply_manuscript: str | None = None
-    manuscript_line_source: str | None = None
-    from_format: str | None = None
-    reference_doc: str | None = None
-    output_file: str | None = None
+    target: CliPositionalArg[BuildTarget] = Field(default="docx", description="Build target.")
+    markdown: CliPositionalArg[str | None] = Field(
+        default=None,
+        description="Input markdown file. Omit to use manuscript.md, or the default reply file for reply builds.",
+    )
+    manuscript_option: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("m", "manuscript"),
+        description="Input markdown file, equivalent to the positional MARKDOWN argument.",
+    )
+    output_dir: str = Field(
+        default=DEFAULT_OUTPUT_DIR,
+        validation_alias=AliasChoices("o", "output-dir"),
+        description="Base output directory.",
+    )
+    project_dir: Path = Field(default=Path("."), description="Manuscript project directory.")
+    reply_manuscript: str | None = Field(
+        default=DEFAULT_REPLY_MANUSCRIPT_FILE,
+        description="Manuscript source used to resolve reply references.",
+    )
+    manuscript_line_source: str | None = Field(
+        default=DEFAULT_REPLY_LINE_SOURCE,
+        description="DOCX source used for reply line placeholders.",
+    )
+    from_format: str | None = Field(
+        default=DEFAULT_REPLY_FROM_FORMAT,
+        description="Pandoc input format for reply reference probes.",
+    )
+    reference_doc: str | None = Field(
+        default=None,
+        description="Optional DOCX reference document for DOCX-producing targets.",
+    )
+    output_file: str | None = Field(
+        default=None,
+        description="Explicit reply DOCX output path. Runtime default: output/docx/<reply-name>.docx.",
+    )
 
     def run(self) -> int:
         """Run the selected build target."""
@@ -159,15 +193,38 @@ class ReplySettings(BaseSettings):
     model_config = BUILD_CLI_CONFIG
     target: ClassVar[Literal["reply"]] = "reply"
 
-    markdown: CliPositionalArg[str | None] = None
-    manuscript_option: str | None = Field(default=None, validation_alias=AliasChoices("m", "manuscript"))
-    output_dir: str | None = Field(default=None, validation_alias=AliasChoices("o", "output-dir"))
-    project_dir: Path = Path(".")
-    reply_manuscript: str | None = None
-    manuscript_line_source: str | None = None
-    from_format: str | None = None
-    reference_doc: str | None = None
-    output_file: str | None = None
+    markdown: CliPositionalArg[str | None] = Field(
+        default=None,
+        description="Reply markdown file. Omit to use the default reply file.",
+    )
+    manuscript_option: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("m", "manuscript"),
+        description="Reply markdown file, equivalent to the positional MARKDOWN argument.",
+    )
+    output_dir: str = Field(
+        default=DEFAULT_OUTPUT_DIR,
+        validation_alias=AliasChoices("o", "output-dir"),
+        description="Base output directory.",
+    )
+    project_dir: Path = Field(default=Path("."), description="Manuscript project directory.")
+    reply_manuscript: str | None = Field(
+        default=DEFAULT_REPLY_MANUSCRIPT_FILE,
+        description="Manuscript source used to resolve reply references.",
+    )
+    manuscript_line_source: str | None = Field(
+        default=DEFAULT_REPLY_LINE_SOURCE,
+        description="DOCX source used for reply line placeholders.",
+    )
+    from_format: str | None = Field(
+        default=DEFAULT_REPLY_FROM_FORMAT,
+        description="Pandoc input format for reply reference probes.",
+    )
+    reference_doc: str | None = Field(default=None, description="Optional DOCX reference document.")
+    output_file: str | None = Field(
+        default=None,
+        description="Explicit reply DOCX output path. Runtime default: output/docx/<reply-name>.docx.",
+    )
 
     def run(self) -> int:
         """Run the reply shortcut target."""
@@ -302,6 +359,7 @@ class PmtCli(BaseSettings):
         cli_prog_name="pmt",
         cli_kebab_case=True,
         cli_implicit_flags=True,
+        cli_hide_none_type=True,
         extra="ignore",
     )
 

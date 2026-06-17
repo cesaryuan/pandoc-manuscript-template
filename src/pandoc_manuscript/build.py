@@ -41,6 +41,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Literal, Tuple
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, CliApp, CliPositionalArg, SettingsConfigDict
 
 from .logging_utils import log_error, log_info, log_success, log_warning
@@ -62,6 +63,12 @@ from .resources import package_resource_path, template_root
 # ============================================================================
 
 
+DEFAULT_OUTPUT_DIR = "output"
+DEFAULT_REPLY_MANUSCRIPT_FILE = "manuscript.md"
+DEFAULT_REPLY_LINE_SOURCE = "output/docx/manuscript.docx"
+DEFAULT_REPLY_FROM_FORMAT = "markdown"
+
+
 class BuildSettings(BaseSettings):
     """Typed runtime settings shared by CLI parsing and build functions."""
 
@@ -70,7 +77,7 @@ class BuildSettings(BaseSettings):
     project_name: str = "manuscript"
     manuscript_file: str = "manuscript.md"
     style_file: str = "style.yml"
-    output_dir: str = "output"
+    output_dir: str = DEFAULT_OUTPUT_DIR
     docx_dir: str = "output/docx"
     latex_dir: str = "output/latex"
     json_dir: str = "output/json"
@@ -78,9 +85,9 @@ class BuildSettings(BaseSettings):
     mathtype_marker_filter: str = "mathtype/mathtype_markers.lua"
     mathtype_work_dir: str = "tmp/mathtype-build"
     reference_doc: str | None = None
-    reply_manuscript_file: str = "manuscript.md"
-    reply_line_source: str = "output/docx/manuscript.docx"
-    reply_from_format: str = "markdown"
+    reply_manuscript_file: str = DEFAULT_REPLY_MANUSCRIPT_FILE
+    reply_line_source: str = DEFAULT_REPLY_LINE_SOURCE
+    reply_from_format: str = DEFAULT_REPLY_FROM_FORMAT
     reply_output_file: str | None = None
 
 
@@ -94,21 +101,43 @@ class BuildCliSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         cli_kebab_case=True,
+        cli_hide_none_type=True,
         cli_shortcuts={
             "manuscript_option": ["-m", "--manuscript"],
             "output_dir": ["-o", "--output-dir"],
         },
     )
 
-    target: CliPositionalArg[BuildTarget] = "docx"
-    markdown: CliPositionalArg[str | None] = None
-    manuscript_option: str | None = None
-    output_dir: str | None = None
-    reply_manuscript: str | None = None
-    manuscript_line_source: str | None = None
-    from_format: str | None = None
-    reference_doc: str | None = None
-    output_file: str | None = None
+    target: CliPositionalArg[BuildTarget] = Field(default="docx", description="Build target.")
+    markdown: CliPositionalArg[str | None] = Field(
+        default=None,
+        description="Input markdown file. Omit to use manuscript.md, or the default reply file for reply builds.",
+    )
+    manuscript_option: str | None = Field(
+        default=None,
+        description="Input markdown file, equivalent to the positional MARKDOWN argument.",
+    )
+    output_dir: str = Field(default=DEFAULT_OUTPUT_DIR, description="Base output directory.")
+    reply_manuscript: str | None = Field(
+        default=DEFAULT_REPLY_MANUSCRIPT_FILE,
+        description="Manuscript source used to resolve reply references.",
+    )
+    manuscript_line_source: str | None = Field(
+        default=DEFAULT_REPLY_LINE_SOURCE,
+        description="DOCX source used for reply line placeholders.",
+    )
+    from_format: str | None = Field(
+        default=DEFAULT_REPLY_FROM_FORMAT,
+        description="Pandoc input format for reply reference probes.",
+    )
+    reference_doc: str | None = Field(
+        default=None,
+        description="Optional DOCX reference document for DOCX-producing targets.",
+    )
+    output_file: str | None = Field(
+        default=None,
+        description="Explicit reply DOCX output path. Runtime default: output/docx/<reply-name>.docx.",
+    )
 
     def cli_cmd(self) -> None:
         """Execute the parsed build command when run through CliApp."""
@@ -607,7 +636,14 @@ def run_build_command(args: BuildCliSettings) -> int:
         raise ValueError("--output-file is only supported by the reply target.")
     if args.reference_doc and args.target not in {'docx', 'reply'}:
         raise ValueError("--reference-doc is only supported by docx and reply targets.")
-    if any([args.reply_manuscript, args.manuscript_line_source, args.from_format]) and args.target != 'reply':
+    reply_option_overridden = any(
+        [
+            args.reply_manuscript != DEFAULT_REPLY_MANUSCRIPT_FILE,
+            args.manuscript_line_source != DEFAULT_REPLY_LINE_SOURCE,
+            args.from_format != DEFAULT_REPLY_FROM_FORMAT,
+        ]
+    )
+    if reply_option_overridden and args.target != 'reply':
         raise ValueError("Reply-specific options require the reply target.")
 
     if args.target in {'docx', 'reply', 'latex', 'json'}:

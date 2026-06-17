@@ -234,7 +234,7 @@ def ensure_affiliation_style_exists(doc) -> None:
 
     affiliation_style = styles.add_style('Affiliation', WD_STYLE_TYPE.PARAGRAPH)
 
-    for base_style_name in ('Body Text', 'Normal'):
+    for base_style_name in ('Normal'):
         try:
             affiliation_style.base_style = styles[base_style_name]
             break

@@ -8,7 +8,7 @@ import subprocess
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, ClassVar, Iterator, Literal
+from typing import ClassVar, Iterator, Literal
 
 from pydantic import AliasChoices, Field, PrivateAttr
 from pydantic_settings import (
@@ -116,17 +116,6 @@ def project_directory(project_dir: Path) -> Iterator[None]:
         os.chdir(previous_cwd)
 
 
-def run_build_data(project_dir: Path, build_data: dict[str, Any]) -> int:
-    """Run the packaged build module from one parsed pmt build model."""
-    project_dir = project_dir.resolve()
-    if not project_dir.exists():
-        raise FileNotFoundError(f"Project directory not found: {project_dir}")
-
-    with project_directory(project_dir):
-        build_settings = BuildCliSettings(**build_data)
-        return int(run_build_command(build_settings))
-
-
 class BuildCommandSettings(BaseSettings):
     """Settings for `pmt build`."""
 
@@ -146,26 +135,28 @@ class BuildCommandSettings(BaseSettings):
 
     def run(self) -> int:
         """Run the selected build target."""
-        return run_build_data(self.project_dir, self.build_data(self.target))
+        project_dir = self.project_dir.resolve()
+        if not project_dir.exists():
+            raise FileNotFoundError(f"Project directory not found: {project_dir}")
 
-    def build_data(self, target: BuildTarget) -> dict[str, Any]:
-        """Return data accepted by the package build settings."""
-        return {
-            "target": target,
-            "markdown": self.markdown,
-            "manuscript_option": self.manuscript_option,
-            "output_dir": self.output_dir,
-            "reply_manuscript": self.reply_manuscript,
-            "manuscript_line_source": self.manuscript_line_source,
-            "reply_style": self.reply_style,
-            "from_format": self.from_format,
-            "reference_doc": self.reference_doc,
-            "output_file": self.output_file,
-        }
+        with project_directory(project_dir):
+            build_settings = BuildCliSettings(
+                target=self.target,
+                markdown=self.markdown,
+                manuscript_option=self.manuscript_option,
+                output_dir=self.output_dir,
+                reply_manuscript=self.reply_manuscript,
+                manuscript_line_source=self.manuscript_line_source,
+                reply_style=self.reply_style,
+                from_format=self.from_format,
+                reference_doc=self.reference_doc,
+                output_file=self.output_file,
+            )
+            return int(run_build_command(build_settings))
 
 
-class ReplyShortcutSettings(BaseSettings):
-    """Shared settings for the `pmt reply` shortcut."""
+class ReplySettings(BaseSettings):
+    """Settings for the `pmt reply` shortcut."""
 
     model_config = BUILD_CLI_CONFIG
     target: ClassVar[Literal["reply"]] = "reply"
@@ -182,27 +173,25 @@ class ReplyShortcutSettings(BaseSettings):
     output_file: str | None = None
 
     def run(self) -> int:
-        """Run the shortcut's fixed build target."""
-        return run_build_data(self.project_dir, self.build_data())
+        """Run the reply shortcut target."""
+        project_dir = self.project_dir.resolve()
+        if not project_dir.exists():
+            raise FileNotFoundError(f"Project directory not found: {project_dir}")
 
-    def build_data(self) -> dict[str, Any]:
-        """Return data accepted by the package build settings."""
-        return {
-            "target": self.target,
-            "markdown": self.markdown,
-            "manuscript_option": self.manuscript_option,
-            "output_dir": self.output_dir,
-            "reply_manuscript": self.reply_manuscript,
-            "manuscript_line_source": self.manuscript_line_source,
-            "reply_style": self.reply_style,
-            "from_format": self.from_format,
-            "reference_doc": self.reference_doc,
-            "output_file": self.output_file,
-        }
-
-
-class ReplySettings(ReplyShortcutSettings):
-    """Settings for `pmt reply`."""
+        with project_directory(project_dir):
+            build_settings = BuildCliSettings(
+                target=self.target,
+                markdown=self.markdown,
+                manuscript_option=self.manuscript_option,
+                output_dir=self.output_dir,
+                reply_manuscript=self.reply_manuscript,
+                manuscript_line_source=self.manuscript_line_source,
+                reply_style=self.reply_style,
+                from_format=self.from_format,
+                reference_doc=self.reference_doc,
+                output_file=self.output_file,
+            )
+            return int(run_build_command(build_settings))
 
 
 class CleanSettings(BaseSettings):
@@ -219,14 +208,17 @@ class CleanSettings(BaseSettings):
     project_dir: Path = Path(".")
 
     def run(self) -> int:
-        """Run the shortcut's fixed clean target."""
-        return run_build_data(
-            self.project_dir,
-            {
-                "target": self.target,
-                "output_dir": self.output_dir,
-            },
-        )
+        """Run the clean target."""
+        project_dir = self.project_dir.resolve()
+        if not project_dir.exists():
+            raise FileNotFoundError(f"Project directory not found: {project_dir}")
+
+        with project_directory(project_dir):
+            build_settings = BuildCliSettings(
+                target=self.target,
+                output_dir=self.output_dir,
+            )
+            return int(run_build_command(build_settings))
 
 
 class DistcleanSettings(CleanSettings):

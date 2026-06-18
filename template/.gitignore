@@ -243,27 +243,13 @@ TSWLatexianTemp*
 
 ~$*.docx
 *.tmp
-article.pdf
-article.docx
-temp.md
-temp.docx
-temp.json
-temp/*
 *.pag
 .env
-# Generated output files
-output/
-/manuscript.docx
-/manuscript.pdf
-/manuscript.tex
 
-# Pandoc cache
+# Project files
+output/
 .pandoc-cache/
 __pycache__/
 /tmp
+/examples
 nul
-
-# MathType probe generated artifacts
-tmp/
-output/docx/
-mathtype.docx

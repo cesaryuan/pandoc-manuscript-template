@@ -30,6 +30,12 @@ Install the following tools:
    cd my-paper
    ```
 
+   `pmt init` also writes an `AGENTS.md` file into the new project. If the
+   target already has one, `pmt` leaves it in place and warns so you can merge
+   the template notes manually. Use `pmt init my-paper --merge` to append the
+   packaged `AGENTS.md` guidance automatically without replacing the existing
+   file.
+
    When the package is installed as a tool, use:
    ```bash
    uv tool install pandoc-manuscript-template

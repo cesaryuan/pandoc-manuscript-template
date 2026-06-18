@@ -30,24 +30,36 @@ def source_tree_root() -> Path | None:
 
 
 def template_root() -> Path:
-    """Return a filesystem root containing project template resources."""
+    """Return a filesystem root containing runtime Pandoc resources."""
     source_root = source_tree_root()
     if source_root is not None:
         return source_root
 
-    packaged_root = resources.files(PACKAGE_NAME).joinpath("_template")
+    packaged_root = resources.files(PACKAGE_NAME)
     if (packaged_root / "pandoc").is_dir():
         return Path(str(packaged_root))
-    raise RuntimeError("Could not locate packaged Pandoc manuscript template resources.")
+    raise RuntimeError("Could not locate packaged Pandoc manuscript runtime resources.")
 
 
-def iter_project_template_entries() -> Iterable[str]:
-    """Yield top-level entries copied by `pmt init` into a new paper project."""
+def project_template_root() -> Path:
+    """Return the root copied by `pmt init` into generated manuscript projects."""
+    source_root = source_tree_root()
+    if source_root is not None:
+        return source_root / "template"
+
+    packaged_root = resources.files(PACKAGE_NAME).joinpath("_template")
+    if (packaged_root / "manuscript.md").is_file():
+        return Path(str(packaged_root))
+    raise RuntimeError("Could not locate packaged manuscript project template resources.")
+
+
+def iter_project_template_entries() -> Iterable[tuple[str, str]]:
+    """Yield source and destination pairs copied by `pmt init` into a new paper project."""
     yield from (
-        "manuscript.md",
-        "style.yml",
-        ".gitignore",
-        "images",
-        "examples",
-        "pandoc/csl",
+        ("AGENTS.md", "AGENTS.md"),
+        ("manuscript.md", "manuscript.md"),
+        ("style.yml", "style.yml"),
+        (".gitignore", ".gitignore"),
+        ("examples", "examples"),
+        ("pandoc/csl", "pandoc/csl"),
     )

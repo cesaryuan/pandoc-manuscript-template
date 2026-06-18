@@ -39,10 +39,5 @@ exclude = [
 packages = ["src/pandoc_manuscript"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"pandoc" = "pandoc_manuscript/_template/pandoc"
-"examples" = "pandoc_manuscript/_template/examples"
-"manuscript.md" = "pandoc_manuscript/_template/manuscript.md"
-"style.yml" = "pandoc_manuscript/_template/style.yml"
-"README.md" = "pandoc_manuscript/_template/README.md"
-"Makefile" = "pandoc_manuscript/_template/Makefile"
-".gitignore" = "pandoc_manuscript/_template/.gitignore"
+"pandoc" = "pandoc_manuscript/pandoc"
+"template" = "pandoc_manuscript/_template"

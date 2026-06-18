@@ -24,7 +24,7 @@ from pydantic_settings import (
 from . import __version__
 from .build import DEFAULT_OUTPUT_DIR, run_build_command
 from .reply_build import BuildReplySettings
-from .resources import iter_project_template_entries, package_resource_path, template_root
+from .resources import iter_project_template_entries, package_resource_path, project_template_root, template_root
 
 
 BuildTarget = Literal["docx", "latex", "json", "clean", "distclean"]
@@ -49,6 +49,10 @@ IGNORE_NAMES = {
     "tmp",
     "target",
 }
+
+AGENTS_TEMPLATE_DESTINATION = "AGENTS.md"
+AGENTS_TEMPLATE_START = "<!-- pmt template guidance: begin -->"
+AGENTS_TEMPLATE_END = "<!-- pmt template guidance: end -->"
 
 
 def log(message: str) -> None:
@@ -78,27 +82,85 @@ def ignore_generated_artifacts(directory: str, names: list[str]) -> set[str]:
     return {name for name in names if name in IGNORE_NAMES or name.endswith(".pyc")}
 
 
+def merge_agents_template(source: Path, destination: Path) -> None:
+    """Append the packaged AGENTS guidance to an existing AGENTS.md file.
+
+    This keeps the user's local agent instructions intact while making the
+    template instructions available in the generated manuscript project.
+    """
+    source_text = source.read_text(encoding="utf-8").strip()
+    existing_text = destination.read_text(encoding="utf-8")
+    if AGENTS_TEMPLATE_START in existing_text:
+        log(f"[OK] AGENTS.md already contains the packaged guidance: {destination}")
+        return
+
+    merged_text = (
+        existing_text.rstrip()
+        + "\n\n"
+        + AGENTS_TEMPLATE_START
+        + "\n\n"
+        + source_text
+        + "\n\n"
+        + AGENTS_TEMPLATE_END
+        + "\n"
+    )
+    destination.write_text(merged_text, encoding="utf-8", newline="\n")
+    log(f"[OK] Merged AGENTS.md: {destination}")
+
+
 class InitSettings(BaseSettings):
     """Settings for `pmt init`."""
 
     model_config = SettingsConfigDict(cli_kebab_case=True, cli_implicit_flags=True)
 
     directory: CliPositionalArg[str]
-    force: bool = False
+    force: bool = Field(default=False, description="Overwrite existing template entries in the target project.")
+    merge: bool = Field(
+        default=False,
+        description="Merge the packaged AGENTS.md guidance into an existing AGENTS.md file.",
+    )
 
     def run(self) -> int:
         """Create a new manuscript project from the packaged template files."""
-        root = template_root()
+        root = project_template_root()
         target = Path(self.directory).resolve()
-        if target.exists() and any(target.iterdir()) and not self.force:
-            raise RuntimeError(f"Target directory is not empty. Use --force to overwrite entries: {target}")
+
+        if self.force and self.merge:
+            raise RuntimeError("Use only one of --force or --merge for `pmt init`.")
 
         target.mkdir(parents=True, exist_ok=True)
-        for relative_name in iter_project_template_entries():
-            source = root / relative_name
+        template_entries = list(iter_project_template_entries())
+        existing_entries = {
+            destination_name
+            for _, destination_name in template_entries
+            if (target / destination_name).exists()
+        }
+        blocking_entries = sorted(name for name in existing_entries if name != "AGENTS.md")
+        if blocking_entries and not self.force and not self.merge:
+            joined = ", ".join(blocking_entries)
+            raise RuntimeError(
+                f"Target already contains template files: {joined}. "
+                f"Use --force to overwrite them: {target}"
+            )
+        if "AGENTS.md" in existing_entries and not self.force and not self.merge:
+            log("[WARN] AGENTS.md already exists; use --merge to combine the packaged template notes automatically.")
+
+        for source_name, destination_name in template_entries:
+            source = root / source_name
             if not source.exists():
                 continue
-            copy_template_entry(source, target / relative_name, overwrite=self.force)
+            destination = target / destination_name
+            if destination_name == AGENTS_TEMPLATE_DESTINATION and destination.exists():
+                if self.merge:
+                    merge_agents_template(source, destination)
+                elif not self.force:
+                    continue
+                else:
+                    copy_template_entry(source, destination, overwrite=True)
+                continue
+            if destination.exists() and not self.force:
+                continue
+            copy_template_entry(source, destination, overwrite=self.force)
 
         # Empty directories are not preserved in wheels/sdists, but manuscripts
         # conventionally keep figures under images/ from the beginning.

@@ -19,6 +19,12 @@ citation-number-range-delimiter: "–"
 # local MathType/OLE conversion setup.
 mathtype: false
 
+# Set to true to rasterize referenced SVG images to PNG during DOCX builds.
+# This helps with submission systems that reject SVG files.
+docxConvertSvgToPng: false
+# docxSvgToPngDpi: 300
+# docxSvgToPngScale: 1
+
 # Set to true for continuous DOCX line numbers, or use a string such as
 # '连续', '每页重编', '每节重编', 'continuous', 'restart-page', or 'restart-section'.
 show-line-numbers: '连续'

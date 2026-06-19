@@ -3,6 +3,7 @@ Build normal manuscript targets for the Pandoc manuscript template.
 """
 
 import errno
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -55,7 +56,13 @@ SETTINGS = BuildSettings()
 # UTILITY FUNCTIONS
 # ============================================================================
 
-def run_command(cmd: list, cwd: Path | None = None, check: bool = True, stream_output: bool = False) -> subprocess.CompletedProcess:
+def run_command(
+    cmd: list,
+    cwd: Path | None = None,
+    check: bool = True,
+    stream_output: bool = False,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
     """Run a shell command and return the result.
 
     Args:
@@ -63,15 +70,17 @@ def run_command(cmd: list, cwd: Path | None = None, check: bool = True, stream_o
         cwd: Working directory for the command
         check: Raise exception on non-zero exit code
         stream_output: If True, stream stdout/stderr to console in real-time
+        env: Extra environment variables for this command
     """
     log_info(f"[Run] {' '.join(str(c) for c in cmd)}")
+    command_env = None if env is None else {**os.environ, **env}
 
     if stream_output:
         # Stream output to console in real-time
-        return subprocess.run(cmd, cwd=cwd, check=check)
+        return subprocess.run(cmd, cwd=cwd, check=check, env=command_env)
     else:
         # Capture output (for commands where we need to parse it)
-        return subprocess.run(cmd, cwd=cwd, check=check, capture_output=True, text=True)
+        return subprocess.run(cmd, cwd=cwd, check=check, capture_output=True, text=True, env=command_env)
 
 
 def get_pandoc_version() -> Tuple[int, ...]:
@@ -223,9 +232,76 @@ def metadata_bool(value: Any) -> bool:
     return False
 
 
+def metadata_first(metadata: dict[str, Any], keys: tuple[str, ...], default: Any = None) -> Any:
+    """Return the first configured metadata value from a list of aliases."""
+    for key in keys:
+        if key in metadata:
+            return metadata[key]
+    return default
+
+
+def metadata_float(metadata: dict[str, Any], keys: tuple[str, ...], default: float) -> float:
+    """Read a positive float metadata option with a clear validation error."""
+    value = metadata_first(metadata, keys, default)
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{keys[0]} must be a number, got: {value!r}") from exc
+    if parsed <= 0:
+        raise ValueError(f"{keys[0]} must be positive, got: {value!r}")
+    return parsed
+
+
 def should_use_mathtype(metadata: dict[str, Any]) -> bool:
     """Return True when merged metadata requests MathType DOCX equations."""
     return metadata_bool(metadata.get('mathtype'))
+
+
+def should_convert_docx_svg_to_png(metadata: dict[str, Any]) -> bool:
+    """Return True when DOCX builds should rasterize referenced SVG images."""
+    return metadata_bool(
+        metadata_first(
+            metadata,
+            (
+                'docxConvertSvgToPng',
+                'docx-convert-svg-to-png',
+                'convertSvgToPng',
+                'convert-svg-to-png',
+            ),
+            False,
+        )
+    )
+
+
+def docx_svg_to_png_filter_args() -> list[str]:
+    """Return Pandoc args for the DOCX SVG-to-PNG image filter."""
+    filter_path = resource_path('pandoc/filters/svg_to_png.py')
+    if not filter_path.exists():
+        raise FileNotFoundError(f"SVG-to-PNG Pandoc filter not found: {filter_path}")
+    return ['--filter', to_pandoc_path(filter_path)]
+
+
+def docx_svg_to_png_filter_env(metadata: dict[str, Any]) -> dict[str, str]:
+    """Return environment settings consumed by the SVG-to-PNG Pandoc filter."""
+    output_root = Path(SETTINGS.output_dir) / 'svg-png'
+    manuscript_dir = Path(SETTINGS.manuscript_file).parent
+    base_dirs = [Path.cwd(), manuscript_dir]
+    unique_base_dirs = []
+    for base_dir in base_dirs:
+        resolved = base_dir.resolve()
+        if resolved not in unique_base_dirs:
+            unique_base_dirs.append(resolved)
+
+    return {
+        'PMT_SVG_TO_PNG_DIR': str(output_root.resolve()),
+        'PMT_SVG_TO_PNG_BASE_DIRS': os.pathsep.join(str(path) for path in unique_base_dirs),
+        'PMT_SVG_TO_PNG_DPI': str(
+            metadata_float(metadata, ('docxSvgToPngDpi', 'docx-svg-to-png-dpi'), 300)
+        ),
+        'PMT_SVG_TO_PNG_SCALE': str(
+            metadata_float(metadata, ('docxSvgToPngScale', 'docx-svg-to-png-scale'), 1)
+        ),
+    }
 
 
 def mathtype_marked_docx_path() -> Path:
@@ -284,6 +360,7 @@ def run_pandoc(
     defaults_file: Path,
     output_file: Path,
     extra_args: list[str] | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> None:
     """Run Pandoc with original defaults so ${.} resolves beside that file."""
     extra_args = extra_args or []
@@ -298,7 +375,7 @@ def run_pandoc(
         *extra_args,
         SETTINGS.manuscript_file,
     ]
-    run_command(cmd, stream_output=True)
+    run_command(cmd, stream_output=True, env=extra_env)
 
 
 def reference_doc_args() -> list[str]:
@@ -352,7 +429,13 @@ def build_docx():
     metadata = load_build_metadata()
     use_mathtype = resolve_mathtype_build_enabled(should_use_mathtype(metadata))
     pandoc_output = docx_file
+    pandoc_env = {}
     extra_args.extend(reference_doc_args())
+
+    if should_convert_docx_svg_to_png(metadata):
+        log_info("[INFO] Converting referenced SVG images to PNG for DOCX")
+        extra_args.extend(docx_svg_to_png_filter_args())
+        pandoc_env.update(docx_svg_to_png_filter_env(metadata))
 
     # Add filter for older Pandoc versions
     if should_use_mathbfit_filter():
@@ -364,7 +447,12 @@ def build_docx():
         extra_args.extend(mathtype_filter_args())
 
     # Run pandoc
-    run_pandoc(resource_path('pandoc/pandoc-docx.yml'), pandoc_output, extra_args=extra_args)
+    run_pandoc(
+        resource_path('pandoc/pandoc-docx.yml'),
+        pandoc_output,
+        extra_args=extra_args,
+        extra_env=pandoc_env,
+    )
 
     # Post-process DOCX if enabled
     if SETTINGS.enable_docx_postprocess:

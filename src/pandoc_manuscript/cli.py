@@ -311,7 +311,7 @@ class DoctorSettings(BaseSettings):
             ok, detail = command_status(command)
             checks.append((" ".join(command), ok, detail))
 
-        for module_name in ("docx", "yaml", "lxml", "panflute", "fitz"):
+        for module_name in ("docx", "yaml", "lxml", "panflute", "resvg_py", "fitz"):
             ok, detail = import_status(module_name)
             checks.append((f"python import {module_name}", ok, detail))
 

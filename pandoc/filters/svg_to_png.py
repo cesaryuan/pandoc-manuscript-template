@@ -9,6 +9,7 @@ URLs in the Pandoc AST and leaves the source Markdown unchanged.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -20,6 +21,7 @@ import panflute as pf
 
 
 SVG_SUFFIXES = {".svg", ".svgz"}
+CACHE_METADATA_VERSION = 1
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "WARN": 30, "ERROR": 40}
 CONVERTED: set[Path] = set()
 REUSED: set[Path] = set()
@@ -216,14 +218,56 @@ def convert_svg_to_png(source: Path, target: Path, dpi: float, scale: float) -> 
         ) from rsvg_error
 
 
+def cache_metadata_path(target: Path) -> Path:
+    """Return the sidecar metadata path used to validate a generated PNG."""
+    return target.with_suffix(target.suffix + ".meta.json")
+
+
+def expected_cache_metadata(source: Path, dpi: float, scale: float) -> dict[str, object]:
+    """Build cache metadata that changes when source content or options change."""
+    stat_result = source.stat()
+    return {
+        "version": CACHE_METADATA_VERSION,
+        "source": str(source.resolve()),
+        "source_mtime_ns": stat_result.st_mtime_ns,
+        "source_size": stat_result.st_size,
+        "dpi": dpi,
+        "scale": scale,
+    }
+
+
+def cache_metadata_matches(target: Path, expected: dict[str, object]) -> bool:
+    """Return True only when the PNG and its sidecar metadata are current."""
+    metadata_path = cache_metadata_path(target)
+    if not target.exists() or not metadata_path.exists():
+        return False
+    try:
+        actual = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        log_debug(f"[svg-to-png] Ignoring stale cache metadata {metadata_path}: {exc}")
+        return False
+    return all(actual.get(key) == value for key, value in expected.items())
+
+
+def write_cache_metadata(target: Path, metadata: dict[str, object], converter: str) -> None:
+    """Write sidecar metadata so option changes invalidate old PNG caches."""
+    payload = {**metadata, "converter": converter}
+    cache_metadata_path(target).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def ensure_png(source: Path, target: Path, dpi: float, scale: float) -> Path:
     """Create or reuse the PNG cache file for one SVG source."""
-    if target.exists() and target.stat().st_mtime >= source.stat().st_mtime:
+    expected_metadata = expected_cache_metadata(source, dpi, scale)
+    if cache_metadata_matches(target, expected_metadata):
         REUSED.add(target)
         log_debug(f"[svg-to-png] Reusing {target}")
         return target
 
     converter = convert_svg_to_png(source, target, dpi, scale)
+    write_cache_metadata(target, expected_metadata, converter)
     CONVERTED.add(target)
     log_debug(f"[svg-to-png] Converted {source} -> {target} with {converter}")
     return target

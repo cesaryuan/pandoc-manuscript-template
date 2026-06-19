@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import struct
 import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -135,28 +134,9 @@ def convert_with_resvg_py(source: Path, target: Path, dpi: float, scale: float) 
     """Convert SVG to PNG with the pure package-managed resvg binding."""
     import resvg_py
 
-    dpi_value = max(1, round(dpi))
-    png_bytes = resvg_py.svg_to_bytes(svg_path=str(source), dpi=dpi_value)
-    if scale != 1:
-        # resvg-py expects integer dimensions; derive them from the DPI-aware
-        # base render so scale changes work for unitless and physical SVG sizes.
-        width, height = png_dimensions(png_bytes)
-        png_bytes = resvg_py.svg_to_bytes(
-            svg_path=str(source),
-            dpi=dpi_value,
-            width=max(1, round(width * scale)),
-            height=max(1, round(height * scale)),
-        )
-
+    png_bytes = resvg_py.svg_to_bytes(svg_path=str(source), dpi=dpi, zoom=scale if scale != 1 else None)
     target.write_bytes(png_bytes)
     return "resvg-py"
-
-
-def png_dimensions(png_bytes: bytes) -> tuple[int, int]:
-    """Return PNG width and height from the IHDR header."""
-    if png_bytes[:8] != b"\x89PNG\r\n\x1a\n":
-        raise ValueError("Rendered image is not a PNG")
-    return struct.unpack(">II", png_bytes[16:24])
 
 
 def convert_svg_to_png(source: Path, target: Path, dpi: float, scale: float) -> str:

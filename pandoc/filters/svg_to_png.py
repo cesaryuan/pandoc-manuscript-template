@@ -11,9 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import struct
-import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -161,76 +159,10 @@ def png_dimensions(png_bytes: bytes) -> tuple[int, int]:
     return struct.unpack(">II", png_bytes[16:24])
 
 
-def convert_with_cairosvg(source: Path, target: Path, dpi: float, scale: float) -> str:
-    """Convert SVG to PNG with CairoSVG's Python API."""
-    import cairosvg
-
-    cairosvg.svg2png(
-        url=str(source),
-        write_to=str(target),
-        dpi=dpi,
-        scale=scale,
-    )
-    return "CairoSVG"
-
-
-def convert_with_rsvg(source: Path, target: Path, dpi: float) -> str:
-    """Convert SVG to PNG with rsvg-convert when CairoSVG is unavailable."""
-    executable = shutil.which("rsvg-convert")
-    if executable is None:
-        raise RuntimeError("rsvg-convert is not available on PATH")
-
-    subprocess.run(
-        [
-            executable,
-            "--format",
-            "png",
-            "--dpi-x",
-            str(dpi),
-            "--dpi-y",
-            str(dpi),
-            "--output",
-            str(target),
-            str(source),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return "rsvg-convert"
-
-
 def convert_svg_to_png(source: Path, target: Path, dpi: float, scale: float) -> str:
-    """Convert one SVG file to PNG, preferring the package-managed binding."""
+    """Convert one SVG file to PNG using the required resvg-py dependency."""
     target.parent.mkdir(parents=True, exist_ok=True)
-    converter_errors: list[str] = []
-    try:
-        return convert_with_resvg_py(source, target, dpi, scale)
-    except ImportError as exc:
-        converter_errors.append(f"resvg-py import error: {exc}")
-    except Exception as exc:
-        converter_errors.append(f"resvg-py error: {exc}")
-
-    try:
-        return convert_with_cairosvg(source, target, dpi, scale)
-    except ImportError as exc:
-        converter_errors.append(f"CairoSVG import error: {exc}")
-    except Exception as exc:
-        # Fall back to rsvg-convert for environments where CairoSVG imports but
-        # the platform Cairo runtime is missing or cannot render a specific SVG.
-        converter_errors.append(f"CairoSVG error: {exc}")
-
-    try:
-        if scale != 1:
-            log_warning("[WARN] docxSvgToPngScale is ignored when falling back to rsvg-convert")
-        return convert_with_rsvg(source, target, dpi)
-    except Exception as rsvg_error:
-        converter_errors.append(f"rsvg-convert error: {rsvg_error}")
-        raise RuntimeError(
-            "Could not convert SVG to PNG. Install the Python dependency "
-            "`resvg-py`, or make `rsvg-convert` available on PATH. "
-            + "; ".join(converter_errors)
-        ) from rsvg_error
+    return convert_with_resvg_py(source, target, dpi, scale)
 
 
 def cache_metadata_path(target: Path) -> Path:

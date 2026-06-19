@@ -5,7 +5,9 @@ Build normal manuscript targets for the Pandoc manuscript template.
 import errno
 import os
 import shutil
+import stat
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Tuple
 
@@ -273,12 +275,44 @@ def should_convert_docx_svg_to_png(metadata: dict[str, Any]) -> bool:
     )
 
 
+def python_filter_wrapper(filter_path: Path, name: str) -> Path:
+    """Create a Pandoc filter wrapper that runs with pmt's Python interpreter.
+
+    Pandoc executes JSON filters as external programs. Installed package data
+    filters may otherwise run under a system Python that cannot import pmt's
+    dependencies, which caused the SVG filter to miss panflute in uv tool installs.
+    """
+    wrapper_dir = Path(SETTINGS.output_dir) / '.filters'
+    wrapper_dir.mkdir(parents=True, exist_ok=True)
+    filter_path = filter_path.resolve()
+
+    if os.name == 'nt':
+        wrapper_path = wrapper_dir / f'{name}.cmd'
+        wrapper_path.write_text(
+            f'@echo off\r\n"{sys.executable}" "{filter_path}" %*\r\n',
+            encoding='utf-8',
+            newline='',
+        )
+        return wrapper_path
+
+    wrapper_path = wrapper_dir / name
+    wrapper_path.write_text(
+        f'#!{sys.executable}\n'
+        'import runpy\n'
+        f'runpy.run_path({str(filter_path)!r}, run_name="__main__")\n',
+        encoding='utf-8',
+        newline='\n',
+    )
+    wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return wrapper_path
+
+
 def docx_svg_to_png_filter_args() -> list[str]:
     """Return Pandoc args for the DOCX SVG-to-PNG image filter."""
     filter_path = resource_path('pandoc/filters/svg_to_png.py')
     if not filter_path.exists():
         raise FileNotFoundError(f"SVG-to-PNG Pandoc filter not found: {filter_path}")
-    return ['--filter', to_pandoc_path(filter_path)]
+    return ['--filter', to_pandoc_path(python_filter_wrapper(filter_path, 'svg_to_png_filter'))]
 
 
 def docx_svg_to_png_filter_env(metadata: dict[str, Any]) -> dict[str, str]:

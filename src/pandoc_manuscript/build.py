@@ -340,6 +340,14 @@ def docx_svg_to_png_filter_env(metadata: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def table_metadata_filter_args() -> list[str]:
+    """Return Pandoc args for embedding hidden table-attribute markers into DOCX."""
+    filter_path = resource_path("pandoc/filters/table_metadata.lua")
+    if not filter_path.exists():
+        raise FileNotFoundError(f"Table metadata Pandoc filter not found: {filter_path}")
+    return ["--lua-filter", to_pandoc_path(filter_path)]
+
+
 def mathtype_marked_docx_path() -> Path:
     """Return the intermediate DOCX path that carries hidden LaTeX markers."""
     work_dir = Path(SETTINGS.mathtype_work_dir)
@@ -467,6 +475,7 @@ def build_docx():
     pandoc_output = docx_file
     pandoc_env = {}
     extra_args.extend(reference_doc_args())
+    extra_args.extend(table_metadata_filter_args())
 
     if should_convert_docx_svg_to_png(metadata):
         log_info("[INFO] Converting referenced SVG images to PNG for DOCX")

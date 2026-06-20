@@ -159,7 +159,7 @@ def postprocess_docx(
             print_debug_success(f"Left merges: {left_merges}, Up merges: {up_merges}")
 
         def process_table_metadata_step() -> None:
-            """Apply table caption metadata and report the applied setting count."""
+            """Apply Pandoc table attributes and report the applied setting count."""
             processed, settings = process_table_metadata(doc)
             print_debug_success(f"Processed {processed} table(s), Applied {settings} setting(s)")
 
@@ -222,11 +222,11 @@ def postprocess_docx(
             ("Applying DOCX style metadata", apply_docx_style_step),
             ("Applying line-number metadata", apply_line_number_step),
             ("Merging table cells", merge_table_cells_step),
-            ("Processing table metadata", process_table_metadata_step),
             ("Clearing subfigure table formatting", clear_subfigure_table_format_step),
             ("Converting table text style", convert_table_text_style_step),
             ("Applying post-table paragraph style", apply_para_after_table_style_step),
             ("Auto-fitting tables to window", autofit_tables_step),
+            ("Applying table attribute metadata", process_table_metadata_step),
             ("Formatting equation layout tables", format_equation_layout_tables_step),
             ("Applying where paragraph style", apply_where_paragraph_style_step),
             ("Adding spaces after standalone inline math", add_inline_math_spacing_step),
@@ -270,11 +270,11 @@ Processing steps:
   - Apply DOCX paragraph style settings from merged metadata (if metadata provided)
   - Apply line numbers from show-line-numbers metadata (if metadata provided)
   - Merge table cells based on markers (!<! and !^!)
-  - Process table metadata from captions (|key=value|)
   - Clear formatting for tables above 'Image Caption' paragraphs
   - Convert table text style from 'Compact' to 'Table Text'
   - Apply 'Para After Table' style to body paragraphs after tables
   - Auto-fit tables to window width and center align
+  - Apply table attributes exported by the Pandoc table metadata filter
   - Format equation layout tables
   - Apply 'Where Paragraph' style after equation paragraphs
   - Add trailing spaces after standalone inline math

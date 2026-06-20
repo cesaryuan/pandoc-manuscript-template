@@ -53,15 +53,15 @@ This section describes the methodology employed in the research.
 
 : Experimental setup configuration {#tbl:setup}
 
-The table above demonstrates basic table formatting. For DOCX output, you can use advanced formatting features by adding metadata to table captions or using cell merge markers (see examples in @tbl:advanced-formatting and @tbl:merged-cells).
+The table above demonstrates basic table formatting. For DOCX output, you can use advanced formatting features by adding Pandoc table attributes or cell merge markers (see examples in @tbl:advanced-formatting and @tbl:merged-cells).
 
 ## Advanced Table Formatting (DOCX Only)
 
 When generating DOCX output with `make docx`, you can use special features for enhanced table formatting.
 
-### Table Metadata
+### Table Attributes
 
-Add metadata to control table properties. The metadata is automatically removed from the final caption:
+Add Pandoc attributes to control DOCX table properties:
 
 | **Property** | **Value** | **Description**        |
 | ------------ | --------- | ---------------------- |
@@ -70,9 +70,9 @@ Add metadata to control table properties. The metadata is automatically removed 
 | Autofit      | Window    | Table width adjustment |
 | Alignment    | Center    | Table position on page |
 
-: Table formatting properties. |cell_margin=0.10cm cell_spacing=0pt autofit=window alignment=center| {#tbl:advanced-formatting}
+: Table formatting properties. {#tbl:advanced-formatting cell_margin="0.10cm" cell_spacing="0pt" autofit="window" alignment="center"}
 
-The caption above includes metadata `|cell_margin=0.10cm cell_spacing=0pt autofit=window alignment=center|` which will be applied to the table and then removed in the final DOCX.
+The caption attributes above are applied to the DOCX table without appearing in the final caption.
 
 ### Cell Merging
 

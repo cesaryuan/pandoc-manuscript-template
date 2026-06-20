@@ -375,19 +375,21 @@ Use standard Pandoc citation syntax:
 
 When generating DOCX output, three post-processing scripts automatically enhance table formatting:
 
-#### 1. Table Metadata
+#### 1. Table Attributes
 
-Add metadata to table captions to control table properties. The metadata is automatically removed from the final caption.
+Add standard Pandoc attributes to table captions to control DOCX table properties. Pandoc does not preserve arbitrary table attributes in the generated DOCX, so `pmt build docx` runs a Lua filter that embeds a hidden WordprocessingML marker before conversion. The DOCX post-processor reads the marker, applies the settings, and removes it before saving the final document.
 
-**Syntax**: Add `|key=value key2=value2|` at the end of the table caption.
+**Syntax**: Add attributes at the end of the Pandoc table caption.
 
-**Available metadata keys**:
-- `cell_margin=0.10cm` - Set all cell margins (supports cm, mm, in, pt)
-- `cell_margin_top=0.10cm`, `cell_margin_bottom=0.10cm`, `cell_margin_left=0.10cm`, `cell_margin_right=0.10cm` - Individual margins
-- `cell_spacing=0pt` - Spacing between cells
-- `row_height=0.5cm` - Set row height for all rows
-- `alignment=center` - Table alignment (left, center, right)
-- `autofit=window` - Autofit behavior (fixed, content, window)
+**Available attribute keys**:
+- `cell_margin="0.10cm"` - Set all cell margins (supports cm, mm, in, pt)
+- `cell_margin_top="0.10cm"`, `cell_margin_bottom="0.10cm"`, `cell_margin_left="0.10cm"`, `cell_margin_right="0.10cm"` - Individual margins
+- `cell_spacing="0pt"` - Spacing between cells
+- `row_height="0.5cm"` - Set row height for all rows
+- `alignment="center"` - Table alignment (left, center, right)
+- `autofit="window"` - Autofit behavior (fixed, content, window)
+
+Hyphenated aliases such as `cell-margin="0.10cm"` are also accepted.
 
 **Example**:
 ```markdown
@@ -396,10 +398,10 @@ Add metadata to table captions to control table properties. The metadata is auto
 | Baseline   | 78.3             |
 | Proposed   | 92.4             |
 
-: Performance comparison. |cell_margin=0.10cm autofit=window alignment=center| {#tbl:results}
+: Performance comparison. {#tbl:results cell_margin="0.10cm" autofit="window" alignment="center"}
 ```
 
-The metadata `|cell_margin=0.10cm autofit=window alignment=center|` will be applied to the table and then removed from the caption in the final DOCX.
+The attributes are applied to the DOCX table without appearing in the final caption.
 
 #### 2. Cell Merging
 
@@ -428,10 +430,10 @@ In this example, "Group A" will span two rows (merging with the cell below conta
 
 #### 3. Auto-fit Tables
 
-All tables are automatically fitted to window width and centered. This can be overridden using the `autofit` metadata key.
+All tables are automatically fitted to window width and centered. This can be overridden using the `autofit` or `alignment` table attributes.
 
 **Post-processing modules location**: `src/pandoc_manuscript/postprocess/`
-- `process_table_metadata.py` - Applies metadata from captions
+- `process_table_metadata.py` - Applies metadata collected from Pandoc table attributes
 - `merge_table_cells.py` - Merges cells based on markers
 - `autofit_tables.py` - Auto-fits tables to window
 

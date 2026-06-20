@@ -6,9 +6,9 @@
 # ]
 # ///
 """
-Process table metadata from captions.
-This script parses metadata in table captions (format: |key=value key2=value2|)
-and applies the settings to tables, then removes the metadata from captions.
+Process table metadata collected from Pandoc table attributes.
+Pandoc does not preserve arbitrary table attributes in DOCX, so a Lua filter
+writes hidden WordprocessingML marker paragraphs before attributed tables.
 
 Usage:
     uv run process_table_metadata.py path/to/file.docx
@@ -16,19 +16,21 @@ Usage:
 """
 
 import argparse
+import json
 import re
 import sys
-from pathlib import Path
-from typing import Optional, Dict
+from typing import Any, Mapping, Optional
 
 from docx.document import Document as DocumentObject
 from docx.table import Table
 from docx.shared import Pt, Cm, Mm, Inches
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.text.paragraph import Paragraph
 
 from .common import (
     get_or_add_tbl_pr,
+    iter_body_blocks,
     open_docx,
     print_error,
     print_debug,
@@ -38,49 +40,75 @@ from .common import (
 )
 
 
-def parse_table_metadata(caption_text: str) -> Dict[str, str]:
-    """
-    Parse metadata from caption text.
-    Format: |key=value key2=value2|
-
-    Args:
-        caption_text: The caption text containing metadata
-
-    Returns:
-        Dictionary of key-value pairs
-    """
-    metadata = {}
-
-    # Match pattern: |key=value key2=value2|
-    match = re.search(r'\|([^|]+)\|\s*$', caption_text)
-    if match:
-        metadata_string = match.group(1).strip()
-
-        # Split by spaces and parse key=value pairs
-        pairs = metadata_string.split()
-        for pair in pairs:
-            kv_match = re.match(r'^([^=]+)=(.+)$', pair)
-            if kv_match:
-                key = kv_match.group(1).strip()
-                value = kv_match.group(2).strip()
-                metadata[key] = value
-
-    return metadata
+TABLE_METADATA_KEYS = {
+    "cell_margin",
+    "cell_margin_top",
+    "cell_margin_bottom",
+    "cell_margin_left",
+    "cell_margin_right",
+    "cell_spacing",
+    "row_height",
+    "alignment",
+    "autofit",
+}
+TABLE_METADATA_MARKER_PREFIX = "PMT_TABLE_METADATA:"
 
 
-def remove_metadata_from_caption(caption_text: str) -> str:
-    """
-    Remove metadata from caption text.
+def normalize_table_metadata_key(key: str) -> str:
+    """Return the canonical table metadata key used by the DOCX postprocessor."""
+    return key.strip().lower().replace("-", "_")
 
-    Args:
-        caption_text: The caption text containing metadata
 
-    Returns:
-        Clean caption text without metadata
-    """
-    # Remove the |...| pattern and trim whitespace
-    clean_text = re.sub(r'\s*\|[^|]+\|\s*', '', caption_text)
-    return clean_text.strip()
+def normalize_table_metadata(metadata: Mapping[str, Any]) -> dict[str, str]:
+    """Keep supported table metadata attributes and normalize values to strings."""
+    normalized: dict[str, str] = {}
+    for key, value in metadata.items():
+        canonical_key = normalize_table_metadata_key(str(key))
+        if canonical_key in TABLE_METADATA_KEYS:
+            normalized[canonical_key] = str(value)
+    return normalized
+
+
+def parse_table_metadata_marker(text: str) -> dict[str, Any] | None:
+    """Return a metadata record from a hidden marker paragraph, if present."""
+    try:
+        record = json.loads(text[len(TABLE_METADATA_MARKER_PREFIX):])
+    except json.JSONDecodeError as exc:
+        print_warning(f"Invalid table metadata marker ignored: {exc}")
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def remove_paragraph(para: Paragraph) -> None:
+    """Remove a marker paragraph from the DOCX body after its payload is read."""
+    parent = para._element.getparent()
+    if parent is not None:
+        parent.remove(para._element)
+
+
+def table_metadata_records_from_doc(doc: DocumentObject) -> list[tuple[Table, dict[str, Any]]]:
+    """Pair hidden marker records with the next table in document order."""
+    pairs: list[tuple[Table, dict[str, Any]]] = []
+    pending_record: dict[str, Any] | None = None
+    marker_paragraphs: list[Paragraph] = []
+
+    for block in iter_body_blocks(doc):
+        if isinstance(block, Paragraph):
+            if block.text.startswith(TABLE_METADATA_MARKER_PREFIX):
+                marker_paragraphs.append(block)
+                record = parse_table_metadata_marker(block.text)
+                if record is not None:
+                    pending_record = record
+            continue
+
+        if isinstance(block, Table) and pending_record is not None:
+            pairs.append((block, pending_record))
+            pending_record = None
+
+    for para in marker_paragraphs:
+        remove_paragraph(para)
+
+    return pairs
 
 
 def convert_to_points(dimension: str) -> float:
@@ -204,7 +232,7 @@ def set_autofit_behavior(table: Table, behavior: str):
         pass
 
 
-def apply_table_metadata(table: Table, metadata: Dict[str, str]) -> list[str]:
+def apply_table_metadata(table: Table, metadata: Mapping[str, str]) -> list[str]:
     """
     Apply metadata settings to table.
 
@@ -219,7 +247,7 @@ def apply_table_metadata(table: Table, metadata: Dict[str, str]) -> list[str]:
 
     for key, value in metadata.items():
         try:
-            key_lower = key.lower()
+            key_lower = normalize_table_metadata_key(key)
 
             if key_lower == 'cell_margin':
                 # Set cell margins (all sides)
@@ -281,7 +309,7 @@ def apply_table_metadata(table: Table, metadata: Dict[str, str]) -> list[str]:
 
 def process_table_metadata(doc: DocumentObject) -> tuple[int, int]:
     """
-    Process table metadata from captions.
+    Process table metadata collected from Pandoc table attributes.
 
     Args:
         doc: python-docx Document object
@@ -298,68 +326,35 @@ def process_table_metadata(doc: DocumentObject) -> tuple[int, int]:
         print_debug("No tables found in document")
         return processed_count, total_settings_applied
 
-    print_debug(f"Processing {table_count} table(s)...")
+    table_record_pairs = table_metadata_records_from_doc(doc)
+    if not table_record_pairs:
+        print_debug("No table metadata attributes found")
+        return processed_count, total_settings_applied
 
-    # Iterate through all tables
-    for i, table in enumerate(doc.tables, start=1):
-        # Find the table's caption (can be before or after the table)
-        caption_para = None
-        caption_text = ""
+    print_debug(f"Processing {table_count} DOCX table(s) with {len(table_record_pairs)} metadata marker(s)...")
 
-        # Get the previous and next elements
-        prev_element = table._element.getprevious()
-        next_element = table._element.getnext()
+    for table, record in table_record_pairs:
+        attributes = record.get("attributes", {})
+        metadata = normalize_table_metadata(attributes) if isinstance(attributes, Mapping) else {}
+        if not metadata:
+            continue
 
-        # Function to check if an element is a caption with metadata
-        def check_caption(element):
-            if element is None or not element.tag.endswith('p'):
-                return None, ""
+        print_debug(f"Processing Table {record.get('index', '?')}...")
+        applied_settings = apply_table_metadata(table, metadata)
 
-            # Find the corresponding paragraph object
-            for para in doc.paragraphs:
-                if para._element == element:
-                    style_name = para.style.name if para.style else ""
-                    # Check if it's a caption style (Table Caption, Caption, 题注，etc.)
-                    if style_name and ('Caption' in style_name or '题注' in style_name or 'Table' in style_name):
-                        # Check if this caption contains metadata
-                        if re.search(r'\|[^|]+=[^|]+\|', para.text):
-                            return para, para.text
-            return None, ""
+        if applied_settings:
+            print_debug_success(f"  Applied: {', '.join(applied_settings)}")
+            total_settings_applied += len(applied_settings)
 
-        # First check previous element (Pandoc usually puts caption before table)
-        caption_para, caption_text = check_caption(prev_element)
-
-        # If not found, check next element
-        if not caption_para:
-            caption_para, caption_text = check_caption(next_element)
-
-        # Process metadata if caption found
-        if caption_para and re.search(r'\|[^|]+=[^|]+\|', caption_text):
-            print_debug(f"Processing Table {i}...")
-
-            # Parse metadata
-            metadata = parse_table_metadata(caption_text)
-
-            if metadata:
-                # Apply metadata to table
-                applied_settings = apply_table_metadata(table, metadata)
-
-                if applied_settings:
-                    print_debug_success(f"  Applied: {', '.join(applied_settings)}")
-                    total_settings_applied += len(applied_settings)
-
-                # Remove metadata from caption
-                print_debug(f"  Original caption: {caption_text}")
-                clean_caption = remove_metadata_from_caption(caption_text)
-                caption_para.text = clean_caption
-                print_debug_success("  Metadata removed from caption")
-
-                processed_count += 1
+        processed_count += 1
 
     return processed_count, total_settings_applied
 
 
-def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
+def process_file(
+    docx_path: str,
+    save: bool = True,
+) -> Optional[DocumentObject]:
     """
     Process a DOCX file to apply table metadata.
 
@@ -375,8 +370,7 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
         if doc is None or docx_path_abs is None:
             return None
 
-        # Process table metadata
-        print_debug("Processing table metadata from captions...")
+        print_debug("Processing table metadata from hidden Pandoc attribute markers...")
         processed, settings_applied = process_table_metadata(doc)
 
         print_debug_success(f"\nProcessed {processed} of {len(doc.tables)} table(s)")
@@ -399,7 +393,7 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
 def main():
     """Main entry point for command-line usage"""
     parser = argparse.ArgumentParser(
-        description="Process table metadata from captions in DOCX files",
+        description="Process table metadata from Pandoc table attributes in DOCX files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -416,8 +410,8 @@ Supported metadata keys:
   alignment=center         - Set table alignment (left, center, right)
   autofit=window           - Set autofit behavior (fixed, content, window)
 
-Caption format:
-  Table 1: Description |cell_margin=0.1cm alignment=center|
+Pandoc caption attribute format:
+  : Description {#tbl:demo cell_margin="0.1cm" alignment="center"}
         """
     )
     parser.add_argument("docx_path", help="Path to the DOCX file to process")

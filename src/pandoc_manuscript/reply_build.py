@@ -253,6 +253,14 @@ def mathtype_filter_args() -> list[str]:
     return ["--lua-filter", to_pandoc_path(marker_filter)]
 
 
+def table_metadata_filter_args() -> list[str]:
+    """Return Pandoc args for embedding hidden reply table-attribute markers."""
+    filter_path = template_root() / "pandoc" / "filters" / "table_metadata.lua"
+    if not filter_path.exists():
+        raise FileNotFoundError(f"Table metadata Pandoc filter not found: {filter_path}")
+    return ["--lua-filter", to_pandoc_path(filter_path)]
+
+
 def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
     """Convert a marked reply DOCX's OMML equations into MathType OLE equations."""
     if not extract_marked_equation_requests(marked_docx):
@@ -749,6 +757,7 @@ def build_reply_docx(
             str(reference_doc),
             "--resource-path",
             reply_resource_path(reply),
+            *table_metadata_filter_args(),
             *mathtype_args,
         ]
         run_command(cmd)

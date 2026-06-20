@@ -388,7 +388,7 @@ Add standard Pandoc attributes to table captions to control DOCX table propertie
 - `row_height="0.5cm"` - Set row height for all rows
 - `revision_rows="1,2,3"` - Mark changed or added 1-based rows in red text
 - `revision_columns="6,7"` - Mark changed or added 1-based columns in red text
-- `revision_rows="*"` or `revision_columns="*"` - Mark the entire table in red text
+- `revision_rows="*"` or `revision_columns="*"` - Mark the entire table and its caption in red text
 - `alignment="center"` - Table alignment (left, center, right)
 - `autofit="window"` - Autofit behavior (fixed, content, window)
 

@@ -89,10 +89,17 @@ def remove_paragraph(para: Paragraph) -> None:
         parent.remove(para._element)
 
 
-def table_metadata_records_from_doc(doc: DocumentObject) -> list[tuple[Table, dict[str, Any]]]:
-    """Pair hidden marker records with the next table in document order."""
-    pairs: list[tuple[Table, dict[str, Any]]] = []
+def is_table_caption_paragraph(para: Paragraph) -> bool:
+    """Return True when a paragraph looks like a Pandoc table caption."""
+    style_name = para.style.name if para.style else ""
+    return bool(style_name and ("Caption" in style_name or "题注" in style_name or "Table" in style_name))
+
+
+def table_metadata_records_from_doc(doc: DocumentObject) -> list[tuple[Table, Paragraph | None, dict[str, Any]]]:
+    """Pair hidden marker records and optional captions with the next table."""
+    pairs: list[tuple[Table, Paragraph | None, dict[str, Any]]] = []
     pending_record: dict[str, Any] | None = None
+    pending_caption: Paragraph | None = None
     marker_paragraphs: list[Paragraph] = []
 
     for block in iter_body_blocks(doc):
@@ -102,11 +109,15 @@ def table_metadata_records_from_doc(doc: DocumentObject) -> list[tuple[Table, di
                 record = parse_table_metadata_marker(block.text)
                 if record is not None:
                     pending_record = record
+                    pending_caption = None
+            elif pending_record is not None and is_table_caption_paragraph(block):
+                pending_caption = block
             continue
 
         if isinstance(block, Table) and pending_record is not None:
-            pairs.append((block, pending_record))
+            pairs.append((block, pending_caption, pending_record))
             pending_record = None
+            pending_caption = None
 
     for para in marker_paragraphs:
         remove_paragraph(para)
@@ -173,12 +184,24 @@ def mark_cell_text_as_revision(cell) -> int:
     return run_count
 
 
-def mark_revision_table(table: Table) -> int:
-    """Color text in every cell red for revision_rows/columns='*'."""
+def mark_paragraph_text_as_revision(paragraph: Paragraph | None) -> int:
+    """Color all runs in a table caption red when whole-table revision is requested."""
+    if paragraph is None:
+        return 0
+    run_count = 0
+    for run in paragraph.runs:
+        run.font.color.rgb = REVISION_TEXT_COLOR
+        run_count += 1
+    return run_count
+
+
+def mark_revision_table(table: Table, caption: Paragraph | None = None) -> int:
+    """Color the table and its caption red for revision_rows/columns='*'."""
     run_count = 0
     for row in table.rows:
         for cell in row.cells:
             run_count += mark_cell_text_as_revision(cell)
+    run_count += mark_paragraph_text_as_revision(caption)
     return run_count
 
 
@@ -304,13 +327,18 @@ def set_autofit_behavior(table: Table, behavior: str):
         pass
 
 
-def apply_table_metadata(table: Table, metadata: Mapping[str, str]) -> list[str]:
+def apply_table_metadata(
+    table: Table,
+    metadata: Mapping[str, str],
+    caption: Paragraph | None = None,
+) -> list[str]:
     """
     Apply metadata settings to table.
 
     Args:
         table: The table to modify
         metadata: Dictionary of metadata key-value pairs
+        caption: Adjacent caption paragraph for whole-table revision markers
 
     Returns:
         List of applied settings descriptions
@@ -362,7 +390,7 @@ def apply_table_metadata(table: Table, metadata: Mapping[str, str]) -> list[str]
 
             elif key_lower == 'revision_rows':
                 if is_revision_all_marker(value):
-                    runs = mark_revision_table(table)
+                    runs = mark_revision_table(table, caption)
                 else:
                     row_indices = parse_revision_indices(value, "revision_rows")
                     runs = mark_revision_rows(table, row_indices)
@@ -370,7 +398,7 @@ def apply_table_metadata(table: Table, metadata: Mapping[str, str]) -> list[str]
 
             elif key_lower == 'revision_columns':
                 if is_revision_all_marker(value):
-                    runs = mark_revision_table(table)
+                    runs = mark_revision_table(table, caption)
                 else:
                     column_indices = parse_revision_indices(value, "revision_columns")
                     runs = mark_revision_columns(table, column_indices)
@@ -421,14 +449,14 @@ def process_table_metadata(doc: DocumentObject) -> tuple[int, int]:
 
     print_debug(f"Processing {table_count} DOCX table(s) with {len(table_record_pairs)} metadata marker(s)...")
 
-    for table, record in table_record_pairs:
+    for table, caption, record in table_record_pairs:
         attributes = record.get("attributes", {})
         metadata = normalize_table_metadata(attributes) if isinstance(attributes, Mapping) else {}
         if not metadata:
             continue
 
         print_debug(f"Processing Table {record.get('index', '?')}...")
-        applied_settings = apply_table_metadata(table, metadata)
+        applied_settings = apply_table_metadata(table, metadata, caption)
 
         if applied_settings:
             print_debug_success(f"  Applied: {', '.join(applied_settings)}")
@@ -497,7 +525,7 @@ Supported metadata keys:
   row_height=1cm           - Set row height
   revision_rows=1,2,3      - Mark changed/added rows red (1-based, includes header)
   revision_columns=6,7     - Mark changed/added columns red (1-based)
-  revision_rows=*          - Mark the entire table red
+  revision_rows=*          - Mark the entire table and its caption red
   alignment=center         - Set table alignment (left, center, right)
   autofit=window           - Set autofit behavior (fixed, content, window)
 

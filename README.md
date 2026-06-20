@@ -481,12 +481,12 @@ pmt build-reply reply.md \
 ```
 
 The reply build reads its reply-specific defaults from the `reply:` section in
-`style.yml`, while `--manuscript-line-source` defaults to
-`output/docx/manuscript.docx`. The line source is only read when the reply uses
-``(Line `regex`)`` placeholders. The reply markdown path itself is required. If
-the line source is a DOCX file, Windows builds export it through Word COM, while
-Linux and other non-Windows builds call `soffice --headless --convert-to pdf`
-and then resolve line placeholders against the generated PDF text layer.
+`style.yml`, while `--manuscript-line-source` defaults to `manuscript.md`. The
+line source is only read when the reply uses ``(Line `regex`)`` placeholders.
+Markdown line sources are first built to a temporary DOCX; DOCX sources are then
+exported to PDF through Word COM on Windows or `soffice --headless --convert-to
+pdf` on Linux and other non-Windows systems. Line placeholders are resolved
+against the generated PDF text layer. The reply markdown path itself is required.
 
 ```
 

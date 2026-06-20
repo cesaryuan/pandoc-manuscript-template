@@ -102,6 +102,48 @@ def test_prepare_line_source_pdf_uses_soffice_on_non_windows(tmp_path, monkeypat
     ]
 
 
+def test_default_reply_line_source_is_manuscript_markdown() -> None:
+    """Use manuscript.md by default so line sources rebuild from current manuscript content."""
+    assert reply_build.DEFAULT_REPLY_LINE_SOURCE == "manuscript.md"
+
+
+def test_prepare_line_source_pdf_builds_markdown_before_pdf(tmp_path, monkeypatch) -> None:
+    """Convert Markdown line sources through a temporary DOCX before PDF extraction."""
+    source_markdown = tmp_path / "manuscript.md"
+    source_markdown.write_text("# Manuscript\n", encoding="utf-8")
+    docx_dir = tmp_path / "line-source-docx"
+    pdf_dir = tmp_path / "line-source-pdf"
+    calls = []
+
+    def fake_build_markdown_line_source_docx(source, target):
+        """Pretend the normal manuscript DOCX build created the intermediate file."""
+        calls.append(("build", source, target))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"docx")
+
+    def fake_export_docx_to_pdf_with_word(source, target):
+        """Pretend Word exported the intermediate DOCX to PDF."""
+        calls.append(("pdf", source, target))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"%PDF")
+
+    monkeypatch.setattr(reply_build, "LINE_SOURCE_DOCX_DIR", docx_dir)
+    monkeypatch.setattr(reply_build, "LINE_SOURCE_PDF_DIR", pdf_dir)
+    monkeypatch.setattr(reply_build.sys, "platform", "win32")
+    monkeypatch.setattr(reply_build, "build_markdown_line_source_docx", fake_build_markdown_line_source_docx)
+    monkeypatch.setattr(reply_build, "export_docx_to_pdf_with_word", fake_export_docx_to_pdf_with_word)
+
+    result = reply_build.prepare_line_source_pdf(source_markdown)
+
+    expected_docx = docx_dir / "manuscript.docx"
+    expected_pdf = pdf_dir / "manuscript.pdf"
+    assert result == expected_pdf
+    assert calls == [
+        ("build", source_markdown, expected_docx),
+        ("pdf", expected_docx, expected_pdf),
+    ]
+
+
 class FakePdfPage:
     """Minimal PyMuPDF page double for line-number extraction tests."""
 

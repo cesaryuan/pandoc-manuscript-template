@@ -24,7 +24,7 @@ from .metadata import load_merged_metadata_with_status, merge_metadata, parse_ya
 from .mathtype.convert_marked_docx import convert_marked_docx
 from .mathtype.marked_docx import extract_marked_equation_requests
 from .mathtype.ole_parts import build_helper, check_mathtype_availability
-from .paths import PMT_MATHTYPE_WORK_DIR, PMT_REPLY_LINE_SOURCE_PDF_DIR, PMT_REPLY_PROBE_DIR
+from .paths import PMT_MATHTYPE_WORK_DIR, PMT_REPLY_LINE_SOURCE_DOCX_DIR, PMT_REPLY_LINE_SOURCE_PDF_DIR, PMT_REPLY_PROBE_DIR
 from .postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from .postprocess_docx import postprocess_docx
 from .resources import package_resource_path, template_root
@@ -33,10 +33,11 @@ from .resources import package_resource_path, template_root
 DEFAULT_OUTPUT_DIR = "output"
 DEFAULT_STYLE_FILE = "style.yml"
 DEFAULT_REPLY_MANUSCRIPT_FILE = "manuscript.md"
-DEFAULT_REPLY_LINE_SOURCE = "output/docx/manuscript.docx"
+DEFAULT_REPLY_LINE_SOURCE = DEFAULT_REPLY_MANUSCRIPT_FILE
 DEFAULT_REPLY_FROM_FORMAT = "markdown"
 DEFAULT_REPLY_OUTPUT_FILE = "output/docx/<reply-name>.docx"
 LINE_SOURCE_PDF_DIR = PMT_REPLY_LINE_SOURCE_PDF_DIR
+LINE_SOURCE_DOCX_DIR = PMT_REPLY_LINE_SOURCE_DOCX_DIR
 REPLY_PROBE_DIR = PMT_REPLY_PROBE_DIR
 LABEL_CHARS_NO_DOT = r"A-Za-z0-9_:\-"
 LABEL_CONTINUATION = rf"(?:[{LABEL_CHARS_NO_DOT}]|\.(?=[{LABEL_CHARS_NO_DOT}]))"
@@ -93,7 +94,7 @@ class BuildReplySettings(BaseSettings):
     )
     manuscript_line_source: str | None = Field(
         default=DEFAULT_REPLY_LINE_SOURCE,
-        description="DOCX source used for reply line placeholders.",
+        description="Markdown, DOCX, or PDF source used for reply line placeholders.",
     )
     from_format: str | None = Field(
         default=DEFAULT_REPLY_FROM_FORMAT,
@@ -811,6 +812,34 @@ def export_docx_to_pdf_with_soffice(source_docx: Path, target_pdf: Path) -> None
     log_info(f"[LINE] soffice PDF created: {target_pdf}")
 
 
+def build_markdown_line_source_docx(source_markdown: Path, target_docx: Path) -> None:
+    """Build a Markdown line source to DOCX before converting it to PDF."""
+    from . import build as manuscript_build
+
+    source_markdown = source_markdown.resolve()
+    target_docx = target_docx.resolve()
+    target_docx.parent.mkdir(parents=True, exist_ok=True)
+
+    previous_settings = manuscript_build.SETTINGS.model_copy(deep=True)
+    result = 1
+    try:
+        log_info(f"[LINE] Building Markdown line source DOCX: {source_markdown}")
+        result = manuscript_build.run_build_command(
+            target="docx",
+            markdown=str(source_markdown),
+            output_file=str(target_docx),
+        )
+    finally:
+        for key, value in previous_settings.model_dump().items():
+            setattr(manuscript_build.SETTINGS, key, value)
+
+    if result != 0:
+        raise RuntimeError(f"Markdown line-source DOCX build failed: {source_markdown}")
+    if not target_docx.exists():
+        raise RuntimeError(f"Markdown line-source DOCX build did not create: {target_docx}")
+    log_info(f"[LINE] Markdown line source DOCX created: {target_docx}")
+
+
 def prepare_line_source_pdf(line_source: Path) -> Path:
     """Return a PDF path for line-regex matching, converting DOCX sources if needed."""
     if not line_source.exists():
@@ -819,6 +848,11 @@ def prepare_line_source_pdf(line_source: Path) -> Path:
     suffix = line_source.suffix.lower()
     if suffix == ".pdf":
         return line_source
+    if suffix in {".md", ".markdown"}:
+        target_docx = LINE_SOURCE_DOCX_DIR / f"{line_source.stem}.docx"
+        build_markdown_line_source_docx(line_source, target_docx)
+        line_source = target_docx
+        suffix = line_source.suffix.lower()
     if suffix in {".docx", ".docm"}:
         target_pdf = LINE_SOURCE_PDF_DIR / f"{line_source.stem}.pdf"
         if sys.platform == "win32":
@@ -826,7 +860,7 @@ def prepare_line_source_pdf(line_source: Path) -> Path:
         else:
             export_docx_to_pdf_with_soffice(line_source, target_pdf)
         return target_pdf
-    raise RuntimeError(f"Line source must be a PDF or Word document: {line_source}")
+    raise RuntimeError(f"Line source must be a Markdown, PDF, or Word document: {line_source}")
 
 
 def extract_pdf_numbered_lines(pdf: Path) -> list[tuple[int, int, str]]:

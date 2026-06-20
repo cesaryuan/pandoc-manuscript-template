@@ -584,6 +584,128 @@ def normalized_pdf_line_text(text: str) -> str:
     return re.sub(r"\s+", " ", text.replace("\u00a0", " ")).strip()
 
 
+def pdf_metadata_source(metadata: dict[str, str] | None) -> str:
+    """Join PDF metadata fields for producer-specific extraction decisions."""
+    if not metadata:
+        return ""
+    return " ".join(str(value) for value in metadata.values()).lower()
+
+
+def is_libreoffice_pdf(metadata: dict[str, str] | None) -> bool:
+    """Return whether PDF metadata identifies LibreOffice as the producer."""
+    return "libreoffice" in pdf_metadata_source(metadata)
+
+
+def is_microsoft_word_pdf(metadata: dict[str, str] | None) -> bool:
+    """Return whether PDF metadata identifies Microsoft Word as the producer."""
+    source = pdf_metadata_source(metadata)
+    return "microsoft" in source and "word" in source
+
+
+def extract_pdf_numbered_lines_by_text_order(document: Any) -> list[tuple[int, int, str]]:
+    """Extract line-number pairs from PDFs whose text stream interleaves text then number."""
+    numbered_lines: list[tuple[int, int, str]] = []
+    for page_index, page in enumerate(document, start=1):
+        lines = page.get_text("text").splitlines()
+        i = 0
+        while i < len(lines) - 1:
+            text = normalized_pdf_line_text(lines[i])
+            maybe_number = lines[i + 1].strip()
+            if text and re.fullmatch(r"\d+", maybe_number):
+                numbered_lines.append((int(maybe_number), page_index, text))
+                i += 2
+                continue
+            i += 1
+    return numbered_lines
+
+
+def y_center(bbox: tuple[float, float, float, float]) -> float:
+    """Return a text-line bounding box's vertical center for layout matching."""
+    return (bbox[1] + bbox[3]) / 2
+
+
+def group_body_lines_by_y(
+    text_lines: list[tuple[str, tuple[float, float, float, float]]],
+) -> list[tuple[str, tuple[float, float, float, float]]]:
+    """Keep one body text line per y position, avoiding isolated superscript fragments."""
+    groups: list[list[tuple[str, tuple[float, float, float, float]]]] = []
+    for text, bbox in text_lines:
+        center = y_center(bbox)
+        for group in groups:
+            if abs(y_center(group[0][1]) - center) <= 1.0:
+                group.append((text, bbox))
+                break
+        else:
+            groups.append([(text, bbox)])
+
+    body_lines: list[tuple[str, tuple[float, float, float, float]]] = []
+    for group in groups:
+        body_lines.append(max(group, key=lambda item: len(item[0])))
+    return body_lines
+
+
+def keep_increasing_line_numbers(
+    numbered_lines: list[tuple[int, int, str]],
+) -> list[tuple[int, int, str]]:
+    """Drop LibreOffice footnote line-number resets that appear after body line numbers."""
+    kept: list[tuple[int, int, str]] = []
+    last_line_number = 0
+    for item in numbered_lines:
+        line_number, _, _ = item
+        if line_number <= last_line_number:
+            log_debug(f"[LINE] Skipping non-increasing LibreOffice line number: {line_number}")
+            continue
+        kept.append(item)
+        last_line_number = line_number
+    return kept
+
+
+def extract_pdf_numbered_lines_by_layout(document: Any) -> list[tuple[int, int, str]]:
+    """Pair left-margin line numbers with body text by y coordinate for LibreOffice PDFs."""
+    numbered_lines: list[tuple[int, int, str]] = []
+    for page_index, page in enumerate(document, start=1):
+        number_lines: list[tuple[int, tuple[float, float, float, float]]] = []
+        text_lines: list[tuple[str, tuple[float, float, float, float]]] = []
+
+        for block in page.get_text("dict").get("blocks", []):
+            if block.get("type") != 0:
+                continue
+            for line in block.get("lines", []):
+                bbox = line.get("bbox")
+                if not bbox:
+                    continue
+                text = normalized_pdf_line_text(
+                    "".join(str(span.get("text", "")) for span in line.get("spans", []))
+                )
+                if not text:
+                    continue
+                line_bbox = tuple(float(value) for value in bbox)
+                if re.fullmatch(r"\d+", text):
+                    number_lines.append((int(text), line_bbox))
+                else:
+                    text_lines.append((text, line_bbox))
+
+        if not number_lines or not text_lines:
+            continue
+
+        body_left = min(bbox[0] for _, bbox in text_lines)
+        margin_numbers = [(number, bbox) for number, bbox in number_lines if bbox[2] < body_left - 2]
+        body_lines = group_body_lines_by_y(text_lines)
+
+        for number, number_bbox in margin_numbers:
+            number_y = y_center(number_bbox)
+            matches = [
+                (text, bbox)
+                for text, bbox in body_lines
+                if abs(y_center(bbox) - number_y) <= max(3.0, (number_bbox[3] - number_bbox[1]) * 0.75)
+            ]
+            if not matches:
+                continue
+            text, _ = max(matches, key=lambda item: len(item[0]))
+            numbered_lines.append((number, page_index, text))
+    return keep_increasing_line_numbers(numbered_lines)
+
+
 def export_docx_to_pdf_with_word(source_docx: Path, target_pdf: Path) -> None:
     """Export a DOCX line source to PDF through Microsoft Word COM automation."""
     if sys.platform != "win32":
@@ -648,6 +770,46 @@ try {
     log_info(f"[LINE] Word COM PDF created: {target_pdf}")
 
 
+def export_docx_to_pdf_with_soffice(source_docx: Path, target_pdf: Path) -> None:
+    """Export a DOCX line source to PDF through LibreOffice's soffice CLI."""
+    source_docx = source_docx.resolve()
+    target_pdf = target_pdf.resolve()
+    target_pdf.parent.mkdir(parents=True, exist_ok=True)
+
+    expected_pdf = target_pdf.parent / f"{source_docx.stem}.pdf"
+    target_pdf.unlink(missing_ok=True)
+    if expected_pdf != target_pdf:
+        expected_pdf.unlink(missing_ok=True)
+
+    log_info(f"[LINE] Converting DOCX line source to PDF with soffice: {source_docx}")
+    result = subprocess.run(
+        [
+            "soffice",
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            str(target_pdf.parent),
+            str(source_docx),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode != 0:
+        if result.stdout.strip():
+            log_error(result.stdout.strip())
+        if result.stderr.strip():
+            log_error(result.stderr.strip())
+        raise RuntimeError(f"soffice DOCX-to-PDF conversion failed: {source_docx}")
+    if not expected_pdf.exists():
+        raise RuntimeError(f"soffice conversion did not create PDF: {expected_pdf}")
+    if expected_pdf != target_pdf:
+        shutil.move(str(expected_pdf), str(target_pdf))
+    log_info(f"[LINE] soffice PDF created: {target_pdf}")
+
+
 def prepare_line_source_pdf(line_source: Path) -> Path:
     """Return a PDF path for line-regex matching, converting DOCX sources if needed."""
     if not line_source.exists():
@@ -658,7 +820,10 @@ def prepare_line_source_pdf(line_source: Path) -> Path:
         return line_source
     if suffix in {".docx", ".docm"}:
         target_pdf = LINE_SOURCE_PDF_DIR / f"{line_source.stem}.pdf"
-        export_docx_to_pdf_with_word(line_source, target_pdf)
+        if sys.platform == "win32":
+            export_docx_to_pdf_with_word(line_source, target_pdf)
+        else:
+            export_docx_to_pdf_with_soffice(line_source, target_pdf)
         return target_pdf
     raise RuntimeError(f"Line source must be a PDF or Word document: {line_source}")
 
@@ -673,19 +838,25 @@ def extract_pdf_numbered_lines(pdf: Path) -> list[tuple[int, int, str]]:
     if not pdf.exists():
         raise FileNotFoundError(f"Manuscript PDF not found for line resolution: {pdf}")
 
-    numbered_lines: list[tuple[int, int, str]] = []
     with fitz.open(pdf) as document:
-        for page_index, page in enumerate(document, start=1):
-            lines = page.get_text("text").splitlines()
-            i = 0
-            while i < len(lines) - 1:
-                text = normalized_pdf_line_text(lines[i])
-                maybe_number = lines[i + 1].strip()
-                if text and re.fullmatch(r"\d+", maybe_number):
-                    numbered_lines.append((int(maybe_number), page_index, text))
-                    i += 2
-                    continue
-                i += 1
+        if is_libreoffice_pdf(document.metadata):
+            numbered_lines = extract_pdf_numbered_lines_by_layout(document)
+            log_info(
+                f"[INFO] Extracted {len(numbered_lines)} numbered PDF text lines from {pdf} using LibreOffice layout matching."
+            )
+            return numbered_lines
+
+        if is_microsoft_word_pdf(document.metadata):
+            numbered_lines = extract_pdf_numbered_lines_by_layout(document)
+            if numbered_lines:
+                log_info(
+                    f"[INFO] Extracted {len(numbered_lines)} numbered PDF text lines from {pdf} using Word layout matching."
+                )
+                return numbered_lines
+            log_warning("[WARN] Microsoft Word PDF layout matching found no numbered lines; falling back to text order.")
+
+        numbered_lines = extract_pdf_numbered_lines_by_text_order(document)
+
     log_info(f"[INFO] Extracted {len(numbered_lines)} numbered PDF text lines from {pdf}.")
     return numbered_lines
 

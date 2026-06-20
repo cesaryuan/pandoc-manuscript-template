@@ -134,7 +134,13 @@ def convert_with_resvg_py(source: Path, target: Path, dpi: float, scale: float) 
     """Convert SVG to PNG with the pure package-managed resvg binding."""
     import resvg_py
 
-    png_bytes = resvg_py.svg_to_bytes(svg_path=str(source), dpi=dpi, zoom=scale if scale != 1 else None)
+    png_bytes = resvg_py.svg_to_bytes(
+        svg_path=str(source),
+        # Resolve relative <image href="..."> assets from the SVG file location.
+        resources_dir=str(source.parent),
+        dpi=dpi,
+        zoom=scale if scale != 1 else None,
+    )
     target.write_bytes(png_bytes)
     return "resvg-py"
 

@@ -13,11 +13,8 @@ dependencies = [
   "pymupdf>=1.26.0",
   "pydantic-settings>=2.0.0",
   "python-dotenv>=1.0.0",
-  "resvg-py",
+  "resvg-py>=0.3.3",
 ]
-
-[tool.uv.sources]
-resvg-py = { git = "https://github.com/cesaryuan/resvg-py", rev = "5136084cbee5c82db54e1a1ff059f6d221b6349c" }
 
 [project.scripts]
 pmt = "pandoc_manuscript.cli:main"

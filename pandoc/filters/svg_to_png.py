@@ -9,7 +9,6 @@ URLs in the Pandoc AST and leaves the source Markdown unchanged.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import sys
 from pathlib import Path
@@ -19,10 +18,8 @@ import panflute as pf
 
 
 SVG_SUFFIXES = {".svg", ".svgz"}
-CACHE_METADATA_VERSION = 1
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "WARN": 30, "ERROR": 40}
 CONVERTED: set[Path] = set()
-REUSED: set[Path] = set()
 SKIPPED: set[str] = set()
 
 
@@ -116,7 +113,7 @@ def resolve_source_path(path_text: str, base_dirs: list[Path]) -> Path | None:
 
 
 def output_path_for(source: Path, output_root: Path, base_dirs: list[Path]) -> Path:
-    """Return a stable PNG cache path for one SVG source."""
+    """Return a stable PNG output path for one SVG source."""
     source = source.resolve()
     for base_dir in base_dirs:
         try:
@@ -151,58 +148,11 @@ def convert_svg_to_png(source: Path, target: Path, dpi: float, scale: float) -> 
     return convert_with_resvg_py(source, target, dpi, scale)
 
 
-def cache_metadata_path(target: Path) -> Path:
-    """Return the sidecar metadata path used to validate a generated PNG."""
-    return target.with_suffix(target.suffix + ".meta.json")
-
-
-def expected_cache_metadata(source: Path, dpi: float, scale: float) -> dict[str, object]:
-    """Build cache metadata that changes when source content or options change."""
-    stat_result = source.stat()
-    return {
-        "version": CACHE_METADATA_VERSION,
-        "source": str(source.resolve()),
-        "source_mtime_ns": stat_result.st_mtime_ns,
-        "source_size": stat_result.st_size,
-        "dpi": dpi,
-        "scale": scale,
-    }
-
-
-def cache_metadata_matches(target: Path, expected: dict[str, object]) -> bool:
-    """Return True only when the PNG and its sidecar metadata are current."""
-    metadata_path = cache_metadata_path(target)
-    if not target.exists() or not metadata_path.exists():
-        return False
-    try:
-        actual = json.loads(metadata_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        log_debug(f"[svg-to-png] Ignoring stale cache metadata {metadata_path}: {exc}")
-        return False
-    return all(actual.get(key) == value for key, value in expected.items())
-
-
-def write_cache_metadata(target: Path, metadata: dict[str, object], converter: str) -> None:
-    """Write sidecar metadata so option changes invalidate old PNG caches."""
-    payload = {**metadata, "converter": converter}
-    cache_metadata_path(target).write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-
-
-def ensure_png(source: Path, target: Path, dpi: float, scale: float) -> Path:
-    """Create or reuse the PNG cache file for one SVG source."""
-    expected_metadata = expected_cache_metadata(source, dpi, scale)
-    if cache_metadata_matches(target, expected_metadata):
-        REUSED.add(target)
-        log_debug(f"[svg-to-png] Reusing {target}")
-        return target
-
+def render_png(source: Path, target: Path, dpi: float, scale: float) -> Path:
+    """Render a PNG for one SVG source on every build."""
     converter = convert_svg_to_png(source, target, dpi, scale)
-    write_cache_metadata(target, expected_metadata, converter)
     CONVERTED.add(target)
-    log_debug(f"[svg-to-png] Converted {source} -> {target} with {converter}")
+    log_debug(f"[svg-to-png] Rendered {source} -> {target} with {converter}")
     return target
 
 
@@ -218,7 +168,7 @@ def rewrite_image(elem: pf.Image, base_dirs: list[Path], output_root: Path, dpi:
         log_warning(f"[WARN] SVG image not found, leaving unchanged: {elem.url}")
         return None
 
-    target = ensure_png(source, output_path_for(source, output_root, base_dirs), dpi, scale)
+    target = render_png(source, output_path_for(source, output_root, base_dirs), dpi, scale)
     elem.url = target.as_posix()
     return elem
 
@@ -246,9 +196,8 @@ def prepare(doc: pf.Doc) -> None:
 
 def finalize(doc: pf.Doc) -> None:
     """Report an INFO-level summary after all images have been inspected."""
-    total = len(CONVERTED) + len(REUSED)
-    if total:
-        log_info(f"[svg-to-png] SVG image PNG cache ready: {total} file(s)")
+    if CONVERTED:
+        log_info(f"[svg-to-png] SVG image PNG conversion complete: {len(CONVERTED)} file(s)")
     if SKIPPED:
         log_warning(f"[WARN] SVG image conversion skipped for {len(SKIPPED)} missing file(s)")
 

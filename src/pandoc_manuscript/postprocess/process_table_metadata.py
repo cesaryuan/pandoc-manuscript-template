@@ -143,6 +143,11 @@ def convert_to_points(dimension: str) -> float:
     return float(dimension)
 
 
+def is_revision_all_marker(value: str) -> bool:
+    """Return True when revision metadata requests the whole table."""
+    return value.strip() == "*"
+
+
 def parse_revision_indices(value: str, field_name: str) -> list[int]:
     """Parse 1-based revision row/column numbers from a comma-separated value."""
     indices: list[int] = []
@@ -165,6 +170,15 @@ def mark_cell_text_as_revision(cell) -> int:
         for run in paragraph.runs:
             run.font.color.rgb = REVISION_TEXT_COLOR
             run_count += 1
+    return run_count
+
+
+def mark_revision_table(table: Table) -> int:
+    """Color text in every cell red for revision_rows/columns='*'."""
+    run_count = 0
+    for row in table.rows:
+        for cell in row.cells:
+            run_count += mark_cell_text_as_revision(cell)
     return run_count
 
 
@@ -347,13 +361,19 @@ def apply_table_metadata(table: Table, metadata: Mapping[str, str]) -> list[str]
                 applied_settings.append(f"row_height={value}")
 
             elif key_lower == 'revision_rows':
-                row_indices = parse_revision_indices(value, "revision_rows")
-                runs = mark_revision_rows(table, row_indices)
+                if is_revision_all_marker(value):
+                    runs = mark_revision_table(table)
+                else:
+                    row_indices = parse_revision_indices(value, "revision_rows")
+                    runs = mark_revision_rows(table, row_indices)
                 applied_settings.append(f"revision_rows={value} ({runs} run(s))")
 
             elif key_lower == 'revision_columns':
-                column_indices = parse_revision_indices(value, "revision_columns")
-                runs = mark_revision_columns(table, column_indices)
+                if is_revision_all_marker(value):
+                    runs = mark_revision_table(table)
+                else:
+                    column_indices = parse_revision_indices(value, "revision_columns")
+                    runs = mark_revision_columns(table, column_indices)
                 applied_settings.append(f"revision_columns={value} ({runs} run(s))")
 
             elif key_lower == 'alignment':
@@ -477,6 +497,7 @@ Supported metadata keys:
   row_height=1cm           - Set row height
   revision_rows=1,2,3      - Mark changed/added rows red (1-based, includes header)
   revision_columns=6,7     - Mark changed/added columns red (1-based)
+  revision_rows=*          - Mark the entire table red
   alignment=center         - Set table alignment (left, center, right)
   autofit=window           - Set autofit behavior (fixed, content, window)
 

@@ -42,8 +42,10 @@ LABEL_CONTINUATION = rf"(?:[{LABEL_CHARS_NO_DOT}]|\.(?=[{LABEL_CHARS_NO_DOT}]))"
 REF_PATTERN = re.compile(rf"@((?:sec|fig|tbl|eq):[A-Za-z0-9]{LABEL_CONTINUATION}*)")
 REF_BOUNDARY = rf"(?![{LABEL_CHARS_NO_DOT}]|\.(?=[{LABEL_CHARS_NO_DOT}]))"
 CITATION_PATTERN = re.compile(r"(?<![\w:])@([A-Za-z0-9_][A-Za-z0-9_:.#/$%&+?<>~/-]*)")
+CITATION_CLUSTER_PATTERN = re.compile(r"\[([^\]\n]*@[^\]\n]*)\]")
 PROBE_SENTINEL = "PANDOC_REPLY_REF_PROBE"
 CITATION_PROBE_SENTINEL = "PANDOC_REPLY_CITE_PROBE"
+CITATION_CLUSTER_PROBE_SENTINEL = "PANDOC_REPLY_CITE_CLUSTER_PROBE"
 CROSSREF_PREFIXES = ("sec:", "fig:", "tbl:", "eq:")
 LINE_REGEX_PATTERN = re.compile(r"\(Line `([^`]+)`\)")
 ANSI_RED = "\033[31m"
@@ -198,14 +200,36 @@ def extract_reference_labels(markdown: str) -> list[str]:
 
 def extract_citation_keys(markdown: str) -> list[str]:
     """Return unique bibliography citation keys used in reply text."""
-    keys = {
-        key
-        for key in CITATION_PATTERN.findall(markdown)
-        if not key.startswith(CROSSREF_PREFIXES)
-    }
+    keys = set(citation_keys_in_text(markdown))
     citations = sorted(keys)
     log_info(f"[INFO] Found {len(citations)} bibliography citations in reply.")
     return citations
+
+
+def citation_keys_in_text(text: str) -> list[str]:
+    """Return bibliography citation keys from a text fragment in encounter order."""
+    keys: list[str] = []
+    seen: set[str] = set()
+    for key in CITATION_PATTERN.findall(text):
+        if key.startswith(CROSSREF_PREFIXES) or key in seen:
+            continue
+        keys.append(key)
+        seen.add(key)
+    return keys
+
+
+def extract_citation_clusters(markdown: str) -> list[str]:
+    """Return bracketed citation clusters such as `[@a; @b]` from reply text."""
+    clusters: list[str] = []
+    seen: set[str] = set()
+    for match in CITATION_CLUSTER_PATTERN.finditer(markdown):
+        cluster = match.group(0)
+        if cluster in seen or not citation_keys_in_text(match.group(1)):
+            continue
+        clusters.append(cluster)
+        seen.add(cluster)
+    log_info(f"[INFO] Found {len(clusters)} bracketed citation clusters in reply.")
+    return clusters
 
 
 def metadata_bool(value: Any) -> bool:
@@ -435,6 +459,58 @@ def resolve_citation_map(
     return resolved
 
 
+def resolve_citation_cluster_map(
+    manuscript: Path,
+    style: Path,
+    citation_clusters: list[str],
+    from_format: str,
+) -> dict[str, str]:
+    """Resolve bracketed citation clusters so citeproc keeps sorting and delimiters."""
+    if not citation_clusters:
+        return {}
+
+    cluster_ids = [str(index) for index, _ in enumerate(citation_clusters)]
+    probe_path = write_probe_file(
+        "citation-cluster-probe.md",
+        [
+            f"{CITATION_CLUSTER_PROBE_SENTINEL} {cluster_id} {cluster}"
+            for cluster_id, cluster in zip(cluster_ids, citation_clusters)
+        ],
+    )
+    cmd = [
+        "pandoc",
+        "--metadata-file",
+        str(style),
+        "-f",
+        from_format,
+        "-t",
+        "json",
+        "--filter",
+        "pandoc-crossref",
+        "--citeproc",
+        str(manuscript),
+        str(probe_path),
+    ]
+    result = run_command(cmd)
+    if result.stderr.strip():
+        log_warning(result.stderr.strip())
+
+    document = json.loads(result.stdout)
+    resolved_by_id = extract_probe_map(document, CITATION_CLUSTER_PROBE_SENTINEL, cluster_ids, ("???",))
+    resolved = {
+        cluster: resolved_by_id[cluster_id]
+        for cluster_id, cluster in zip(cluster_ids, citation_clusters)
+        if cluster_id in resolved_by_id
+    }
+    missing = [cluster for cluster_id, cluster in zip(cluster_ids, citation_clusters) if cluster_id not in resolved_by_id]
+    if missing:
+        log_warning("[WARN] These citation clusters were not resolved from manuscript bibliography:")
+        for cluster in missing:
+            log_warning(f"  - {cluster}")
+    log_info(f"[INFO] Resolved {len(resolved)} citation clusters from manuscript citeproc output.")
+    return resolved
+
+
 def number_only(label: str, display: str) -> str:
     """Strip a cross-reference prefix when reply prose already supplies it."""
     prefix = PREFIX_WORDS.get(label.split(":", 1)[0])
@@ -474,14 +550,36 @@ def replace_references(markdown: str, reference_map: dict[str, str]) -> str:
     return resolved
 
 
-def replace_citations(markdown: str, citation_map: dict[str, str]) -> str:
+
+def replace_citations(
+    markdown: str,
+    citation_map: dict[str, str],
+    citation_cluster_map: dict[str, str] | None = None,
+) -> str:
     """Replace bibliography citation tokens with manuscript-derived numbers."""
-    resolved = markdown
+    cluster_map = citation_cluster_map or {}
+    protected_clusters: list[str] = []
+
+    def replace_cluster(match: re.Match[str]) -> str:
+        """Replace a complete citation cluster before touching bare keys."""
+        cluster = match.group(0)
+        display = cluster_map.get(cluster)
+        if display:
+            return display
+
+        placeholder = f"@@PMT_CITE_CLUSTER_{len(protected_clusters)}@@"
+        protected_clusters.append(cluster)
+        return placeholder
+
+    resolved = CITATION_CLUSTER_PATTERN.sub(replace_cluster, markdown)
     for key in sorted(citation_map, key=len, reverse=True):
         display = citation_map[key]
         escaped = re.escape(key)
         resolved = re.sub(rf"\[@{escaped}\]", display, resolved)
         resolved = re.sub(rf"(?<![\w:])@{escaped}\b", display, resolved)
+
+    for index, cluster in enumerate(protected_clusters):
+        resolved = resolved.replace(f"@@PMT_CITE_CLUSTER_{index}@@", cluster)
     return resolved
 
 
@@ -734,11 +832,13 @@ def build_reply_docx(
 
     labels = extract_reference_labels(reply_text)
     citations = extract_citation_keys(reply_text)
+    citation_clusters = extract_citation_clusters(reply_text)
     reference_map = resolve_reference_map(manuscript, flattened_style, labels, from_format)
     citation_map = resolve_citation_map(manuscript, flattened_style, citations, from_format)
+    citation_cluster_map = resolve_citation_cluster_map(manuscript, flattened_style, citation_clusters, from_format)
     resolved_text = resolve_line_regexes(reply_text, manuscript_line_source)
     resolved_text = replace_references(resolved_text, reference_map)
-    resolved_text = replace_citations(resolved_text, citation_map)
+    resolved_text = replace_citations(resolved_text, citation_map, citation_cluster_map)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     temp_reply_path = resolved_reply_path(reply)

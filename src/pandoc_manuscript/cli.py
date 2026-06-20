@@ -23,6 +23,7 @@ from pydantic_settings import (
 
 from . import __version__
 from .build import DEFAULT_OUTPUT_DIR, run_build_command
+from .paths import PMT_DIR
 from .reply_build import BuildReplySettings
 from .resources import iter_project_template_entries, package_resource_path, project_template_root, template_root
 
@@ -42,6 +43,7 @@ BUILD_CLI_CONFIG = SettingsConfigDict(
 
 IGNORE_NAMES = {
     ".git",
+    PMT_DIR.name,
     ".pandoc-cache",
     ".venv",
     "__pycache__",

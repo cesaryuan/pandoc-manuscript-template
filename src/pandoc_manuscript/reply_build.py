@@ -24,6 +24,7 @@ from .metadata import load_merged_metadata_with_status, merge_metadata, parse_ya
 from .mathtype.convert_marked_docx import convert_marked_docx
 from .mathtype.marked_docx import extract_marked_equation_requests
 from .mathtype.ole_parts import build_helper, check_mathtype_availability
+from .paths import PMT_MATHTYPE_WORK_DIR, PMT_REPLY_LINE_SOURCE_PDF_DIR, PMT_REPLY_PROBE_DIR
 from .postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from .postprocess_docx import postprocess_docx
 from .resources import package_resource_path, template_root
@@ -35,8 +36,8 @@ DEFAULT_REPLY_MANUSCRIPT_FILE = "manuscript.md"
 DEFAULT_REPLY_LINE_SOURCE = "output/docx/manuscript.docx"
 DEFAULT_REPLY_FROM_FORMAT = "markdown"
 DEFAULT_REPLY_OUTPUT_FILE = "output/docx/<reply-name>.docx"
-LINE_SOURCE_PDF_DIR = Path("tmp/reply-line-source-pdf")
-REPLY_PROBE_DIR = Path("tmp/reply-probes")
+LINE_SOURCE_PDF_DIR = PMT_REPLY_LINE_SOURCE_PDF_DIR
+REPLY_PROBE_DIR = PMT_REPLY_PROBE_DIR
 LABEL_CHARS_NO_DOT = r"A-Za-z0-9_:\-"
 LABEL_CONTINUATION = rf"(?:[{LABEL_CHARS_NO_DOT}]|\.(?=[{LABEL_CHARS_NO_DOT}]))"
 REF_PATTERN = re.compile(rf"@((?:sec|fig|tbl|eq):[A-Za-z0-9]{LABEL_CONTINUATION}*)")
@@ -260,7 +261,7 @@ def resolve_mathtype_enabled(requested: bool) -> bool:
 
 def mathtype_marked_docx_path(output: Path) -> Path:
     """Return the intermediate reply DOCX path carrying hidden LaTeX markers."""
-    work_dir = Path("tmp/mathtype-build/reply")
+    work_dir = PMT_MATHTYPE_WORK_DIR / "reply"
     work_dir.mkdir(parents=True, exist_ok=True)
     return work_dir / f"{output.stem}.marked.docx"
 
@@ -296,7 +297,7 @@ def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
     convert_marked_docx(
         source=marked_docx,
         target=target_docx,
-        work_dir=Path("tmp/mathtype-build/reply") / target_docx.stem,
+        work_dir=PMT_MATHTYPE_WORK_DIR / "reply" / target_docx.stem,
     )
 
 
@@ -363,7 +364,7 @@ def extract_probe_map(
 
 
 def write_probe_file(name: str, lines: list[str]) -> Path:
-    """Write a stable probe file under tmp without relying on tempfile ACLs."""
+    """Write a stable probe file under .pmt without relying on tempfile ACLs."""
     REPLY_PROBE_DIR.mkdir(parents=True, exist_ok=True)
     probe_path = REPLY_PROBE_DIR / name
     probe_path.write_text("\n\n".join(lines) + "\n", encoding="utf-8")

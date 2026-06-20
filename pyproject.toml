@@ -27,6 +27,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build]
 exclude = [
   ".git",
+  ".pmt",
   ".pandoc-cache",
   ".vscode",
   "output",

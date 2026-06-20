@@ -23,6 +23,7 @@ from .metadata import (
 )
 from .mathtype.convert_marked_docx import convert_marked_docx
 from .mathtype.ole_parts import build_helper, check_mathtype_availability
+from .paths import PMT_DIR, PMT_FILTER_WORK_DIR, PMT_MATHTYPE_WORK_DIR, PMT_SVG_PNG_CACHE_DIR, PMT_WORK_DIR, pmt_path
 from .postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from .postprocess_docx import postprocess_docx as run_docx_postprocess
 from .resources import package_resource_path, template_root
@@ -50,7 +51,7 @@ class BuildSettings(BaseSettings):
     output_file: str | None = None
     enable_docx_postprocess: bool = True
     mathtype_marker_filter: str = "mathtype/mathtype_markers.lua"
-    mathtype_work_dir: str = "tmp/mathtype-build"
+    mathtype_work_dir: str = pmt_path(PMT_MATHTYPE_WORK_DIR)
     reference_doc: str | None = None
 
 
@@ -307,7 +308,7 @@ def python_filter_wrapper(filter_path: Path, name: str) -> Path:
     filters may otherwise run under a system Python that cannot import pmt's
     dependencies, which caused the SVG filter to miss panflute in uv tool installs.
     """
-    wrapper_dir = Path(SETTINGS.output_dir) / '.filters'
+    wrapper_dir = PMT_FILTER_WORK_DIR
     wrapper_dir.mkdir(parents=True, exist_ok=True)
     filter_path = filter_path.resolve()
 
@@ -342,7 +343,7 @@ def docx_svg_to_png_filter_args() -> list[str]:
 
 def docx_svg_to_png_filter_env(metadata: dict[str, Any]) -> dict[str, str]:
     """Return environment settings consumed by the SVG-to-PNG Pandoc filter."""
-    output_root = Path(SETTINGS.output_dir) / 'svg-png'
+    output_root = PMT_SVG_PNG_CACHE_DIR
     manuscript_dir = Path(SETTINGS.manuscript_file).parent
     base_dirs = [Path.cwd(), manuscript_dir]
     unique_base_dirs = []
@@ -574,7 +575,7 @@ def build_json():
 
 
 def clean():
-    """Remove all generated files."""
+    """Remove generated outputs and transient work files, keeping reusable caches."""
     log_info("\n[Clean] Cleaning generated files...\n")
 
     output_dir = Path(SETTINGS.output_dir)
@@ -582,6 +583,10 @@ def clean():
         ensure_safe_clean_dir(output_dir)
         shutil.rmtree(output_dir)
         log_info(f"Removed: {output_dir}")
+
+    if PMT_WORK_DIR.exists():
+        shutil.rmtree(PMT_WORK_DIR)
+        log_info(f"Removed: {PMT_WORK_DIR}")
 
     log_success("\n[OK] Clean complete.")
 
@@ -599,17 +604,16 @@ def ensure_safe_clean_dir(output_dir: Path) -> None:
 
 
 def distclean():
-    """Deep clean (including Pandoc cache)."""
+    """Deep clean generated outputs, transient work files, and reusable caches."""
     log_info("\n[Clean] Deep cleaning...\n")
 
     # Regular clean
     clean()
 
-    # Remove Pandoc cache
-    cache_dir = Path('.pandoc-cache')
-    if cache_dir.exists():
-        shutil.rmtree(cache_dir)
-        log_info(f"Removed: {cache_dir}")
+    for cache_dir in (PMT_DIR, Path(".pandoc-cache")):
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
+            log_info(f"Removed: {cache_dir}")
 
     log_success("\n[OK] Deep clean complete.")
 

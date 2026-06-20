@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..logging_utils import log_debug, log_info, log_warning
+from ..paths import PMT_MATHTYPE_CACHE_DIR
 from ..resources import package_resource_path
 
 from .compound_file import CompoundFile
@@ -34,7 +35,7 @@ MATHTYPE_MT6_RELATIVE_PATHS = (
 )
 # Keep the sizing template in-repo so builds do not depend on a local MathType preferences path.
 MATHTYPE_DEFAULT_PREFS_TEMPLATE = resource_path("mathtype/Times+Symbol 12.eqp")
-MATHTYPE_CACHE_DIR = Path(".pandoc-cache/mathtype")
+MATHTYPE_CACHE_DIR = PMT_MATHTYPE_CACHE_DIR
 MATHTYPE_CACHE_VERSION = 1
 BEGIN_ALIGNED_RE = re.compile(r"\\begin\s*\{\s*aligned\s*\}")
 END_ALIGNED_RE = re.compile(r"\\end\s*\{\s*aligned\s*\}")

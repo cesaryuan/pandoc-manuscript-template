@@ -258,6 +258,7 @@ output/
 /manuscript.tex
 
 # Pandoc cache
+.pmt/
 .pandoc-cache/
 __pycache__/
 /tmp

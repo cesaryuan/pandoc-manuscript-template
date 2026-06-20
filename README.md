@@ -195,8 +195,8 @@ docxSvgToPngScale: 1
 ```
 
 During `pmt build docx`, local Markdown image references ending in `.svg` or
-`.svgz` are converted into PNG files under the output file parent (`output/svg-png/`
-by default), and the temporary Pandoc document uses those PNG paths. The
+`.svgz` are converted into PNG files under the pmt cache directory
+(`.pmt/cache/svg-png/` by default), and the temporary Pandoc document uses those PNG paths. The
 original Markdown file is not rewritten. The converter uses the Python `resvg-py` dependency.
 
 The DOCX post-processing step can update paragraph styles from the merged YAML metadata. Add style names under `docxStyle`; each key is matched against an existing DOCX style name, and missing styles are reported as warnings without stopping the build. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:

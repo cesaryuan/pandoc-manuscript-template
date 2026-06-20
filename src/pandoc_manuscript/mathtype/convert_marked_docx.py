@@ -5,6 +5,7 @@ import argparse
 from pathlib import Path
 
 from ..logging_utils import log_info
+from ..paths import PMT_MATHTYPE_WORK_DIR
 
 from .marked_docx import extract_marked_equation_requests, inspect_docx, replace_marked_omml_with_generated
 from .ole_parts import build_helper, generate_equation_parts
@@ -33,10 +34,10 @@ def convert_marked_docx(source: Path, target: Path, work_dir: Path) -> int:
 def main() -> int:
     """Run marker-bound DOCX conversion to MathType OLE objects."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", default="tmp/mathtype-marker-source.docx", help="DOCX containing hidden MathType markers")
-    parser.add_argument("--target", default="tmp/mathtype-marker-ole-probe.docx", help="Output DOCX")
+    parser.add_argument("--source", default=str(PMT_MATHTYPE_WORK_DIR / "marker-source.docx"), help="DOCX containing hidden MathType markers")
+    parser.add_argument("--target", default=str(PMT_MATHTYPE_WORK_DIR / "marker-ole-probe.docx"), help="Output DOCX")
     parser.add_argument("--mode", choices=["all"], default="all", help="Convert all marker-bound formulas")
-    parser.add_argument("--work-dir", default="tmp/mathtype-all", help="Directory for generated OLE and WMF parts")
+    parser.add_argument("--work-dir", default=str(PMT_MATHTYPE_WORK_DIR / "all"), help="Directory for generated OLE and WMF parts")
     args = parser.parse_args()
 
     build_helper()

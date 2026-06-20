@@ -477,7 +477,7 @@ Reviewer replies can be built with the same DOCX pipeline. The `build-reply` com
 ```bash
 pmt build-reply reply.md \
   --reply-manuscript manuscript.md \
-  --output-file output/docx/reply.docx
+  -o output/docx/reply.docx
 ```
 
 The reply build reads its reply-specific defaults from the `reply:` section in
@@ -519,7 +519,7 @@ pmt clean --output-dir build                                  # Remove build/
 ```
 
 The DOCX post-processing step reads YAML metadata from the same markdown file.
-For DOCX, LaTeX, and JSON builds, `--output-file` controls the complete output path. The parent directory is also used as the build output workspace. `pmt clean` still accepts `--output-dir` because it removes a generated directory rather than producing one file.
+For DOCX, LaTeX, JSON, and reviewer-reply builds, `--output-file` controls the complete output path. The parent directory is also used as the build output workspace. `pmt clean` still accepts `--output-dir` because it removes a generated directory rather than producing one file.
 
 ### Direct Pandoc Commands
 

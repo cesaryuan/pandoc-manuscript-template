@@ -62,7 +62,7 @@ BUILD_REPLY_CLI_CONFIG = SettingsConfigDict(
     cli_hide_none_type=True,
     cli_parse_none_str="auto",
     cli_shortcuts={
-        "output_dir": ["-o", "--output-dir"],
+        "output_file": ["-o", "--output-file"],
     },
 )
 
@@ -84,11 +84,7 @@ class BuildReplySettings(BaseSettings):
     model_config = BUILD_REPLY_CLI_CONFIG
 
     markdown: CliPositionalArg[str] = Field(description="Reply markdown file.")
-    output_dir: str = Field(
-        default=DEFAULT_OUTPUT_DIR,
-        validation_alias=AliasChoices("o", "output-dir"),
-        description="Base output directory.",
-    )
+
     project_dir: Path = Field(default=Path("."), description="Manuscript project directory.")
     reply_manuscript: str | None = Field(
         default=DEFAULT_REPLY_MANUSCRIPT_FILE,
@@ -108,6 +104,7 @@ class BuildReplySettings(BaseSettings):
     )
     output_file: str = Field(
         default=DEFAULT_REPLY_OUTPUT_FILE,
+        validation_alias=AliasChoices("o", "output-file"),
         description="Explicit reply DOCX output path.",
     )
 
@@ -120,7 +117,6 @@ class BuildReplySettings(BaseSettings):
         with project_directory(project_dir):
             return run_build_reply_command(
                 markdown=self.markdown,
-                output_dir=self.output_dir,
                 reply_manuscript=self.reply_manuscript,
                 manuscript_line_source=self.manuscript_line_source,
                 from_format=self.from_format,
@@ -894,19 +890,11 @@ def checked_markdown_path(markdown_path: str | Path) -> Path:
     return path
 
 
-def validate_output_dir(output_dir: str | Path) -> Path:
-    """Return the base output directory after rejecting file paths."""
-    path = Path(output_dir)
-    if path.exists() and not path.is_dir():
-        raise ValueError(f"Output path exists but is not a directory: {path}")
-    return path
-
-
-def reply_output_path(output_dir: str | Path, reply: Path, output_file: str | None) -> Path:
-    """Return the DOCX output path for a reply build."""
+def reply_output_path(reply: Path, output_file: str | None) -> Path:
+    """Return the exact DOCX output file for a reply build."""
     if output_file and output_file != DEFAULT_REPLY_OUTPUT_FILE:
         return Path(output_file)
-    return validate_output_dir(output_dir) / "docx" / f"{reply.stem}.docx"
+    return Path(DEFAULT_OUTPUT_DIR) / "docx" / f"{reply.stem}.docx"
 
 
 def reply_reference_doc_path(reference_doc: str | None) -> Path:
@@ -919,7 +907,6 @@ def reply_reference_doc_path(reference_doc: str | None) -> Path:
 def run_build_reply_command(
     *,
     markdown: str,
-    output_dir: str | None = None,
     reply_manuscript: str | None = None,
     manuscript_line_source: str | None = None,
     from_format: str | None = None,
@@ -928,7 +915,6 @@ def run_build_reply_command(
 ) -> int:
     """Apply parsed `pmt build-reply` settings and run the reply build."""
     reply = checked_markdown_path(markdown)
-    base_output_dir = output_dir or DEFAULT_OUTPUT_DIR
 
     try:
         log_info("\n[DOCX] Building reviewer reply DOCX...\n")
@@ -936,7 +922,7 @@ def run_build_reply_command(
             reply=reply,
             manuscript=Path(reply_manuscript or DEFAULT_REPLY_MANUSCRIPT_FILE),
             manuscript_line_source=Path(manuscript_line_source or DEFAULT_REPLY_LINE_SOURCE),
-            output=reply_output_path(base_output_dir, reply, output_file),
+            output=reply_output_path(reply, output_file),
             reference_doc=reply_reference_doc_path(reference_doc),
             style=Path(DEFAULT_STYLE_FILE),
             from_format=from_format or DEFAULT_REPLY_FROM_FORMAT,

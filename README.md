@@ -386,10 +386,14 @@ Add standard Pandoc attributes to table captions to control DOCX table propertie
 - `cell_margin_top="0.10cm"`, `cell_margin_bottom="0.10cm"`, `cell_margin_left="0.10cm"`, `cell_margin_right="0.10cm"` - Individual margins
 - `cell_spacing="0pt"` - Spacing between cells
 - `row_height="0.5cm"` - Set row height for all rows
+- `revision_rows="1,2,3"` - Mark changed or added 1-based rows in red text
+- `revision_columns="6,7"` - Mark changed or added 1-based columns in red text
 - `alignment="center"` - Table alignment (left, center, right)
 - `autofit="window"` - Autofit behavior (fixed, content, window)
 
-Hyphenated aliases such as `cell-margin="0.10cm"` are also accepted.
+Revision row and column numbers are 1-based and include the table header row.
+
+Hyphenated aliases such as `cell-margin="0.10cm"` and `revision-columns="6,7"` are also accepted.
 
 **Example**:
 ```markdown
@@ -398,7 +402,7 @@ Hyphenated aliases such as `cell-margin="0.10cm"` are also accepted.
 | Baseline   | 78.3             |
 | Proposed   | 92.4             |
 
-: Performance comparison. {#tbl:results cell_margin="0.10cm" autofit="window" alignment="center"}
+: Performance comparison. {#tbl:results cell_margin="0.10cm" autofit="window" alignment="center" revision_rows="2" revision_columns="1"}
 ```
 
 The attributes are applied to the DOCX table without appearing in the final caption.

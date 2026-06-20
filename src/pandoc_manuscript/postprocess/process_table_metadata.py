@@ -23,7 +23,7 @@ from typing import Any, Mapping, Optional
 
 from docx.document import Document as DocumentObject
 from docx.table import Table
-from docx.shared import Pt, Cm, Mm, Inches
+from docx.shared import Pt, Cm, Mm, Inches, RGBColor
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
@@ -48,10 +48,13 @@ TABLE_METADATA_KEYS = {
     "cell_margin_right",
     "cell_spacing",
     "row_height",
+    "revision_columns",
+    "revision_rows",
     "alignment",
     "autofit",
 }
 TABLE_METADATA_MARKER_PREFIX = "PMT_TABLE_METADATA:"
+REVISION_TEXT_COLOR = RGBColor(0xFF, 0x00, 0x00)
 
 
 def normalize_table_metadata_key(key: str) -> str:
@@ -138,6 +141,61 @@ def convert_to_points(dimension: str) -> float:
 
     # Default: assume points if no unit specified
     return float(dimension)
+
+
+def parse_revision_indices(value: str, field_name: str) -> list[int]:
+    """Parse 1-based revision row/column numbers from a comma-separated value."""
+    indices: list[int] = []
+    tokens = [token for token in re.split(r"[,，;；\s]+", value.strip()) if token]
+    for token in tokens:
+        try:
+            index = int(token)
+        except ValueError as exc:
+            raise ValueError(f"{field_name} contains a non-integer index: {token!r}") from exc
+        if index < 1:
+            raise ValueError(f"{field_name} indices are 1-based and must be positive: {token!r}")
+        indices.append(index)
+    return indices
+
+
+def mark_cell_text_as_revision(cell) -> int:
+    """Color all text runs in one table cell red for revision highlighting."""
+    run_count = 0
+    for paragraph in cell.paragraphs:
+        for run in paragraph.runs:
+            run.font.color.rgb = REVISION_TEXT_COLOR
+            run_count += 1
+    return run_count
+
+
+def mark_revision_rows(table: Table, row_indices: list[int]) -> int:
+    """Color text in selected 1-based table rows red."""
+    run_count = 0
+    row_count = len(table.rows)
+    for row_index in row_indices:
+        if row_index > row_count:
+            print_warning(f"revision_rows index {row_index} is out of range for a table with {row_count} row(s)")
+            continue
+        for cell in table.rows[row_index - 1].cells:
+            run_count += mark_cell_text_as_revision(cell)
+    return run_count
+
+
+def mark_revision_columns(table: Table, column_indices: list[int]) -> int:
+    """Color text in selected 1-based table columns red."""
+    run_count = 0
+    column_count = len(table.columns)
+    for column_index in column_indices:
+        if column_index > column_count:
+            print_warning(
+                f"revision_columns index {column_index} is out of range for a table with {column_count} column(s)"
+            )
+            continue
+        for row in table.rows:
+            cells = row.cells
+            if column_index <= len(cells):
+                run_count += mark_cell_text_as_revision(cells[column_index - 1])
+    return run_count
 
 
 def set_cell_margins(table: Table, top=None, bottom=None, left=None, right=None):
@@ -288,6 +346,16 @@ def apply_table_metadata(table: Table, metadata: Mapping[str, str]) -> list[str]
                     row.height = Pt(points)
                 applied_settings.append(f"row_height={value}")
 
+            elif key_lower == 'revision_rows':
+                row_indices = parse_revision_indices(value, "revision_rows")
+                runs = mark_revision_rows(table, row_indices)
+                applied_settings.append(f"revision_rows={value} ({runs} run(s))")
+
+            elif key_lower == 'revision_columns':
+                column_indices = parse_revision_indices(value, "revision_columns")
+                runs = mark_revision_columns(table, column_indices)
+                applied_settings.append(f"revision_columns={value} ({runs} run(s))")
+
             elif key_lower == 'alignment':
                 # Set table alignment
                 set_table_alignment(table, value)
@@ -407,11 +475,13 @@ Supported metadata keys:
   cell_margin_left=0.1cm   - Set left cell margin
   cell_margin_right=0.1cm  - Set right cell margin
   row_height=1cm           - Set row height
+  revision_rows=1,2,3      - Mark changed/added rows red (1-based, includes header)
+  revision_columns=6,7     - Mark changed/added columns red (1-based)
   alignment=center         - Set table alignment (left, center, right)
   autofit=window           - Set autofit behavior (fixed, content, window)
 
 Pandoc caption attribute format:
-  : Description {#tbl:demo cell_margin="0.1cm" alignment="center"}
+  : Description {#tbl:demo cell_margin="0.1cm" alignment="center" revision_rows="1,2"}
         """
     )
     parser.add_argument("docx_path", help="Path to the DOCX file to process")

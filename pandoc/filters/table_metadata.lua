@@ -22,6 +22,10 @@ local supported_keys = {
   ["cell-spacing"] = true,
   ["row_height"] = true,
   ["row-height"] = true,
+  ["revision_columns"] = true,
+  ["revision-columns"] = true,
+  ["revision_rows"] = true,
+  ["revision-rows"] = true,
   ["alignment"] = true,
   ["autofit"] = true,
 }

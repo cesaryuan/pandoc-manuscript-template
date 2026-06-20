@@ -36,7 +36,7 @@ BUILD_CLI_CONFIG = SettingsConfigDict(
     cli_parse_none_str="auto",
     cli_shortcuts={
         "manuscript_option": ["-m", "--manuscript"],
-        "output_dir": ["-o", "--output-dir"],
+        "output_file": ["-o", "--output-file"],
     },
 )
 
@@ -197,10 +197,11 @@ class BuildCommandSettings(BaseSettings):
         validation_alias=AliasChoices("m", "manuscript"),
         description="Input markdown file, equivalent to the positional MARKDOWN argument.",
     )
-    output_dir: str = Field(
-        default=DEFAULT_OUTPUT_DIR,
-        validation_alias=AliasChoices("o", "output-dir"),
-        description="Base output directory.",
+
+    output_file: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("o", "output-file"),
+        description="Exact output file path for DOCX, LaTeX, and JSON builds.",
     )
     project_dir: Path = Field(default=Path("."), description="Manuscript project directory.")
     reference_doc: CliSuppress[str | None] = Field(
@@ -220,7 +221,7 @@ class BuildCommandSettings(BaseSettings):
                     target=self.target,
                     markdown=self.markdown,
                     manuscript_option=self.manuscript_option,
-                    output_dir=self.output_dir,
+                    output_file=self.output_file,
                     reference_doc=self.reference_doc,
                 )
             )

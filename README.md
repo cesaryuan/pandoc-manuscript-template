@@ -195,9 +195,9 @@ docxSvgToPngScale: 1
 ```
 
 During `pmt build docx`, local Markdown image references ending in `.svg` or
-`.svgz` are converted into PNG files under `<output-dir>/svg-png/`, and the
-temporary Pandoc document uses those PNG paths. The original Markdown file is
-not rewritten. The converter uses the Python `resvg-py` dependency.
+`.svgz` are converted into PNG files under the output file parent (`output/svg-png/`
+by default), and the temporary Pandoc document uses those PNG paths. The
+original Markdown file is not rewritten. The converter uses the Python `resvg-py` dependency.
 
 The DOCX post-processing step can update paragraph styles from the merged YAML metadata. Add style names under `docxStyle`; each key is matched against an existing DOCX style name, and missing styles are reported as warnings without stopping the build. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
 
@@ -463,8 +463,8 @@ pmt clean             # Remove generated files
 Use `pmt build` for non-default inputs:
 
 ```bash
-pmt build docx paper.md -o build
-pmt build latex paper.md
+pmt build docx paper.md -o build/paper.docx
+pmt build latex paper.md -o build/paper.tex
 ```
 
 For DOCX output, pass `--reference-doc custom-reference.docx` to override the
@@ -508,18 +508,17 @@ pmt build docx --manuscript paper.md
 pmt build latex -m paper.md
 ```
 
-Use `--output-dir` or `-o` to change the base output directory:
+Use `--output-file` or `-o` to choose the exact DOCX, LaTeX, or JSON output path. The build uses the file parent as its output workspace:
 
 ```bash
-pmt build docx paper.md --output-dir build  # Generate build/docx/paper.docx
-pmt build latex paper.md -o build           # Generate build/latex/paper.tex
-pmt build json paper.md -o build            # Generate build/json/paper.json
-pmt clean --output-dir build                # Remove build/
+pmt build docx paper.md -o build/paper-final.docx            # Generate build/paper-final.docx
+pmt build json paper.md --output-file build/paper.ast.json    # Generate build/paper.ast.json
+pmt build latex paper.md -o build/paper.tex                 # Generate build/paper.tex
+pmt clean --output-dir build                                  # Remove build/
 ```
 
 The DOCX post-processing step reads YAML metadata from the same markdown file.
-When an output directory is supplied, `docx`, `latex`, and `json`
-subdirectories are created under it.
+For DOCX, LaTeX, and JSON builds, `--output-file` controls the complete output path. The parent directory is also used as the build output workspace. `pmt clean` still accepts `--output-dir` because it removes a generated directory rather than producing one file.
 
 ### Direct Pandoc Commands
 

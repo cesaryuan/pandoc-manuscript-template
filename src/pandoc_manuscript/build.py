@@ -47,6 +47,7 @@ class BuildSettings(BaseSettings):
     docx_dir: str = "output/docx"
     latex_dir: str = "output/latex"
     json_dir: str = "output/json"
+    output_file: str | None = None
     enable_docx_postprocess: bool = True
     mathtype_marker_filter: str = "mathtype/mathtype_markers.lua"
     mathtype_work_dir: str = "tmp/mathtype-build"
@@ -163,10 +164,33 @@ def configure_output_dir(output_dir: str | Path) -> None:
     SETTINGS.json_dir = to_pandoc_path(path / 'json')
 
 
+def configure_output_file(output_file: str | Path | None) -> None:
+    """Configure an exact manuscript output file and use its parent as output root."""
+    if output_file is None:
+        SETTINGS.output_file = None
+        return
+
+    path = Path(output_file)
+    SETTINGS.output_file = to_pandoc_path(path)
+    configure_output_dir(path.parent)
+
+
 def configure_reference_doc(reference_doc: str | None) -> None:
     """Configure a user-supplied reference DOCX for DOCX-producing targets."""
     if reference_doc:
         SETTINGS.reference_doc = reference_doc
+
+
+def manuscript_output_file(default_dir: str, suffix: str) -> Path:
+    """Return the explicit output file, or the target's default derived file."""
+    if SETTINGS.output_file:
+        return Path(SETTINGS.output_file)
+    return Path(default_dir) / f"{SETTINGS.project_name}.{suffix}"
+
+
+def ensure_output_parent(output_file: Path) -> None:
+    """Create the parent directory for an explicit or derived build output."""
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
 
 def should_use_style_metadata_file() -> bool:
@@ -463,11 +487,8 @@ def build_docx():
     """Generate DOCX file with optional post-processing."""
     log_info("\n[DOCX] Building DOCX...\n")
 
-    # Create output directory
-    docx_dir = Path(SETTINGS.docx_dir)
-    docx_dir.mkdir(parents=True, exist_ok=True)
-
-    docx_file = docx_dir / f"{SETTINGS.project_name}.docx"
+    docx_file = manuscript_output_file(SETTINGS.docx_dir, "docx")
+    ensure_output_parent(docx_file)
     ensure_docx_target_writable(docx_file)
     extra_args = []
     metadata = load_build_metadata()
@@ -518,33 +539,28 @@ def build_docx():
     if syntax_findings:
         raise RuntimeError("Final DOCX still contains unrendered Pandoc syntax")
 
-    log_success(f"\n[OK] DOCX created: {SETTINGS.docx_dir}/{SETTINGS.project_name}.docx")
+    log_success(f"\n[OK] DOCX created: {docx_file}")
 
 
 def build_latex():
     """Generate LaTeX file."""
     log_info("\n[LaTeX] Building LaTeX...\n")
 
-    # Create output directory
-    latex_dir = Path(SETTINGS.latex_dir)
-    latex_dir.mkdir(parents=True, exist_ok=True)
-
-    latex_file = latex_dir / f"{SETTINGS.project_name}.tex"
+    latex_file = manuscript_output_file(SETTINGS.latex_dir, "tex")
+    ensure_output_parent(latex_file)
 
     # Run pandoc
     run_pandoc(resource_path('pandoc/pandoc-latex.yml'), latex_file)
 
-    log_success(f"\n[OK] LaTeX created: {SETTINGS.latex_dir}/{SETTINGS.project_name}.tex")
+    log_success(f"\n[OK] LaTeX created: {latex_file}")
 
 
 def build_json():
     """Generate Pandoc JSON AST for debugging filters and metadata."""
     log_info("\n[JSON] Building Pandoc JSON AST...\n")
 
-    json_dir = Path(SETTINGS.json_dir)
-    json_dir.mkdir(parents=True, exist_ok=True)
-
-    json_file = json_dir / f"{SETTINGS.project_name}.json"
+    json_file = manuscript_output_file(SETTINGS.json_dir, "json")
+    ensure_output_parent(json_file)
 
     # Reuse the DOCX defaults because they carry the normal crossref/citeproc
     # pipeline users most often need to inspect when debugging manuscript builds.
@@ -554,7 +570,7 @@ def build_json():
         extra_args=['--to', 'json'],
     )
 
-    log_success(f"\n[OK] JSON created: {SETTINGS.json_dir}/{SETTINGS.project_name}.json")
+    log_success(f"\n[OK] JSON created: {json_file}")
 
 
 def clean():
@@ -604,11 +620,19 @@ def run_build_command(
     markdown: str | None = None,
     manuscript_option: str | None = None,
     output_dir: str | None = None,
+    output_file: str | None = None,
     reference_doc: str | None = None,
 ) -> int:
     """Run the selected manuscript build target with direct settings values."""
+    configure_output_file(None)
+    if output_dir and target in {"docx", "latex", "json"}:
+        raise ValueError(f"--output-dir is not supported by the {target} target; use --output-file instead.")
+    if output_file and target not in {"docx", "latex", "json"}:
+        raise ValueError("--output-file is only supported by the docx, latex, and json targets.")
     if output_dir:
         configure_output_dir(output_dir)
+    if output_file:
+        configure_output_file(output_file)
 
     if markdown and manuscript_option:
         raise ValueError("Specify the markdown file either positionally or with --manuscript, not both.")

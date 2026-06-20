@@ -13,6 +13,7 @@ from typing import Any, Tuple
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from . import runtime_cache_version
 from .logging_utils import log_error, log_info, log_success, log_warning
 from .metadata import (
     MissingYamlFrontMatterError,
@@ -335,6 +336,7 @@ def docx_svg_to_png_filter_env(metadata: dict[str, Any]) -> dict[str, str]:
         'PMT_SVG_TO_PNG_SCALE': str(
             metadata_float(metadata, ('docxSvgToPngScale', 'docx-svg-to-png-scale'), 1)
         ),
+        'PMT_SVG_TO_PNG_PMT_VERSION': runtime_cache_version(),
     }
 
 

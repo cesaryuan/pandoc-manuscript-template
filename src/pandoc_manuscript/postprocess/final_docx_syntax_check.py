@@ -33,8 +33,10 @@ WORD_NAMESPACE = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/
 DOCX_TEXT_PART_PATTERN = re.compile(r"^word/(document|header\d+|footer\d+|footnotes|endnotes)\.xml$")
 UNRENDERED_PANDOC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
-        "fenced div marker",
-        re.compile(r"^\s*:::+(?:\s+.*)?$"),
+        "Pandoc fenced_divs marker",
+        # Pandoc fenced_divs markers such as "::: {.note}" or closing ":::" lines
+        # should be consumed before the final DOCX is shipped.
+        re.compile(r"^\s*:{3,}(?:\s*\{[^{}]*\}|\s*)$"),
     ),
     (
         "Pandoc attribute block",

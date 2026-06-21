@@ -95,16 +95,6 @@ Write pseudocode as a one-column pipe table. Use bold control words such as `**f
 - Minimize em dashes; prefer commas, parentheses, or subordinate clauses when suitable
 - Replace inflated words such as `leverage`, `delve into`, `pivotal`, `underscore`, and `unveil` with plainer alternatives when possible
 
-## 按照修改意见修改论文
-
-按照审稿意见修改论文时有以下几个指导原则务必要遵守：
-1. 不要修改任何与审稿意见无关部分的内容，即使该部分存在问题，但是因为审稿意见或者我们的建议修改中并没有提到，所以不要擅自修改。
-2. 在任何被修改的段落上面用 markdown 注释表明此处修改对应哪一条审稿意见，当已经存在其他审稿意见的对应注释时，在下面新增注释而不是修改其他审稿意见的原有注释。
-3. 不要做无关紧要的只修改一两个单词的修改。倾向于穿插加入完整的句子或者段落，仅在必要时修改文中某些单词和描述
-4. 新增和修改的句子中不要有审稿回复痕迹，不要用那种明显是为了回复审稿人的语气的句子，应该用写论文的语气
-5. 对于新增或者修改表格：请你直接写表格并用合理的数值帮我填上，这样方便我总览你添加的表格结构，以及和我的实验数据做对比。
-6. 对于新增或者修改图片：对于新加的图片，先用占位符表示，然后再下面用 markdown 注释写上该图片预期要展示的内容，用中文；记住不需要你绘制 svg 或者其他图片，你需要的只是用注释说明该图片的预期内容。对于要对现有图片做修改的，在现有图片下面用注释说明大概需要修改哪些内容，你可以读取图片来查看现在图片的布局和内容等等，从而帮助你更好地了解要做什么修改。
-
 ## Reminders
 
 - Image paths relative to `manuscript.md` location

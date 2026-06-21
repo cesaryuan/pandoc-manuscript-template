@@ -3,13 +3,6 @@
 # Keep manuscript-specific metadata in manuscript.md. Values defined in the
 # manuscript YAML header override these defaults during the build.
 
-reference-section-title: References
-link-citations: true
-# Citation Style Language (CSL) file
-# Default: Vancouver style (numeric citations)
-# You can download csl files from https://www.zotero.org/styles
-# csl: path/to/your.csl
-
 # Override citeproc's fixed en dash in collapsed numeric citation ranges.
 # Set "-" for hyphen ranges such as [1-3], or "–" to keep the CSL default.
 citation-number-range-delimiter: "–"
@@ -84,25 +77,9 @@ reply:
         before: 6pt
         after: 6pt
 
-# =============================================================================
-# JOURNAL-SPECIFIC CONFIGURATION (Uncomment and customize as needed)
-# =============================================================================
-# --- Example 1: Wiley Journal ---
-# documentclass: WileyNJDv5
-# classoption: [HARVARD, Times2COL]
-# header-includes:
-# - |
-#   ```{=latex}
-#   \journal{Journal Abbrev.}
-#   \volume{00}
-#   \copyyear{2025}
-#   \startpage{1}
-#   \articletype{RESEARCH ARTICLE}
-#   \author[1]{First Author}
-#   \author[2]{Second Author}
-#   \authormark{AUTHOR \textsc{et al.}}
-#   \titlemark{Short Title for Header}
-#   \address[1]{\orgdiv{Department}, \orgname{University}, \orgaddress{\city{City}, \country{Country}}}
-#   \corres{Corresponding Author, Department, University, City, Country. \email{email@university.edu}}
-#   ```
-# =============================================================================
+reference-section-title: References
+link-citations: true
+# Citation Style Language (CSL) file
+# Default: Vancouver style (numeric citations)
+# You can download csl files from https://www.zotero.org/styles
+# csl: path/to/your.csl

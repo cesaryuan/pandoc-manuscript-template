@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .logging_utils import log_info
+from .logging_utils import log_info, should_log
 from .paths import PMT_TOOLS_BIN_DIR, PMT_TOOLS_DOWNLOAD_DIR, PMT_TOOLS_EXTRACT_DIR
 
 
@@ -28,6 +28,8 @@ TOOL_REPOS = {
 }
 TOOL_CACHE: dict[str, "ResolvedTool"] = {}
 PROXY_LOGGED = False
+DOWNLOAD_CHUNK_SIZE = 256 * 1024
+PROGRESS_BAR_WIDTH = 28
 
 
 @dataclass(frozen=True)
@@ -127,6 +129,63 @@ def open_download_url(request: urllib.request.Request, timeout: int):
     return opener.open(request, timeout=timeout)
 
 
+def format_size(size: int) -> str:
+    """Return a compact binary size string for download progress."""
+    value = float(size)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if value < 1024 or unit == "GiB":
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
+        value /= 1024
+    return f"{value:.1f} GiB"
+
+
+def response_content_length(response: Any) -> int | None:
+    """Return a positive Content-Length value when the server provides one."""
+    value = response.headers.get("Content-Length")
+    if not value:
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        return None
+    return parsed if parsed > 0 else None
+
+
+def progress_line(downloaded: int, total: int | None) -> str:
+    """Format a single-line download progress indicator."""
+    if not total:
+        return f"\r[TOOLS] Downloaded {format_size(downloaded)}"
+    ratio = min(max(downloaded / total, 0), 1)
+    filled = int(PROGRESS_BAR_WIDTH * ratio)
+    bar = "#" * filled + "-" * (PROGRESS_BAR_WIDTH - filled)
+    percent = ratio * 100
+    return f"\r[TOOLS] Downloading [{bar}] {percent:5.1f}% {format_size(downloaded)}/{format_size(total)}"
+
+
+def write_progress(downloaded: int, total: int | None, *, final: bool = False) -> None:
+    """Write download progress when INFO logs are enabled."""
+    if not should_log("INFO"):
+        return
+    sys.stdout.write(progress_line(downloaded, total))
+    if final:
+        sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
+def copy_response_with_progress(response: Any, handle: Any) -> None:
+    """Copy a response body to disk while updating terminal progress."""
+    total = response_content_length(response)
+    downloaded = 0
+    while True:
+        chunk = response.read(DOWNLOAD_CHUNK_SIZE)
+        if not chunk:
+            break
+        handle.write(chunk)
+        downloaded += len(chunk)
+        write_progress(downloaded, total)
+    write_progress(downloaded, total, final=True)
+
+
 def request_json(url: str) -> dict[str, Any]:
     """Fetch a JSON document with a GitHub-friendly user agent."""
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
@@ -170,7 +229,7 @@ def download_asset(url: str, target: Path) -> None:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with open_download_url(request, timeout=300) as response, target.open("wb") as handle:
-            shutil.copyfileobj(response, handle)
+            copy_response_with_progress(response, handle)
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Could not download {url}: {exc}") from exc
 

@@ -1,4 +1,5 @@
 from pathlib import Path
+import io
 import shutil
 import sys
 
@@ -123,3 +124,45 @@ def test_download_proxy_direct_when_no_proxy(monkeypatch) -> None:
 
     assert proxy.proxy is None
     assert proxy.source == "direct"
+
+
+def test_progress_line_shows_percentage_for_known_size() -> None:
+    """Render a determinate progress line when Content-Length is known."""
+    line = tools.progress_line(512, 1024)
+
+    assert "50.0%" in line
+    assert "512 B/1.0 KiB" in line
+
+
+class FakeDownloadResponse:
+    """Small response double for streamed download progress tests."""
+
+    def __init__(self, chunks: list[bytes], content_length: int | None = None) -> None:
+        self.chunks = chunks
+        self.headers = {}
+        if content_length is not None:
+            self.headers["Content-Length"] = str(content_length)
+
+    def read(self, size: int) -> bytes:
+        """Return the next fake network chunk."""
+        if not self.chunks:
+            return b""
+        return self.chunks.pop(0)
+
+
+def test_copy_response_with_progress_streams_body_and_finishes(monkeypatch) -> None:
+    """Copy downloaded bytes in chunks and emit a final progress update."""
+    response = FakeDownloadResponse([b"abc", b"def"], content_length=6)
+    output = io.BytesIO()
+    updates = []
+
+    def fake_write_progress(downloaded, total, *, final=False):
+        """Record progress updates without writing to the test terminal."""
+        updates.append((downloaded, total, final))
+
+    monkeypatch.setattr(tools, "write_progress", fake_write_progress)
+
+    tools.copy_response_with_progress(response, output)
+
+    assert output.getvalue() == b"abcdef"
+    assert updates == [(3, 6, False), (6, 6, False), (6, 6, True)]

@@ -94,7 +94,7 @@ def postprocess_docx(
         docx_path: Path to the DOCX file to process
         metadata: Merged style and manuscript metadata from the build layer
         skip_author_info: Skip author insertion for non-manuscript outputs
-        reply_style_formatting: Apply reply-only blue italic caption/table styling
+        reply_style_formatting: Apply reply-only blue formatting
 
     Returns:
         True if successful, False otherwise
@@ -208,12 +208,13 @@ def postprocess_docx(
             print_debug_success(f"Fixed {fixed_count} standalone inline math paragraph(s)")
 
         def apply_reply_blue_italic_style_step() -> None:
-            """Apply reply-only blue italic formatting to captions and regular tables."""
+            """Apply reply-only blue formatting in one post-processing step."""
             stats = apply_reply_blue_italic_style(doc)
             print_debug_success(
                 f"Formatted {stats['caption_styles']} caption style(s), "
                 f"{stats['caption_paragraphs']} caption paragraph(s), "
-                f"{stats['table_runs']} table run(s)"
+                f"{stats['table_runs']} table run(s), "
+                f"{stats['where_styles']} where style(s)"
             )
 
         # Keep this ordered list explicit because DOCX post-processing steps are order-sensitive.
@@ -232,7 +233,7 @@ def postprocess_docx(
             ("Adding spaces after standalone inline math", add_inline_math_spacing_step),
         ]
         if reply_style_formatting:
-            pipeline_steps.append(("Applying reply blue italic caption/table style", apply_reply_blue_italic_style_step))
+            pipeline_steps.append(("Applying reply-only blue formatting", apply_reply_blue_italic_style_step))
 
         for label, action in pipeline_steps:
             run_pipeline_step(label, action)
@@ -278,7 +279,7 @@ Processing steps:
   - Format equation layout tables
   - Apply 'Where Paragraph' style after equation paragraphs
   - Add trailing spaces after standalone inline math
-  - Optionally apply reply blue italic caption/table styling
+  - Optionally apply reply-only blue formatting
 
 This script applies all post-processing steps in sequence.
         """
@@ -296,7 +297,7 @@ This script applies all post-processing steps in sequence.
     parser.add_argument(
         "--reply-style-formatting",
         action="store_true",
-        help="Apply reply-only blue italic formatting to captions and regular table text",
+        help="Apply reply-only blue formatting",
     )
 
     args = parser.parse_args()

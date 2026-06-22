@@ -6,12 +6,13 @@
 # ]
 # ///
 """
-Apply reviewer-reply visual styling to captions and table text.
+Apply reviewer-reply visual styling to captions, table text, and where clauses.
 
 This reply-only post-processor makes caption text and regular table text blue
 and italic so quoted manuscript additions stand out in the response document.
-Equation layout tables are skipped because they are an internal layout device,
-not user-facing data tables.
+It also makes the named Where Paragraph style blue without italic. Equation
+layout tables are skipped because they are an internal layout device, not
+user-facing data tables.
 """
 
 import argparse
@@ -21,6 +22,7 @@ from typing import Iterable, Optional
 
 from .common import open_docx, print_error, print_debug_success, save_docx
 from .autofit_tables import is_equation_layout_table
+from .where_paragraph_style import WHERE_STYLE_NAME
 
 try:
     from docx.document import Document as DocumentObject
@@ -101,17 +103,29 @@ def format_table_text(doc: DocumentObject) -> int:
     return updated_runs
 
 
+def format_where_paragraph_style(doc: DocumentObject) -> int:
+    """Make the named Where Paragraph style blue for reviewer replies."""
+    try:
+        style = doc.styles[WHERE_STYLE_NAME]
+    except KeyError:
+        return 0
+
+    style.font.color.rgb = REPLY_BLUE
+    return 1
+
+
 def apply_reply_blue_italic_style(doc: DocumentObject) -> dict[str, int]:
-    """Apply all reply-only blue italic caption and table formatting."""
+    """Apply all reply-only blue formatting in one post-processing step."""
     return {
         "caption_styles": format_caption_styles(doc),
         "caption_paragraphs": format_caption_paragraphs(doc),
         "table_runs": format_table_text(doc),
+        "where_styles": format_where_paragraph_style(doc),
     }
 
 
 def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
-    """Process a DOCX file and optionally save reply blue italic formatting."""
+    """Process a DOCX file and optionally save reply-only blue formatting."""
     try:
         doc, docx_path_abs = open_docx(docx_path)
         if doc is None or docx_path_abs is None:
@@ -125,7 +139,8 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
             "Reply blue italic formatting applied: "
             f"{stats['caption_styles']} caption style(s), "
             f"{stats['caption_paragraphs']} caption paragraph(s), "
-            f"{stats['table_runs']} table run(s)"
+            f"{stats['table_runs']} table run(s), "
+            f"{stats['where_styles']} where style(s)"
         )
         return doc
     except Exception as e:
@@ -139,7 +154,7 @@ def process_file(docx_path: str, save: bool = True) -> Optional[DocumentObject]:
 def main() -> None:
     """Main entry point for command-line usage."""
     parser = argparse.ArgumentParser(
-        description="Apply blue italic formatting to reply DOCX captions and table text"
+        description="Apply reply-only blue formatting to DOCX captions, table text, and where clauses"
     )
     parser.add_argument("docx_path", help="Path to the DOCX file to process")
     parser.add_argument("--no-save", action="store_true", help="Do not save changes")

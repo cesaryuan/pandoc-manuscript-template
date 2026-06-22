@@ -2,7 +2,7 @@
 -- This keeps the manuscript syntax simple while letting the reference DOCX style
 -- control how emphasized text appears in Word.
 
-local EMPHASIS_STYLE = "Emphasis"
+local EMPHASIS_STYLE = "Emphasis Char"
 
 function Emph(elem)
   -- Pandoc writes custom-style spans as DOCX character styles; replacing Emph

@@ -14,6 +14,7 @@ If the user wants to change style-related content, update `style.yml` rather tha
 ## Pandoc Markdown Syntax
 
 **Cross-references:**
+
 - Figures: `![caption](path){#fig:label}` → `[@fig:label]`
 - Tables: `: Caption {#tbl:label}` → `[@tbl:label]`
 - Equations: `$$ math $$ {#eq:label}` → `[@eq:label]`
@@ -21,6 +22,7 @@ If the user wants to change style-related content, update `style.yml` rather tha
 - Citations: `[@key]` (parenthetical), `[@key1; @key2]` (multiple)
 
 **Tables:** Please prefer to use pipe_tables which is identical to PHP Markdown Extra tables.
+
 ```markdown
 | **Method** | **Accuracy (%)** |
 |:----------:|:----------------:|
@@ -29,6 +31,7 @@ If the user wants to change style-related content, update `style.yml` rather tha
 
 : Performance comparison. {#tbl:results}
 ```
+
 - Bold only for highlighting best results in comparison tables
 - Alignment: `:--` left, `:--:` center, `--:` right
 - For advanced DOCX table formatting (cell merging, metadata), see README.md

@@ -21,6 +21,9 @@ Install the following tools:
 1. **Pandoc** (>= 3.0): [Download](https://pandoc.org/installing.html)
 2. **pandoc-crossref**: Required for figure, table, equation, and section references
 3. **UV**: Recommended for running the `pmt` CLI and Python filters
+4. **MathType** (Optional): Required for DOCX output with mathtype enabled
+5. **soffice** (Optional): Required for line number extraction on non-Windows systems
+6. **Microsoft Word** (Optional): Required for line number extraction on Windows systems
 
 ### Generate Your First Document
 

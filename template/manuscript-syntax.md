@@ -154,6 +154,41 @@ Example:
 See @fig:results for details. As shown in @tbl:comparison and @eq:model...
 ```
 
+## Marking Revisions in Red
+
+Use Pandoc custom styles to mark substantive manuscript revisions in generated DOCX files. The default reference DOCX includes a character style named `Revision Char`, so revised inline text can be written as a bracketed span:
+
+```markdown
+The proposed workflow improves [the adaptive sampling stage]{custom-style="Revision Char"} while keeping the original preprocessing steps unchanged.
+```
+
+Recommended revision-marking rules:
+
+- Use `Revision Char` only for modified or newly added words, phrases, sentences, or paragraphs that need to appear in red.
+- Do not mark very small edits within one sentence, such as changes under three words.
+- When old text is replaced, omit the deleted wording and mark only the new or modified surviving text.
+- For heavily revised existing paragraphs, mark only the changed parts. Mark a whole paragraph only when the entire paragraph is newly added.
+- Keep cross-reference tokens such as `@fig:result` or `@tbl:comparison` outside the styled span unless the reference text itself is substantively changed.
+
+For a modified or newly added figure, mark the caption rather than the image path. Size-only figure changes do not need revision markup.
+
+```markdown
+![[Updated model comparison under the same evaluation protocol.]{custom-style="Revision Char"}](figures/model-comparison.png){#fig:model-comparison}
+```
+
+For tables, use revision attributes on the table caption. Use `revision-rows="*"` for a newly added table. For a modified table, list changed or added 1-based row or column numbers with `revision-rows="..."` and `revision-columns="..."`; row numbers include the table header row.
+
+```markdown
+| **Method** | **Accuracy (%)** | **Runtime (s)** |
+|:----------:|:----------------:|:---------------:|
+| Baseline   | 78.3             | 12.4            |
+| Proposed   | 92.4             | 10.1            |
+
+: Performance comparison. {#tbl:performance revision-columns="2,3" revision-rows="3"}
+```
+
+The underscore forms `revision_rows` and `revision_columns` are equivalent and are documented with the other DOCX table attributes below.
+
 ## Writing Pseudocode
 
 For method or workflow descriptions, the recommended pattern is to write pseudocode as a one-column pipe table. This format is easy to edit in Markdown and stays visually stable after DOCX conversion.

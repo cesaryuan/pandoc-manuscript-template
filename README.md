@@ -42,6 +42,8 @@ Install the following tools:
    the template notes manually. Use `pmt init my-paper --merge` to append the
    packaged `AGENTS.md` guidance and copy missing files from the packaged
    `.agents/` directory automatically without replacing existing files.
+   Use `pmt init my-paper --setup` to initialize the project and download
+   project-local Pandoc tools in one step.
 
    When the package is installed as a tool, use:
    ```bash
@@ -96,6 +98,7 @@ pipeline.
 
 ```bash
 pmt init my-paper     # Create a manuscript project
+pmt init my-paper --setup  # Create a project and download .pmt/tools immediately
 pmt setup             # Download project-local Pandoc tools into .pmt/tools
 pmt doctor            # Check/install Pandoc, pandoc-crossref, Python dependencies, and project files
 pmt build docx        # Generate output/docx/manuscript.docx

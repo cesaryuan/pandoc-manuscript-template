@@ -157,6 +157,7 @@ class InitSettings(BaseSettings):
         default=False,
         description="Merge packaged agent guidance into existing AGENTS.md and .agents entries.",
     )
+    setup: bool = Field(default=False, description="Download project-local Pandoc tools after init.")
 
     def run(self) -> int:
         """Create a new manuscript project from the packaged template files."""
@@ -213,6 +214,11 @@ class InitSettings(BaseSettings):
         (target / "images").mkdir(exist_ok=True)
 
         log(f"[OK] Created manuscript project: {target}")
+        if self.setup:
+            with project_directory(target):
+                pandoc, crossref = setup_pandoc_tools()
+            log(f"[OK] pandoc: {pandoc.executable} [{pandoc.source}]")
+            log(f"[OK] pandoc-crossref: {crossref.executable} [{crossref.source}]")
         log("Next: cd into the project and run `pmt doctor`, then `pmt build docx`.")
         return 0
 

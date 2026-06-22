@@ -61,6 +61,54 @@ def test_to_png_attribute_converts_one_svg(monkeypatch) -> None:
     assert "to-png" not in elem.attributes
 
 
+def test_to_png_scale_attribute_overrides_one_svg(monkeypatch) -> None:
+    """Allow one rasterized SVG image to override the global PNG scale."""
+    svg_filter = load_svg_filter()
+    calls: list[tuple[float, str | None]] = []
+
+    def fake_rewrite(elem: pf.Image, *args: object) -> pf.Image:
+        calls.append((args[3], args[5]))
+        elem.url = ".pmt/cache/svg-png/figure.scale-2.png"
+        return elem
+
+    monkeypatch.setattr(svg_filter, "rewrite_image", fake_rewrite)
+
+    elem = image("figure.svg", **{"to-png": "true", "to-png-scale": "2"})
+    result = svg_filter.action(elem, DummyDoc())
+
+    assert result is elem
+    assert calls == [(2.0, "scale-2")]
+    assert elem.url == ".pmt/cache/svg-png/figure.scale-2.png"
+    assert "to-png" not in elem.attributes
+    assert "to-png-scale" not in elem.attributes
+
+
+def test_to_png_scale_attribute_uses_distinct_cache_path(tmp_path, monkeypatch) -> None:
+    """Avoid cache collisions when the same SVG is rasterized at two scales."""
+    svg_filter = load_svg_filter()
+    source = tmp_path / "figure.svg"
+    source.write_text("<svg xmlns='http://www.w3.org/2000/svg'/>\n", encoding="utf-8")
+    targets: list[Path] = []
+
+    def fake_ensure_png(
+        source_path: Path,
+        target: Path,
+        dpi: float,
+        scale: float,
+        pmt_version: str,
+    ) -> Path:
+        targets.append(target)
+        return target
+
+    monkeypatch.setattr(svg_filter, "ensure_png", fake_ensure_png)
+
+    elem = image(str(source))
+    svg_filter.rewrite_image(elem, [tmp_path], tmp_path / ".pmt/cache/svg-png", 300, 2, "test", "scale-2")
+
+    assert targets == [tmp_path / ".pmt/cache/svg-png/figure.scale-2.png"]
+    assert elem.url.endswith("figure.scale-2.png")
+
+
 def test_svg_without_to_png_is_left_unchanged(monkeypatch) -> None:
     """Do not rasterize ordinary SVG images when the global switch is disabled."""
     svg_filter = load_svg_filter()

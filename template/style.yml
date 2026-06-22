@@ -19,6 +19,7 @@ docxEmbedSvgImages: true
 
 # Set to true to rasterize every referenced SVG image to PNG during DOCX builds.
 # Use `{to-png=true}` on a single image when only one SVG needs rasterization.
+# Add `to-png-scale=2` on that image to override the global PNG scale.
 docxConvertSvgToPng: false
 # docxSvgToPngDpi: 300
 # docxSvgToPngScale: 1

@@ -42,8 +42,9 @@ normal figure in Markdown. This keeps spacing, labels, and panel alignment under
 explicit control and avoids Word table-layout drift. For DOCX builds with linked
 child images inside one SVG, keep `docxEmbedSvgImages: true` in `style.yml` so
 the generated DOCX uses a self-contained SVG. Add `to-png=true` to an image only
-when that SVG must be rasterized, and use `docxConvertSvgToPng: true` only when
-all SVG images should be rasterized. See `manuscript-syntax.md` for a complete
+when that SVG must be rasterized; add `to-png-scale=2` on the same image when it
+needs a local PNG scale override. Use `docxConvertSvgToPng: true` only when all
+SVG images should be rasterized. See `manuscript-syntax.md` for a complete
 SVG-based example.
 
 Use the built-in `subfigGrid` syntax only when the manuscript needs separate

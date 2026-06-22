@@ -235,8 +235,9 @@ SVG as data URIs, while SVG text and vector elements remain SVG. The source
 Markdown and SVG files are not rewritten.
 
 If one SVG must be rasterized for a specific submission target, add
-`to-png=true` to that image. To rasterize every SVG image in the DOCX build,
-enable the global option in `style.yml`:
+`to-png=true` to that image. Add `to-png-scale=2` on the same image when it
+needs a higher PNG scale than the global default. To rasterize every SVG image
+in the DOCX build, enable the global option in `style.yml`:
 
 ```yaml
 docxConvertSvgToPng: true
@@ -482,7 +483,8 @@ docxEmbedSvgImages: true
 
 For journal submission systems that reject SVG image files entirely, enable
 DOCX-only SVG rasterization instead. If only one SVG needs rasterization, add
-`to-png=true` to that Markdown image instead of enabling the global option:
+`to-png=true` to that Markdown image instead of enabling the global option. Use
+`to-png-scale=2` on the same image to override the global PNG scale:
 
 ```yaml
 docxConvertSvgToPng: true

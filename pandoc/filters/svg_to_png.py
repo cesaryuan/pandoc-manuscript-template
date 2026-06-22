@@ -26,6 +26,7 @@ XLINK_HREF = "{http://www.w3.org/1999/xlink}href"
 CACHE_METADATA_VERSION = 2
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "WARN": 30, "ERROR": 40}
 TO_PNG_ATTRIBUTE_KEYS = ("to-png", "to_png", "toPng")
+TO_PNG_SCALE_ATTRIBUTE_KEYS = ("to-png-scale", "to_png_scale", "toPngScale")
 TRUE_VALUES = {"1", "true", "yes", "y", "on"}
 FALSE_VALUES = {"0", "false", "no", "n", "off", ""}
 CONVERTED: set[Path] = set()
@@ -103,9 +104,27 @@ def image_requests_png(elem: pf.Image) -> bool:
     return False
 
 
+def image_scale_override(elem: pf.Image, default: float) -> tuple[float, bool]:
+    """Return a per-image rasterization scale override when configured."""
+    for key in TO_PNG_SCALE_ATTRIBUTE_KEYS:
+        if key not in elem.attributes:
+            continue
+        value = elem.attributes[key]
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            log_warning(f"[WARN] Invalid {key}={value!r}; using {default}")
+            return default, False
+        if parsed <= 0:
+            log_warning(f"[WARN] {key} must be positive; using {default}")
+            return default, False
+        return parsed, True
+    return default, False
+
+
 def remove_to_png_attributes(elem: pf.Image) -> None:
     """Remove DOCX-only conversion hints before Pandoc writes the output."""
-    for key in TO_PNG_ATTRIBUTE_KEYS:
+    for key in (*TO_PNG_ATTRIBUTE_KEYS, *TO_PNG_SCALE_ATTRIBUTE_KEYS):
         elem.attributes.pop(key, None)
 
 
@@ -171,6 +190,19 @@ def output_path_for(source: Path, output_root: Path, base_dirs: list[Path]) -> P
     # Outside-project absolute paths need a hash to avoid filename collisions.
     digest = hashlib.sha256(str(source).encode("utf-8")).hexdigest()[:12]
     return output_root / f"{source.stem}-{digest}.png"
+
+
+def cache_suffix_for_scale(scale: float) -> str:
+    """Return a filesystem-safe cache suffix for a local scale override."""
+    value = f"{scale:g}".replace(".", "p").replace("-", "m").replace("+", "")
+    return f"scale-{value}"
+
+
+def with_cache_suffix(target: Path, suffix: str | None) -> Path:
+    """Return a variant cache path when one SVG is rendered at multiple scales."""
+    if not suffix:
+        return target
+    return target.with_name(f"{target.stem}.{suffix}{target.suffix}")
 
 
 def read_svg_bytes(source: Path) -> bytes:
@@ -391,6 +423,7 @@ def rewrite_image(
     dpi: float,
     scale: float,
     pmt_version: str,
+    cache_suffix: str | None = None,
 ) -> pf.Image | None:
     """Rewrite one local SVG image URL to its generated PNG path."""
     path_text = path_from_url(elem.url)
@@ -405,7 +438,7 @@ def rewrite_image(
 
     target = ensure_png(
         source,
-        output_path_for(source, output_root, base_dirs),
+        with_cache_suffix(output_path_for(source, output_root, base_dirs), cache_suffix),
         dpi,
         scale,
         pmt_version,
@@ -419,19 +452,26 @@ def action(elem: pf.Element, doc: pf.Doc) -> pf.Element | None:
     if not isinstance(elem, pf.Image):
         return None
     requested_by_image = image_requests_png(elem)
+    effective_scale, has_scale_override = image_scale_override(elem, doc.pmt_svg_scale)
     remove_to_png_attributes(elem)
     path_text = path_from_url(elem.url)
     if path_text is None or not is_svg_path(path_text):
         return None
     if not doc.pmt_svg_convert_all and not requested_by_image:
         return None
+    cache_suffix = (
+        cache_suffix_for_scale(effective_scale)
+        if has_scale_override and effective_scale != doc.pmt_svg_scale
+        else None
+    )
     return rewrite_image(
         elem,
         doc.pmt_svg_base_dirs,
         doc.pmt_svg_output_root,
         doc.pmt_svg_dpi,
-        doc.pmt_svg_scale,
+        effective_scale,
         doc.pmt_svg_pmt_version,
+        cache_suffix,
     )
 
 

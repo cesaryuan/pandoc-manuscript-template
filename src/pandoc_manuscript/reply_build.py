@@ -24,10 +24,22 @@ from .metadata import load_merged_metadata_with_status, merge_metadata, parse_ya
 from .mathtype.convert_marked_docx import convert_marked_docx
 from .mathtype.marked_docx import extract_marked_equation_requests
 from .mathtype.ole_parts import build_helper, check_mathtype_availability
-from .paths import PMT_MATHTYPE_WORK_DIR, PMT_REPLY_LINE_SOURCE_DOCX_DIR, PMT_REPLY_LINE_SOURCE_PDF_DIR, PMT_REPLY_PROBE_DIR
+from .paths import (
+    PMT_MATHTYPE_WORK_DIR,
+    PMT_REPLY_LINE_SOURCE_DOCX_DIR,
+    PMT_REPLY_LINE_SOURCE_PDF_DIR,
+    PMT_REPLY_PROBE_DIR,
+)
 from .postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from .postprocess_docx import postprocess_docx
 from .resources import package_resource_path, template_root
+from . import svg_filters as svg_filter_helpers
+from .svg_filters import (
+    should_convert_docx_svg_to_png,
+    should_embed_docx_svg_images,
+    svg_embed_images_filter_args,
+    svg_to_png_filter_args,
+)
 from .tools import pandoc_command, pandoc_tools_env
 
 
@@ -283,6 +295,37 @@ def table_metadata_filter_args() -> list[str]:
     if not filter_path.exists():
         raise FileNotFoundError(f"Table metadata Pandoc filter not found: {filter_path}")
     return ["--lua-filter", to_pandoc_path(filter_path)]
+
+
+def reply_svg_base_dirs(reply: Path) -> list[Path]:
+    """Return lookup roots shared by reply DOCX SVG filters."""
+    return svg_filter_helpers.unique_resolved_dirs([Path.cwd(), reply.parent])
+
+
+def svg_embed_images_filter_env(
+    reply: Path,
+    metadata: dict[str, Any],
+    embed_images: bool | None = None,
+) -> dict[str, str]:
+    """Return environment settings consumed by the reply SVG embedding filter."""
+    return svg_filter_helpers.svg_embed_images_filter_env(
+        reply_svg_base_dirs(reply),
+        metadata,
+        embed_images=embed_images,
+    )
+
+
+def svg_to_png_filter_env(
+    reply: Path,
+    metadata: dict[str, Any],
+    convert_all: bool | None = None,
+) -> dict[str, str]:
+    """Return environment settings consumed by the reply SVG-to-PNG filter."""
+    return svg_filter_helpers.svg_to_png_filter_env(
+        reply_svg_base_dirs(reply),
+        metadata,
+        convert_all=convert_all,
+    )
 
 
 def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
@@ -1050,6 +1093,20 @@ def build_reply_docx(
 
     try:
         mathtype_args = mathtype_filter_args() if use_mathtype else []
+        embed_svg_images = should_embed_docx_svg_images(metadata)
+        convert_all_svg = should_convert_docx_svg_to_png(metadata)
+        if embed_svg_images:
+            log_info("[INFO] Embedding linked child images inside reply SVG files for DOCX")
+        if convert_all_svg:
+            log_info("[INFO] Converting referenced reply SVG images to PNG for DOCX")
+        svg_filter_args = [
+            *svg_embed_images_filter_args(),
+            *svg_to_png_filter_args(),
+        ]
+        svg_filter_env = {
+            **svg_embed_images_filter_env(reply, metadata, embed_images=embed_svg_images),
+            **svg_to_png_filter_env(reply, metadata, convert_all=convert_all_svg),
+        }
         cmd = [
             pandoc_command(),
             str(temp_reply_path),
@@ -1062,9 +1119,10 @@ def build_reply_docx(
             "--resource-path",
             reply_resource_path(reply),
             *table_metadata_filter_args(),
+            *svg_filter_args,
             *mathtype_args,
         ]
-        run_command(cmd, env=pandoc_tools_env())
+        run_command(cmd, env=pandoc_tools_env(svg_filter_env))
 
         log_info("[INFO] Running reply DOCX post-processing...")
         if not postprocess_docx(

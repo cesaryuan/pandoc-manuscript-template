@@ -144,6 +144,70 @@ def test_prepare_line_source_pdf_builds_markdown_before_pdf(tmp_path, monkeypatc
     ]
 
 
+def test_build_reply_docx_uses_svg_filters(tmp_path, monkeypatch) -> None:
+    """Apply reply SVG embedding and rasterization filters during Pandoc DOCX build."""
+    reply = tmp_path / "reply.md"
+    reply.write_text("See ![layout](figures/layout.svg).\n", encoding="utf-8")
+    manuscript = tmp_path / "manuscript.md"
+    manuscript.write_text("# Manuscript\n", encoding="utf-8")
+    output = tmp_path / "reply.docx"
+    reference_doc = tmp_path / "reference.docx"
+    reference_doc.write_bytes(b"docx")
+    style = tmp_path / "style.yml"
+    style.write_text("docxEmbedSvgImages: true\n", encoding="utf-8")
+    resolved_reply = tmp_path / "reply.resolved.md"
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    monkeypatch.setattr(reply_build, "write_reply_style_metadata_file", lambda _: style)
+    monkeypatch.setattr(
+        reply_build,
+        "load_reply_metadata",
+        lambda *_: {"docxEmbedSvgImages": True, "docxConvertSvgToPng": False},
+    )
+    monkeypatch.setattr(reply_build, "resolve_mathtype_enabled", lambda requested: False)
+    monkeypatch.setattr(reply_build, "resolve_reference_map", lambda *args: {})
+    monkeypatch.setattr(reply_build, "resolve_citation_map", lambda *args: {})
+    monkeypatch.setattr(reply_build, "resolve_citation_cluster_map", lambda *args: {})
+    monkeypatch.setattr(reply_build, "resolve_line_regexes", lambda text, source: text)
+    monkeypatch.setattr(reply_build, "replace_references", lambda text, refs: text)
+    monkeypatch.setattr(reply_build, "replace_citations", lambda text, refs, clusters=None: text)
+    monkeypatch.setattr(reply_build, "resolved_reply_path", lambda _: resolved_reply)
+    monkeypatch.setattr(reply_build, "pandoc_command", lambda: "pandoc")
+    monkeypatch.setattr(reply_build, "table_metadata_filter_args", lambda: ["--lua-filter", "table.lua"])
+    monkeypatch.setattr(reply_build, "svg_embed_images_filter_args", lambda: ["--filter", "embed.py"])
+    monkeypatch.setattr(reply_build, "svg_to_png_filter_args", lambda: ["--filter", "png.py"])
+    monkeypatch.setattr(reply_build, "pandoc_tools_env", lambda env=None: env or {})
+    monkeypatch.setattr(reply_build, "postprocess_docx", lambda *args, **kwargs: True)
+    monkeypatch.setattr(reply_build, "validate_final_docx_syntax", lambda path: [])
+
+    def fake_run_command(cmd, env=None):
+        """Capture the Pandoc command without running external tools."""
+        calls.append((cmd, env or {}))
+        output.write_bytes(b"docx")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(reply_build, "run_command", fake_run_command)
+
+    reply_build.build_reply_docx(
+        reply=reply,
+        manuscript=manuscript,
+        manuscript_line_source=manuscript,
+        output=output,
+        reference_doc=reference_doc,
+        style=style,
+        from_format="markdown",
+    )
+
+    assert len(calls) == 1
+    cmd, env = calls[0]
+    assert "--filter" in cmd
+    assert "embed.py" in cmd
+    assert "png.py" in cmd
+    assert env["PMT_SVG_EMBED_IMAGES"] == "true"
+    assert env["PMT_SVG_TO_PNG_CONVERT_ALL"] == "false"
+    assert str(tmp_path.resolve()) in env["PMT_SVG_EMBED_BASE_DIRS"]
+
+
 class FakePdfPage:
     """Minimal PyMuPDF page double for line-number extraction tests."""
 

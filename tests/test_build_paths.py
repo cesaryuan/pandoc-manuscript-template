@@ -5,7 +5,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from pandoc_manuscript import build, reply_build
 from pandoc_manuscript.mathtype import ole_parts
-from pandoc_manuscript.paths import PMT_CACHE_DIR, PMT_DIR, PMT_SVG_EMBED_CACHE_DIR, PMT_WORK_DIR
+from pandoc_manuscript.paths import (
+    PMT_CACHE_DIR,
+    PMT_DIR,
+    PMT_SVG_EMBED_CACHE_DIR,
+    PMT_SVG_PNG_CACHE_DIR,
+    PMT_WORK_DIR,
+)
 
 
 def test_generated_work_and_cache_paths_are_under_pmt() -> None:
@@ -38,7 +44,7 @@ def test_svg_embed_cache_uses_pmt_cache(monkeypatch) -> None:
     env = build.docx_svg_embed_images_filter_env({})
 
     assert Path(env["PMT_SVG_EMBED_DIR"]) == (Path.cwd() / PMT_SVG_EMBED_CACHE_DIR).resolve()
-    assert env["PMT_SVG_EMBED_IMAGES"] == "false"
+    assert env["PMT_SVG_EMBED_IMAGES"] == "true"
 
 
 def test_svg_embed_env_keeps_global_embedding_switch(monkeypatch) -> None:
@@ -48,6 +54,28 @@ def test_svg_embed_env_keeps_global_embedding_switch(monkeypatch) -> None:
     env = build.docx_svg_embed_images_filter_env({"docxEmbedSvgImages": True})
 
     assert env["PMT_SVG_EMBED_IMAGES"] == "true"
+
+
+def test_reply_svg_embed_env_uses_shared_cache(tmp_path) -> None:
+    """Route reply self-contained SVG cache files through the shared pmt cache."""
+    reply = tmp_path / "reply.md"
+
+    env = reply_build.svg_embed_images_filter_env(reply, {"docxEmbedSvgImages": True})
+
+    assert Path(env["PMT_SVG_EMBED_DIR"]) == (Path.cwd() / PMT_SVG_EMBED_CACHE_DIR).resolve()
+    assert env["PMT_SVG_EMBED_IMAGES"] == "true"
+    assert str(tmp_path.resolve()) in env["PMT_SVG_EMBED_BASE_DIRS"]
+
+
+def test_reply_svg_to_png_env_uses_shared_cache(tmp_path) -> None:
+    """Route reply SVG rasterization cache files through the shared pmt cache."""
+    reply = tmp_path / "reply.md"
+
+    env = reply_build.svg_to_png_filter_env(reply, {"docxConvertSvgToPng": True})
+
+    assert Path(env["PMT_SVG_TO_PNG_DIR"]) == (Path.cwd() / PMT_SVG_PNG_CACHE_DIR).resolve()
+    assert env["PMT_SVG_TO_PNG_CONVERT_ALL"] == "true"
+    assert str(tmp_path.resolve()) in env["PMT_SVG_TO_PNG_BASE_DIRS"]
 
 
 def test_svg_to_png_env_keeps_global_conversion_switch(monkeypatch) -> None:

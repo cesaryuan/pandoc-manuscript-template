@@ -5,15 +5,12 @@ Build normal manuscript targets for the Pandoc manuscript template.
 import errno
 import os
 import shutil
-import stat
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any, Tuple
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from . import runtime_cache_version
 from .logging_utils import log_error, log_info, log_success, log_warning
 from .metadata import (
     MissingYamlFrontMatterError,
@@ -25,16 +22,19 @@ from .mathtype.convert_marked_docx import convert_marked_docx
 from .mathtype.ole_parts import build_helper, check_mathtype_availability
 from .paths import (
     PMT_DIR,
-    PMT_FILTER_WORK_DIR,
     PMT_MATHTYPE_WORK_DIR,
-    PMT_SVG_EMBED_CACHE_DIR,
-    PMT_SVG_PNG_CACHE_DIR,
     PMT_WORK_DIR,
     pmt_path,
 )
 from .postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from .postprocess_docx import postprocess_docx as run_docx_postprocess
 from .resources import package_resource_path, template_root
+from .svg_filters import (
+    python_filter_wrapper,
+    should_convert_docx_svg_to_png,
+    should_embed_docx_svg_images,
+)
+from . import svg_filters as svg_filter_helpers
 from .tools import ensure_pandoc_tools, pandoc_command, pandoc_tools_env
 
 # ============================================================================
@@ -270,121 +270,25 @@ def metadata_bool(value: Any) -> bool:
     return False
 
 
-def metadata_first(metadata: dict[str, Any], keys: tuple[str, ...], default: Any = None) -> Any:
-    """Return the first configured metadata value from a list of aliases."""
-    for key in keys:
-        if key in metadata:
-            return metadata[key]
-    return default
-
-
-def metadata_float(metadata: dict[str, Any], keys: tuple[str, ...], default: float) -> float:
-    """Read a positive float metadata option with a clear validation error."""
-    value = metadata_first(metadata, keys, default)
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{keys[0]} must be a number, got: {value!r}") from exc
-    if parsed <= 0:
-        raise ValueError(f"{keys[0]} must be positive, got: {value!r}")
-    return parsed
-
-
 def should_use_mathtype(metadata: dict[str, Any]) -> bool:
     """Return True when merged metadata requests MathType DOCX equations."""
     return metadata_bool(metadata.get('mathtype'))
 
 
-def should_convert_docx_svg_to_png(metadata: dict[str, Any]) -> bool:
-    """Return True when DOCX builds should rasterize referenced SVG images."""
-    return metadata_bool(
-        metadata_first(
-            metadata,
-            (
-                'docxConvertSvgToPng',
-                'docx-convert-svg-to-png',
-                'convertSvgToPng',
-                'convert-svg-to-png',
-            ),
-            False,
-        )
-    )
-
-
-def should_embed_docx_svg_images(metadata: dict[str, Any]) -> bool:
-    """Return True when DOCX builds should inline child images inside SVG files."""
-    return metadata_bool(
-        metadata_first(
-            metadata,
-            (
-                'docxEmbedSvgImages',
-                'docx-embed-svg-images',
-                'embedSvgImages',
-                'embed-svg-images',
-            ),
-            True,
-        )
-    )
-
-
-def python_filter_wrapper(filter_path: Path, name: str) -> Path:
-    """Create a Pandoc filter wrapper that runs with pmt's Python interpreter.
-
-    Pandoc executes JSON filters as external programs. Installed package data
-    filters may otherwise run under a system Python that cannot import pmt's
-    dependencies, which caused the SVG filter to miss panflute in uv tool installs.
-    """
-    wrapper_dir = PMT_FILTER_WORK_DIR
-    wrapper_dir.mkdir(parents=True, exist_ok=True)
-    filter_path = filter_path.resolve()
-
-    if os.name == 'nt':
-        wrapper_path = wrapper_dir / f'{name}.cmd'
-        wrapper_path.write_text(
-            f'@echo off\r\n"{sys.executable}" "{filter_path}" %*\r\n',
-            encoding='utf-8',
-            newline='',
-        )
-        return wrapper_path
-
-    wrapper_path = wrapper_dir / name
-    wrapper_path.write_text(
-        f'#!{sys.executable}\n'
-        'import runpy\n'
-        f'runpy.run_path({str(filter_path)!r}, run_name="__main__")\n',
-        encoding='utf-8',
-        newline='\n',
-    )
-    wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    return wrapper_path
-
-
 def docx_svg_to_png_filter_args() -> list[str]:
     """Return Pandoc args for the DOCX SVG-to-PNG image filter."""
-    filter_path = resource_path('pandoc/filters/svg_to_png.py')
-    if not filter_path.exists():
-        raise FileNotFoundError(f"SVG-to-PNG Pandoc filter not found: {filter_path}")
-    return ['--filter', to_pandoc_path(python_filter_wrapper(filter_path, 'svg_to_png_filter'))]
+    return svg_filter_helpers.svg_to_png_filter_args()
 
 
 def docx_svg_embed_images_filter_args() -> list[str]:
     """Return Pandoc args for the DOCX self-contained SVG image filter."""
-    filter_path = resource_path('pandoc/filters/svg_embed_images.py')
-    if not filter_path.exists():
-        raise FileNotFoundError(f"SVG child-image embedding filter not found: {filter_path}")
-    return ['--filter', to_pandoc_path(python_filter_wrapper(filter_path, 'svg_embed_images_filter'))]
+    return svg_filter_helpers.svg_embed_images_filter_args()
 
 
 def docx_svg_base_dirs() -> list[Path]:
     """Return lookup roots shared by DOCX SVG filters."""
     manuscript_dir = Path(SETTINGS.manuscript_file).parent
-    base_dirs = [Path.cwd(), manuscript_dir]
-    unique_base_dirs = []
-    for base_dir in base_dirs:
-        resolved = base_dir.resolve()
-        if resolved not in unique_base_dirs:
-            unique_base_dirs.append(resolved)
-    return unique_base_dirs
+    return svg_filter_helpers.unique_resolved_dirs([Path.cwd(), manuscript_dir])
 
 
 def docx_svg_embed_images_filter_env(
@@ -392,35 +296,20 @@ def docx_svg_embed_images_filter_env(
     embed_images: bool | None = None,
 ) -> dict[str, str]:
     """Return environment settings consumed by the SVG child-image embedding filter."""
-    if embed_images is None:
-        embed_images = should_embed_docx_svg_images(metadata)
-
-    return {
-        'PMT_SVG_EMBED_DIR': str(PMT_SVG_EMBED_CACHE_DIR.resolve()),
-        'PMT_SVG_EMBED_BASE_DIRS': os.pathsep.join(str(path) for path in docx_svg_base_dirs()),
-        'PMT_SVG_EMBED_PMT_VERSION': runtime_cache_version(),
-        'PMT_SVG_EMBED_IMAGES': 'true' if embed_images else 'false',
-    }
+    return svg_filter_helpers.svg_embed_images_filter_env(
+        docx_svg_base_dirs(),
+        metadata,
+        embed_images=embed_images,
+    )
 
 
 def docx_svg_to_png_filter_env(metadata: dict[str, Any], convert_all: bool | None = None) -> dict[str, str]:
     """Return environment settings consumed by the SVG-to-PNG Pandoc filter."""
-    if convert_all is None:
-        convert_all = should_convert_docx_svg_to_png(metadata)
-    output_root = PMT_SVG_PNG_CACHE_DIR
-
-    return {
-        'PMT_SVG_TO_PNG_DIR': str(output_root.resolve()),
-        'PMT_SVG_TO_PNG_BASE_DIRS': os.pathsep.join(str(path) for path in docx_svg_base_dirs()),
-        'PMT_SVG_TO_PNG_DPI': str(
-            metadata_float(metadata, ('docxSvgToPngDpi', 'docx-svg-to-png-dpi'), 300)
-        ),
-        'PMT_SVG_TO_PNG_SCALE': str(
-            metadata_float(metadata, ('docxSvgToPngScale', 'docx-svg-to-png-scale'), 1)
-        ),
-        'PMT_SVG_TO_PNG_PMT_VERSION': runtime_cache_version(),
-        'PMT_SVG_TO_PNG_CONVERT_ALL': 'true' if convert_all else 'false',
-    }
+    return svg_filter_helpers.svg_to_png_filter_env(
+        docx_svg_base_dirs(),
+        metadata,
+        convert_all=convert_all,
+    )
 
 
 def table_metadata_filter_args() -> list[str]:

@@ -322,7 +322,7 @@ def should_embed_docx_svg_images(metadata: dict[str, Any]) -> bool:
                 'embedSvgImages',
                 'embed-svg-images',
             ),
-            False,
+            True,
         )
     )
 

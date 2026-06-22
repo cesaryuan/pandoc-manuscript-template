@@ -6,6 +6,10 @@ from pathlib import Path
 PMT_DIR = Path(".pmt")
 PMT_WORK_DIR = PMT_DIR / "work"
 PMT_CACHE_DIR = PMT_DIR / "cache"
+PMT_TOOLS_DIR = PMT_DIR / "tools"
+PMT_TOOLS_BIN_DIR = PMT_TOOLS_DIR / "bin"
+PMT_TOOLS_DOWNLOAD_DIR = PMT_CACHE_DIR / "tools" / "downloads"
+PMT_TOOLS_EXTRACT_DIR = PMT_WORK_DIR / "tools"
 PMT_FILTER_WORK_DIR = PMT_WORK_DIR / "filters"
 PMT_MATHTYPE_WORK_DIR = PMT_WORK_DIR / "mathtype-build"
 PMT_REPLY_WORK_DIR = PMT_WORK_DIR / "reply"

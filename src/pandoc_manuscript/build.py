@@ -27,6 +27,7 @@ from .paths import PMT_DIR, PMT_FILTER_WORK_DIR, PMT_MATHTYPE_WORK_DIR, PMT_SVG_
 from .postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from .postprocess_docx import postprocess_docx as run_docx_postprocess
 from .resources import package_resource_path, template_root
+from .tools import ensure_pandoc_tools, pandoc_command, pandoc_tools_env
 
 # ============================================================================
 # SETTINGS
@@ -91,7 +92,8 @@ def run_command(
 def get_pandoc_version() -> Tuple[int, ...]:
     """Get Pandoc version as a tuple of integers."""
     try:
-        result = subprocess.run(['pandoc', '--version'], capture_output=True, text=True, check=True)
+        pandoc = ensure_pandoc_tools()[0].executable
+        result = subprocess.run([str(pandoc), '--version'], capture_output=True, text=True, check=True)
         version_line = result.stdout.split('\n')[0]
         version_str = version_line.split()[1]
         # Handle versions like "3.8.3" or "3.8.3.0"
@@ -434,7 +436,7 @@ def run_pandoc(
     """Run Pandoc with original defaults so ${.} resolves beside that file."""
     extra_args = extra_args or []
     cmd = [
-        'pandoc',
+        pandoc_command(),
         '--defaults',
         str(defaults_file),
         *style_metadata_args(),
@@ -444,7 +446,7 @@ def run_pandoc(
         *extra_args,
         SETTINGS.manuscript_file,
     ]
-    run_command(cmd, stream_output=True, env=extra_env)
+    run_command(cmd, stream_output=True, env=pandoc_tools_env(extra_env))
 
 
 def reference_doc_args() -> list[str]:

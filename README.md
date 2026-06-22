@@ -18,8 +18,12 @@ A professional, reusable template for academic manuscripts focused on DOCX outpu
 
 Install the following tools:
 
-1. **Pandoc** (>= 3.0): [Download](https://pandoc.org/installing.html)
-2. **pandoc-crossref**: Required for figure, table, equation, and section references
+1. **Pandoc** (>= 3.0): [Download](https://pandoc.org/installing.html). If `pmt`
+   cannot find `pandoc` on `PATH`, it downloads a project-local copy under
+   `.pmt/tools/` automatically.
+2. **pandoc-crossref**: Required for figure, table, equation, and section
+   references. If `pmt` cannot find `pandoc-crossref` on `PATH`, it downloads a
+   project-local copy under `.pmt/tools/` automatically.
 3. **UV**: Recommended for running the `pmt` CLI and Python filters
 4. **MathType** (Optional): Required for DOCX output with mathtype enabled
 5. **soffice** (Optional): Required for line number extraction on non-Windows systems
@@ -91,12 +95,19 @@ pipeline.
 
 ```bash
 pmt init my-paper     # Create a manuscript project
-pmt doctor            # Check Pandoc, pandoc-crossref, Python dependencies, and project files
+pmt doctor            # Check/install Pandoc, pandoc-crossref, Python dependencies, and project files
 pmt build docx        # Generate output/docx/manuscript.docx
 pmt build latex       # Generate output/latex/manuscript.tex
 pmt build json        # Generate output/json/manuscript.json
 pmt clean             # Remove generated files
 ```
+
+`pmt build`, `pmt build-reply`, and `pmt doctor` prefer tools already available
+on `PATH`. When either Pandoc tool is missing, `pmt` downloads the matching
+GitHub release asset into `.pmt/cache/tools/downloads/`, extracts it under
+`.pmt/work/tools/`, and installs the executable into `.pmt/tools/bin/` for the
+current project. The managed tools are only added to the child process
+environment; `pmt` does not modify your system `PATH`.
 
 Use `pmt build` for non-default inputs:
 

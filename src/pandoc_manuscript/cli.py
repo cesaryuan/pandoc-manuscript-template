@@ -26,6 +26,7 @@ from .build import DEFAULT_OUTPUT_DIR, run_build_command
 from .paths import PMT_DIR
 from .reply_build import BuildReplySettings
 from .resources import iter_project_template_entries, package_resource_path, project_template_root, template_root
+from .tools import ensure_pandoc_tools, pandoc_tools_env, resolve_tool
 
 
 BuildTarget = Literal["docx", "latex", "json", "clean", "distclean"]
@@ -314,21 +315,24 @@ class DistcleanSettings(CleanSettings):
 
 def command_status(command: list[str]) -> tuple[bool, str]:
     """Run a short diagnostic command and return whether it succeeded."""
-    executable = shutil.which(command[0])
-    if executable is None:
-        return False, "not found on PATH"
     try:
+        if command[0] in {"pandoc", "pandoc-crossref"}:
+            pandoc, crossref = ensure_pandoc_tools()
+            tool = pandoc if command[0] == "pandoc" else crossref
+        else:
+            tool = resolve_tool(command[0])
         result = subprocess.run(
-            [executable, *command[1:]],
+            [str(tool.executable), *command[1:]],
             capture_output=True,
             text=True,
             check=False,
+            env=pandoc_tools_env(),
         )
-    except OSError as exc:
+    except (OSError, RuntimeError) as exc:
         return False, str(exc)
     first_line = (result.stdout or result.stderr).splitlines()
     detail = first_line[0] if first_line else f"exit code {result.returncode}"
-    return result.returncode == 0, detail
+    return result.returncode == 0, f"{detail} [{tool.source}: {tool.executable}]"
 
 
 def import_status(module_name: str) -> tuple[bool, str]:

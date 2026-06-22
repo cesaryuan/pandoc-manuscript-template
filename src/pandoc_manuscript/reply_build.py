@@ -28,6 +28,7 @@ from .paths import PMT_MATHTYPE_WORK_DIR, PMT_REPLY_LINE_SOURCE_DOCX_DIR, PMT_RE
 from .postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from .postprocess_docx import postprocess_docx
 from .resources import package_resource_path, template_root
+from .tools import pandoc_command, pandoc_tools_env
 
 
 DEFAULT_OUTPUT_DIR = "output"
@@ -170,7 +171,7 @@ def log_red(message: str) -> None:
     log_warning(f"{ANSI_RED}{message}{ANSI_RESET}")
 
 
-def run_command(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+def run_command(cmd: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     """Run a command, echo it, and raise with captured output on failure."""
     log_info(f"[Run] {' '.join(cmd)}")
     result = subprocess.run(
@@ -179,6 +180,7 @@ def run_command(cmd: list[str]) -> subprocess.CompletedProcess[str]:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=env,
     )
     if result.returncode != 0:
         if result.stdout.strip():
@@ -387,7 +389,7 @@ def resolve_reference_map(
         [f"{PROBE_SENTINEL} {label} @{label}" for label in labels],
     )
     cmd = [
-        "pandoc",
+        pandoc_command(),
         "--metadata-file",
         str(style),
         "-f",
@@ -399,7 +401,7 @@ def resolve_reference_map(
         str(manuscript),
         str(probe_path),
     ]
-    result = run_command(cmd)
+    result = run_command(cmd, env=pandoc_tools_env())
     if result.stderr.strip():
         log_warning(result.stderr.strip())
 
@@ -429,7 +431,7 @@ def resolve_citation_map(
         [f"{CITATION_PROBE_SENTINEL} {key} [@{key}]" for key in citations],
     )
     cmd = [
-        "pandoc",
+        pandoc_command(),
         "--metadata-file",
         str(style),
         "-f",
@@ -442,7 +444,7 @@ def resolve_citation_map(
         str(manuscript),
         str(probe_path),
     ]
-    result = run_command(cmd)
+    result = run_command(cmd, env=pandoc_tools_env())
     if result.stderr.strip():
         log_warning(result.stderr.strip())
 
@@ -476,7 +478,7 @@ def resolve_citation_cluster_map(
         ],
     )
     cmd = [
-        "pandoc",
+        pandoc_command(),
         "--metadata-file",
         str(style),
         "-f",
@@ -489,7 +491,7 @@ def resolve_citation_cluster_map(
         str(manuscript),
         str(probe_path),
     ]
-    result = run_command(cmd)
+    result = run_command(cmd, env=pandoc_tools_env())
     if result.stderr.strip():
         log_warning(result.stderr.strip())
 
@@ -1049,7 +1051,7 @@ def build_reply_docx(
     try:
         mathtype_args = mathtype_filter_args() if use_mathtype else []
         cmd = [
-            "pandoc",
+            pandoc_command(),
             str(temp_reply_path),
             "-f",
             from_format,
@@ -1062,7 +1064,7 @@ def build_reply_docx(
             *table_metadata_filter_args(),
             *mathtype_args,
         ]
-        run_command(cmd)
+        run_command(cmd, env=pandoc_tools_env())
 
         log_info("[INFO] Running reply DOCX post-processing...")
         if not postprocess_docx(

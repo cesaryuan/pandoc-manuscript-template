@@ -112,7 +112,7 @@ already available on your system `PATH`. Use `pmt setup --force` to redownload
 and reinstall the managed copies. `pmt build`, `pmt build-reply`, and `pmt
 doctor` still prefer tools already available on `PATH`. When either Pandoc tool
 is missing, `pmt` downloads the matching GitHub release asset into
-`.pmt/cache/tools/downloads/`, extracts it under `.pmt/work/tools/`, and
+`.pmt/cache/tools/downloads/`, extracts it under `.pmt/work/tool-extract/`, and
 installs the executable into `.pmt/tools/bin/` for the current project. The
 managed tools are only added to the child process environment; `pmt` does not
 modify your system `PATH`.

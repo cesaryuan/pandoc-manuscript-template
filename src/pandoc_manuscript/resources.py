@@ -58,6 +58,7 @@ def iter_project_template_entries() -> Iterable[tuple[str, str]]:
     yield from (
         ("AGENTS.md", "AGENTS.md"),
         (".agents", ".agents"),
+        ("manuscript-syntax.md", "manuscript-syntax.md"),
         ("manuscript.md", "manuscript.md"),
         ("style.yml", "style.yml"),
         (".gitignore", ".gitignore"),

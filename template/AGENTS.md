@@ -5,7 +5,7 @@ This template converts Pandoc Markdown manuscripts to DOCX, with optional LaTeX 
 - Images: place in `images/` directory
 - References: `.bib` file specified in YAML header
 
-For any syntax, formatting pattern, or writing fragment not covered in this file, consult `README.md` first and follow its more detailed guidance.
+For any syntax, formatting pattern, or writing fragment not covered in this file, consult `manuscript-syntax.md` first and follow its more detailed guidance.
 
 ## Style Metadata
 
@@ -34,7 +34,7 @@ If the user wants to change style-related content, update `style.yml` rather tha
 
 - Bold only for highlighting best results in comparison tables
 - Alignment: `:--` left, `:--:` center, `--:` right
-- For advanced DOCX table formatting (cell merging, metadata), see README.md
+- For advanced DOCX table formatting (cell merging, metadata), see `manuscript-syntax.md`
 
 **Subfigures** (requires `subfigGrid: true` in `style.yml` or merged YAML metadata):
 ```markdown
@@ -47,6 +47,7 @@ If the user wants to change style-related content, update `style.yml` rather tha
 <!-- here should be a blank line -->
 Main caption ( 2x2 grid of subfigures, change line by adding a blank line between images).
 </div>
+```
 
 **Pseudocode/Algorithms:**
 ```markdown

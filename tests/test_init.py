@@ -12,6 +12,7 @@ def test_init_copies_packaged_agents_directory(tmp_path) -> None:
 
     InitSettings(directory=str(target)).run()
 
+    assert (target / "manuscript-syntax.md").is_file()
     assert (target / ".agents" / "manuscript-review" / "SKILL.md").is_file()
     assert (target / ".agents" / "word-manuscript-fix" / "scripts" / "unescape_latex.py").is_file()
 

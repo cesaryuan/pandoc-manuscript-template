@@ -212,7 +212,7 @@ Reference the composed layout from `manuscript.md` as one figure:
 ```markdown
 @fig:model-comparison compares the baseline setting with the proposed setting.
 
-![Comparison of baseline and proposed model behavior across two experimental settings.](figures/model-comparison.svg){#fig:model-comparison width=90%}
+![Comparison of baseline and proposed model behavior across two experimental settings.](figures/model-comparison.svg){#fig:model-comparison width=90% to-png=true}
 ```
 
 Keep the child image paths in the SVG relative to the SVG file itself. In the
@@ -221,9 +221,10 @@ example above, `model-comparison-a.png` and `model-comparison-b.png` sit beside
 builds because the SVG rasterizer resolves embedded image resources from the SVG
 file location.
 
-For DOCX builds that use linked child images inside the SVG, enable DOCX-only
-rasterization in `style.yml`. This also helps with journal submission systems
-that reject SVG images:
+For DOCX builds that use linked child images inside an individual SVG, add
+`to-png=true` to that image. The local image is converted to PNG even when the
+global `docxConvertSvgToPng` option is disabled. To rasterize every SVG image in
+the DOCX build, enable the global option in `style.yml`:
 
 ```yaml
 docxConvertSvgToPng: true
@@ -231,10 +232,11 @@ docxSvgToPngDpi: 300
 docxSvgToPngScale: 1
 ```
 
-With this option, `pmt build docx` converts local Markdown image references such
-as `figures/model-comparison.svg` to cached PNG files for DOCX output. The
-linked child panels are embedded into the generated PNG, and the source Markdown
-and SVG files are not rewritten.
+With either the per-image attribute or the global option, `pmt build docx`
+converts matching local Markdown image references such as
+`figures/model-comparison.svg` to cached PNG files for DOCX output. The linked
+child panels are embedded into the generated PNG, and the source Markdown and
+SVG files are not rewritten.
 
 This SVG-based pattern gives the composed figure one cross-reference label,
 `@fig:model-comparison`. The panel markers `(a)` and `(b)` are visual labels
@@ -465,7 +467,8 @@ to:
 This changes citations such as `[1,3]` to `[1, 3]`. It does not control collapsed ranges such as `[1-3]`, which are handled by `citation-number-range-delimiter`.
 
 For journal submission systems that reject SVG image files, enable DOCX-only
-SVG rasterization in `style.yml`:
+SVG rasterization in `style.yml`. If only one SVG needs rasterization, add
+`to-png=true` to that Markdown image instead of enabling the global option:
 
 ```yaml
 docxConvertSvgToPng: true

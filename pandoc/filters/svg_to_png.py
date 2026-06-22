@@ -21,6 +21,9 @@ import panflute as pf
 SVG_SUFFIXES = {".svg", ".svgz"}
 CACHE_METADATA_VERSION = 2
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "WARN": 30, "ERROR": 40}
+TO_PNG_ATTRIBUTE_KEYS = ("to-png", "to_png", "toPng")
+TRUE_VALUES = {"1", "true", "yes", "y", "on"}
+FALSE_VALUES = {"0", "false", "no", "n", "off", ""}
 CONVERTED: set[Path] = set()
 REUSED: set[Path] = set()
 SKIPPED: set[str] = set()
@@ -64,6 +67,34 @@ def parse_float_env(name: str, default: float) -> float:
         log_warning(f"[WARN] {name} must be positive; using {default}")
         return default
     return parsed
+
+
+def parse_bool_value(value: object) -> bool:
+    """Parse metadata-style booleans used by env vars and image attributes."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    normalized = str(value).strip().lower()
+    if normalized in TRUE_VALUES:
+        return True
+    if normalized in FALSE_VALUES:
+        return False
+    return False
+
+
+def image_requests_png(elem: pf.Image) -> bool:
+    """Return True when one image explicitly requests SVG rasterization."""
+    for key in TO_PNG_ATTRIBUTE_KEYS:
+        if key in elem.attributes:
+            return parse_bool_value(elem.attributes[key])
+    return False
+
+
+def remove_to_png_attributes(elem: pf.Image) -> None:
+    """Remove DOCX-only conversion hints before Pandoc writes the output."""
+    for key in TO_PNG_ATTRIBUTE_KEYS:
+        elem.attributes.pop(key, None)
 
 
 def path_from_url(url: str) -> str | None:
@@ -246,6 +277,13 @@ def action(elem: pf.Element, doc: pf.Doc) -> pf.Element | None:
     """Panflute action that converts and rewrites SVG image elements."""
     if not isinstance(elem, pf.Image):
         return None
+    requested_by_image = image_requests_png(elem)
+    remove_to_png_attributes(elem)
+    path_text = path_from_url(elem.url)
+    if path_text is None or not is_svg_path(path_text):
+        return None
+    if not doc.pmt_svg_convert_all and not requested_by_image:
+        return None
     return rewrite_image(
         elem,
         doc.pmt_svg_base_dirs,
@@ -263,6 +301,7 @@ def prepare(doc: pf.Doc) -> None:
     doc.pmt_svg_dpi = parse_float_env("PMT_SVG_TO_PNG_DPI", 300)
     doc.pmt_svg_scale = parse_float_env("PMT_SVG_TO_PNG_SCALE", 1)
     doc.pmt_svg_pmt_version = os.getenv("PMT_SVG_TO_PNG_PMT_VERSION", "unknown")
+    doc.pmt_svg_convert_all = parse_bool_value(os.getenv("PMT_SVG_TO_PNG_CONVERT_ALL"))
 
 
 def finalize(doc: pf.Doc) -> None:

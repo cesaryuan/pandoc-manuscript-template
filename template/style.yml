@@ -13,7 +13,7 @@ citation-number-range-delimiter: "–"
 mathtype: false
 
 # Set to true to rasterize referenced SVG images to PNG during DOCX builds.
-# This helps with submission systems that reject SVG files.
+# Use `{to-png=true}` on a single image when only one SVG needs conversion.
 docxConvertSvgToPng: false
 # docxSvgToPngDpi: 300
 # docxSvgToPngScale: 1

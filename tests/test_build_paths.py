@@ -28,6 +28,16 @@ def test_svg_to_png_cache_uses_pmt_cache(monkeypatch) -> None:
     env = build.docx_svg_to_png_filter_env({})
 
     assert Path(env["PMT_SVG_TO_PNG_DIR"]) == (Path.cwd() / PMT_CACHE_DIR / "svg-png").resolve()
+    assert env["PMT_SVG_TO_PNG_CONVERT_ALL"] == "false"
+
+
+def test_svg_to_png_env_keeps_global_conversion_switch(monkeypatch) -> None:
+    """Pass the global SVG rasterization switch to the shared DOCX filter."""
+    monkeypatch.setattr(build.SETTINGS, "manuscript_file", "manuscript.md")
+
+    env = build.docx_svg_to_png_filter_env({"docxConvertSvgToPng": True})
+
+    assert env["PMT_SVG_TO_PNG_CONVERT_ALL"] == "true"
 
 
 def test_python_filter_wrapper_uses_pmt_work_dir(monkeypatch, tmp_path) -> None:

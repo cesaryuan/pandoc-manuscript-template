@@ -343,8 +343,10 @@ def docx_svg_to_png_filter_args() -> list[str]:
     return ['--filter', to_pandoc_path(python_filter_wrapper(filter_path, 'svg_to_png_filter'))]
 
 
-def docx_svg_to_png_filter_env(metadata: dict[str, Any]) -> dict[str, str]:
+def docx_svg_to_png_filter_env(metadata: dict[str, Any], convert_all: bool | None = None) -> dict[str, str]:
     """Return environment settings consumed by the SVG-to-PNG Pandoc filter."""
+    if convert_all is None:
+        convert_all = should_convert_docx_svg_to_png(metadata)
     output_root = PMT_SVG_PNG_CACHE_DIR
     manuscript_dir = Path(SETTINGS.manuscript_file).parent
     base_dirs = [Path.cwd(), manuscript_dir]
@@ -364,6 +366,7 @@ def docx_svg_to_png_filter_env(metadata: dict[str, Any]) -> dict[str, str]:
             metadata_float(metadata, ('docxSvgToPngScale', 'docx-svg-to-png-scale'), 1)
         ),
         'PMT_SVG_TO_PNG_PMT_VERSION': runtime_cache_version(),
+        'PMT_SVG_TO_PNG_CONVERT_ALL': 'true' if convert_all else 'false',
     }
 
 
@@ -501,10 +504,11 @@ def build_docx():
     extra_args.extend(reference_doc_args())
     extra_args.extend(table_metadata_filter_args())
 
-    if should_convert_docx_svg_to_png(metadata):
+    convert_all_svg = should_convert_docx_svg_to_png(metadata)
+    if convert_all_svg:
         log_info("[INFO] Converting referenced SVG images to PNG for DOCX")
-        extra_args.extend(docx_svg_to_png_filter_args())
-        pandoc_env.update(docx_svg_to_png_filter_env(metadata))
+    extra_args.extend(docx_svg_to_png_filter_args())
+    pandoc_env.update(docx_svg_to_png_filter_env(metadata, convert_all=convert_all_svg))
 
     # Add filter for older Pandoc versions
     if should_use_mathbfit_filter():

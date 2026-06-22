@@ -8,17 +8,21 @@ URLs in the Pandoc AST and leaves the source Markdown unchanged.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import panflute as pf
+from lxml import etree
 
 
 SVG_SUFFIXES = {".svg", ".svgz"}
+XLINK_HREF = "{http://www.w3.org/1999/xlink}href"
 CACHE_METADATA_VERSION = 2
 LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "WARN": 30, "ERROR": 40}
 TO_PNG_ATTRIBUTE_KEYS = ("to-png", "to_png", "toPng")
@@ -27,6 +31,14 @@ FALSE_VALUES = {"0", "false", "no", "n", "off", ""}
 CONVERTED: set[Path] = set()
 REUSED: set[Path] = set()
 SKIPPED: set[str] = set()
+
+
+@dataclass(frozen=True)
+class SvgResourceNormalization:
+    """Store a normalized SVG string and its local child-image dependencies."""
+
+    svg_string: str | None
+    resources: list[dict[str, object]]
 
 
 def should_log(level: str) -> bool:
@@ -161,25 +173,145 @@ def output_path_for(source: Path, output_root: Path, base_dirs: list[Path]) -> P
     return output_root / f"{source.stem}-{digest}.png"
 
 
-def convert_with_resvg_py(source: Path, target: Path, dpi: float, scale: float) -> str:
+def read_svg_bytes(source: Path) -> bytes:
+    """Read plain SVG or SVGZ source bytes."""
+    data = source.read_bytes()
+    if source.suffix.lower() == ".svgz":
+        return gzip.decompress(data)
+    return data
+
+
+def parse_svg(source: Path) -> etree._ElementTree:
+    """Parse SVG XML so local child image hrefs can be normalized."""
+    parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
+    return etree.fromstring(read_svg_bytes(source), parser=parser).getroottree()
+
+
+def href_from_image(elem: etree._Element) -> str | None:
+    """Return the best href value from an SVG image element."""
+    return elem.get("href") or elem.get(XLINK_HREF)
+
+
+def path_from_svg_href(href: str) -> str | None:
+    """Return a local path string from an SVG child image href."""
+    if not href or href.strip().lower().startswith("data:"):
+        return None
+
+    parsed = urlparse(href)
+    scheme = parsed.scheme.lower()
+    is_windows_drive = len(scheme) == 1 and len(href) > 2 and href[1:3] in {":\\", ":/"}
+    if scheme and scheme != "file" and not is_windows_drive:
+        return None
+
+    path_text = parsed.path if scheme == "file" else href
+    path_text = path_text.split("?", 1)[0].split("#", 1)[0]
+    if not path_text:
+        return None
+    return unquote(path_text)
+
+
+def resolve_child_path(source_svg: Path, href: str) -> Path | None:
+    """Resolve an SVG child image href relative to the SVG file location."""
+    path_text = path_from_svg_href(href)
+    if path_text is None:
+        return None
+
+    child = Path(path_text)
+    if child.is_absolute():
+        return child.resolve() if child.exists() else None
+
+    candidate = (source_svg.parent / child).resolve()
+    return candidate if candidate.exists() else None
+
+
+def relative_svg_href(source_svg: Path, child: Path) -> str:
+    """Return a decoded relative href suitable for resvg resource lookup."""
+    relative = os.path.relpath(child, source_svg.parent)
+    return relative.replace(os.sep, "/")
+
+
+def metadata_for_file(path: Path) -> dict[str, object]:
+    """Return cache metadata for one local dependency file."""
+    stat_result = path.stat()
+    return {
+        "path": str(path.resolve()),
+        "mtime_ns": stat_result.st_mtime_ns,
+        "size": stat_result.st_size,
+    }
+
+
+def normalize_svg_resource_hrefs(source: Path) -> SvgResourceNormalization:
+    """Decode local child image hrefs before resvg rasterization.
+
+    resvg may fail to resolve URL-encoded non-ASCII filenames on Windows. When
+    a decoded local resource exists, rewrite the temporary SVG string to use the
+    decoded relative path while leaving the source SVG untouched.
+    """
+    try:
+        tree = parse_svg(source)
+    except etree.XMLSyntaxError as exc:
+        log_warning(f"[WARN] Could not parse SVG for resource normalization: {source}: {exc}")
+        return SvgResourceNormalization(svg_string=None, resources=[])
+
+    changed = False
+    resources: list[dict[str, object]] = []
+    for elem in tree.xpath("//*[local-name() = 'image']"):
+        href = href_from_image(elem)
+        if href is None:
+            continue
+
+        child = resolve_child_path(source, href)
+        if child is None:
+            continue
+
+        normalized_href = relative_svg_href(source, child)
+        resources.append({"href": href, "normalized_href": normalized_href, **metadata_for_file(child)})
+        if normalized_href != href:
+            elem.set("href", normalized_href)
+            elem.set(XLINK_HREF, normalized_href)
+            changed = True
+
+    if not changed:
+        return SvgResourceNormalization(svg_string=None, resources=resources)
+
+    svg_string = etree.tostring(tree, encoding="unicode")
+    return SvgResourceNormalization(svg_string=svg_string, resources=resources)
+
+
+def convert_with_resvg_py(
+    source: Path,
+    target: Path,
+    dpi: float,
+    scale: float,
+    svg_string: str | None = None,
+) -> str:
     """Convert SVG to PNG with the pure package-managed resvg binding."""
     import resvg_py
 
-    png_bytes = resvg_py.svg_to_bytes(
-        svg_path=str(source),
+    render_args = {
         # Resolve relative <image href="..."> assets from the SVG file location.
-        resources_dir=str(source.parent),
-        dpi=dpi,
-        zoom=scale if scale != 1 else None,
-    )
+        "resources_dir": str(source.parent),
+        "dpi": dpi,
+        "zoom": scale if scale != 1 else None,
+    }
+    if svg_string is None:
+        png_bytes = resvg_py.svg_to_bytes(svg_path=str(source), **render_args)
+    else:
+        png_bytes = resvg_py.svg_to_bytes(svg_string=svg_string, **render_args)
     target.write_bytes(png_bytes)
     return "resvg-py"
 
 
-def convert_svg_to_png(source: Path, target: Path, dpi: float, scale: float) -> str:
+def convert_svg_to_png(
+    source: Path,
+    target: Path,
+    dpi: float,
+    scale: float,
+    svg_string: str | None = None,
+) -> str:
     """Convert one SVG file to PNG using the required resvg-py dependency."""
     target.parent.mkdir(parents=True, exist_ok=True)
-    return convert_with_resvg_py(source, target, dpi, scale)
+    return convert_with_resvg_py(source, target, dpi, scale, svg_string=svg_string)
 
 
 def cache_metadata_path(target: Path) -> Path:
@@ -192,6 +324,7 @@ def expected_cache_metadata(
     dpi: float,
     scale: float,
     pmt_version: str,
+    resources: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     """Build cache metadata that changes when source, options, or PMT version change."""
     stat_result = source.stat()
@@ -200,6 +333,7 @@ def expected_cache_metadata(
         "source": str(source.resolve()),
         "source_mtime_ns": stat_result.st_mtime_ns,
         "source_size": stat_result.st_size,
+        "resources": resources or [],
         "dpi": dpi,
         "scale": scale,
         "pmt_version": pmt_version,
@@ -230,13 +364,20 @@ def write_cache_metadata(target: Path, metadata: dict[str, object], converter: s
 
 def ensure_png(source: Path, target: Path, dpi: float, scale: float, pmt_version: str) -> Path:
     """Create or reuse the PNG cache file for one SVG source."""
-    expected_metadata = expected_cache_metadata(source, dpi, scale, pmt_version)
+    normalization = normalize_svg_resource_hrefs(source)
+    expected_metadata = expected_cache_metadata(
+        source,
+        dpi,
+        scale,
+        pmt_version,
+        resources=normalization.resources,
+    )
     if cache_metadata_matches(target, expected_metadata):
         REUSED.add(target)
         log_debug(f"[svg-to-png] Reusing {target}")
         return target
 
-    converter = convert_svg_to_png(source, target, dpi, scale)
+    converter = convert_svg_to_png(source, target, dpi, scale, svg_string=normalization.svg_string)
     write_cache_metadata(target, expected_metadata, converter)
     CONVERTED.add(target)
     log_debug(f"[svg-to-png] Converted {source} -> {target} with {converter}")

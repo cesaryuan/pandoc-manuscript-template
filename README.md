@@ -534,52 +534,9 @@ pandoc --metadata-file style.yml --defaults pandoc/pandoc-docx.yml
 pandoc --metadata-file style.yml --defaults pandoc/pandoc-latex.yml
 ```
 
-## Advanced Customization
-
-### Custom LaTeX Preamble
-
-Edit `pandoc/templates/common.latex` to add custom LaTeX packages or commands for the optional LaTeX source output.
-
-### Custom DOCX Styling
-
-1. Generate a reference document:
-   ```bash
-   pandoc -o custom-reference.docx --print-default-data-file reference.docx
-   ```
-
-2. Open `custom-reference.docx` in Word and modify styles
-
-3. Update `pandoc/pandoc.yml`:
-   ```yaml
-   reference-doc: custom-reference.docx
-   ```
-
-See the [manuscript-template submodule](pandoc/manuscript-template/) for advanced DOCX customization.
-
-### Adding New Filters
-
-1. Create Python filter in `pandoc/filters/`
-2. Add to filter list in `pandoc/pandoc-docx.yml` or `pandoc/pandoc-latex.yml`:
-   ```yaml
-   filters:
-     - your_filter.py
-   ```
-
-## Journal Submission Checklist
-
-- [ ] Update title, authors, and affiliations in YAML header
-- [ ] Replace abstract and keywords
-- [ ] Write manuscript content in `manuscript.md`
-- [ ] Add figures to appropriate directory and reference in text
-- [ ] Create/update bibliography file with all references
-- [ ] Select appropriate citation style (CSL file)
-- [ ] Review output in Word/LibreOffice
-- [ ] Verify all figures, tables, and references appear correctly
-- [ ] Run journal-specific formatting checks (line numbers, anonymization, etc.)
-
 ## Examples
 
-See `manuscript.md` for a complete example demonstrating:
+See `template/manuscript.md` for a complete example demonstrating:
 - Multi-author affiliations with corresponding author
 - Abstract and keywords
 - Section organization (Introduction, Methods, Results, Discussion, Conclusion)
@@ -588,8 +545,7 @@ See `manuscript.md` for a complete example demonstrating:
 - Citations in various formats
 - Acknowledgments and supplementary sections
 
-For a real-world example of a complete research paper, see `examples/references/paper-specific-example.bib`.
-
+For a real-world example of a complete research paper, see `template/examples/references/paper-specific-example.bib`.
 
 ## Acknowledgments
 
@@ -601,8 +557,3 @@ For a real-world example of a complete research paper, see `examples/references/
 For issues and questions:
 - Review [Pandoc documentation](https://pandoc.org/MANUAL.html)
 - Create an issue with minimal reproducible example
-
----
-
-**Version**: 1.0.0
-**Last Updated**: 2025-01-09

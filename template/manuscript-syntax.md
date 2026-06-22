@@ -235,6 +235,7 @@ When generating DOCX output, three post-processing scripts automatically enhance
 Add standard Pandoc attributes to table captions to control DOCX table properties. Pandoc does not preserve arbitrary table attributes in the generated DOCX, so `pmt build docx` runs a Lua filter that embeds a hidden WordprocessingML marker before conversion. The DOCX post-processor reads the marker, applies the settings, and removes it before saving the final document.
 
 **Syntax**: Add attributes at the end of the Pandoc table caption.
+For tables that should not have a visible caption, use an attribute-only caption line such as `: {revision_rows="*"}`.
 
 **Available attribute keys**:
 - `cell_margin="0.10cm"` - Set all cell margins (supports cm, mm, in, pt)

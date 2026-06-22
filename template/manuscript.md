@@ -127,6 +127,7 @@ The main workflow can also be summarized as pseudocode when an explicit step-by-
 | 7.\ \ Select the best model $\hat{m}$ according to validation performance |
 | 8.\ \ Compute $\hat{s}$ for $\hat{m}$ on the test subset |
 | 9.\ \ **return** $\hat{m}$ and $\hat{s}$ |
+: {revision_rows="*"}
 
 # Results {#sec:results}
 

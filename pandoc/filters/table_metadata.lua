@@ -51,11 +51,6 @@ local function caption_text(table)
   return pandoc.utils.stringify(table.caption)
 end
 
--- Return whether a Table block corresponds to a captioned source table.
-local function has_caption(table)
-  return caption_text(table) ~= "" or (table.identifier or ""):match("^tbl:")
-end
-
 -- Return only attributes handled by the DOCX table postprocessor.
 local function table_attributes(table)
   local attrs = {}
@@ -87,10 +82,6 @@ local function marker_block(record)
 end
 
 function Table(table)
-  if not has_caption(table) then
-    return nil
-  end
-
   local attrs = table_attributes(table)
   if not has_table_attributes(attrs) then
     return nil

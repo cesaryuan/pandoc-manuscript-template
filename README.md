@@ -142,7 +142,9 @@ line source is only read when the reply uses ``(Line `regex`)`` placeholders.
 Markdown line sources are first built to a temporary DOCX; DOCX sources are then
 exported to PDF through Word COM on Windows or `soffice --headless --convert-to
 pdf` on Linux and other non-Windows systems. Line placeholders are resolved
-against the generated PDF text layer. The reply markdown path itself is required.
+against the generated PDF text layer. PDFs converted from DOCX line sources are
+cached under `.pmt/cache/reply/line-source`, so `pmt clean` keeps them and `pmt
+distclean` removes them. The reply markdown path itself is required.
 
 ### Command Options
 

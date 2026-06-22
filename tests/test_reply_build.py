@@ -63,6 +63,7 @@ def test_prepare_line_source_pdf_uses_soffice_on_non_windows(tmp_path, monkeypat
     source_docx = tmp_path / "manuscript.docx"
     source_docx.write_bytes(b"docx")
     pdf_dir = tmp_path / "reply-line-source-pdf"
+    cache_dir = tmp_path / "line-source-cache"
     calls = []
 
     def fake_run(cmd, **kwargs):
@@ -75,12 +76,17 @@ def test_prepare_line_source_pdf_uses_soffice_on_non_windows(tmp_path, monkeypat
 
     monkeypatch.setattr(reply_build.sys, "platform", "linux")
     monkeypatch.setattr(reply_build, "LINE_SOURCE_PDF_DIR", pdf_dir)
+    monkeypatch.setattr(reply_build, "LINE_SOURCE_CACHE_DIR", cache_dir)
     monkeypatch.setattr(reply_build.subprocess, "run", fake_run)
 
     result = reply_build.prepare_line_source_pdf(source_docx)
+    cached_result = reply_build.prepare_line_source_pdf(source_docx)
+    pdf_key = reply_build.docx_line_source_pdf_cache_key(source_docx)
 
-    assert result == pdf_dir / "manuscript.pdf"
+    assert result == pdf_dir / f"manuscript.{pdf_key[:12]}.pdf"
+    assert cached_result == result
     assert result.exists()
+    assert (cache_dir / "pdf" / f"{pdf_key}.pdf").exists()
     assert calls == [
         (
             [
@@ -113,6 +119,7 @@ def test_prepare_line_source_pdf_builds_markdown_before_pdf(tmp_path, monkeypatc
     source_markdown.write_text("# Manuscript\n", encoding="utf-8")
     docx_dir = tmp_path / "line-source-docx"
     pdf_dir = tmp_path / "line-source-pdf"
+    cache_dir = tmp_path / "line-source-cache"
     calls = []
 
     def fake_build_markdown_line_source_docx(source, target):
@@ -129,18 +136,25 @@ def test_prepare_line_source_pdf_builds_markdown_before_pdf(tmp_path, monkeypatc
 
     monkeypatch.setattr(reply_build, "LINE_SOURCE_DOCX_DIR", docx_dir)
     monkeypatch.setattr(reply_build, "LINE_SOURCE_PDF_DIR", pdf_dir)
+    monkeypatch.setattr(reply_build, "LINE_SOURCE_CACHE_DIR", cache_dir)
     monkeypatch.setattr(reply_build.sys, "platform", "win32")
     monkeypatch.setattr(reply_build, "build_markdown_line_source_docx", fake_build_markdown_line_source_docx)
     monkeypatch.setattr(reply_build, "export_docx_to_pdf_with_word", fake_export_docx_to_pdf_with_word)
 
     result = reply_build.prepare_line_source_pdf(source_markdown)
+    cached_result = reply_build.prepare_line_source_pdf(source_markdown)
 
     expected_docx = docx_dir / "manuscript.docx"
-    expected_pdf = pdf_dir / "manuscript.pdf"
+    pdf_key = reply_build.docx_line_source_pdf_cache_key(expected_docx)
+    expected_pdf = pdf_dir / f"manuscript.{pdf_key[:12]}.pdf"
     assert result == expected_pdf
+    assert cached_result == expected_pdf
+    assert not (cache_dir / "docx").exists()
+    assert (cache_dir / "pdf" / f"{pdf_key}.pdf").exists()
     assert calls == [
         ("build", source_markdown, expected_docx),
         ("pdf", expected_docx, expected_pdf),
+        ("build", source_markdown, expected_docx),
     ]
 
 

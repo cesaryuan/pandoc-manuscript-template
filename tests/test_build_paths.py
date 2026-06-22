@@ -8,6 +8,7 @@ from pandoc_manuscript.mathtype import ole_parts
 from pandoc_manuscript.paths import (
     PMT_CACHE_DIR,
     PMT_DIR,
+    PMT_REPLY_LINE_SOURCE_CACHE_DIR,
     PMT_SVG_EMBED_CACHE_DIR,
     PMT_SVG_PNG_CACHE_DIR,
     PMT_WORK_DIR,
@@ -19,6 +20,7 @@ def test_generated_work_and_cache_paths_are_under_pmt() -> None:
     paths = [
         Path(build.SETTINGS.mathtype_work_dir),
         reply_build.LINE_SOURCE_PDF_DIR,
+        reply_build.LINE_SOURCE_CACHE_DIR,
         reply_build.REPLY_PROBE_DIR,
         ole_parts.MATHTYPE_CACHE_DIR,
     ]
@@ -96,3 +98,9 @@ def test_python_filter_wrapper_uses_pmt_work_dir(monkeypatch, tmp_path) -> None:
     wrapper = build.python_filter_wrapper(filter_path, "sample_filter")
 
     assert wrapper.parts[: len(PMT_WORK_DIR.parts)] == PMT_WORK_DIR.parts
+
+
+def test_reply_line_source_cache_uses_pmt_cache() -> None:
+    """Keep reusable reply line-source artifacts under the shared pmt cache."""
+    assert reply_build.LINE_SOURCE_CACHE_DIR == PMT_REPLY_LINE_SOURCE_CACHE_DIR
+    assert reply_build.LINE_SOURCE_CACHE_DIR.parts[: len(PMT_CACHE_DIR.parts)] == PMT_CACHE_DIR.parts

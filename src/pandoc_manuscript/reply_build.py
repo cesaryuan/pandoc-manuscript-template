@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 import json
 import os
 import re
@@ -19,6 +20,7 @@ import yaml
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, CliPositionalArg, CliSuppress, SettingsConfigDict
 
+from . import runtime_cache_version
 from .logging_utils import log_debug, log_error, log_info, log_success, log_warning
 from .metadata import load_merged_metadata_with_status, merge_metadata, parse_yaml_file
 from .mathtype.convert_marked_docx import convert_marked_docx
@@ -26,6 +28,7 @@ from .mathtype.marked_docx import extract_marked_equation_requests
 from .mathtype.ole_parts import build_helper, check_mathtype_availability
 from .paths import (
     PMT_MATHTYPE_WORK_DIR,
+    PMT_REPLY_LINE_SOURCE_CACHE_DIR,
     PMT_REPLY_LINE_SOURCE_DOCX_DIR,
     PMT_REPLY_LINE_SOURCE_PDF_DIR,
     PMT_REPLY_PROBE_DIR,
@@ -51,6 +54,7 @@ DEFAULT_REPLY_FROM_FORMAT = "markdown"
 DEFAULT_REPLY_OUTPUT_FILE = "output/docx/<reply-name>.docx"
 LINE_SOURCE_PDF_DIR = PMT_REPLY_LINE_SOURCE_PDF_DIR
 LINE_SOURCE_DOCX_DIR = PMT_REPLY_LINE_SOURCE_DOCX_DIR
+LINE_SOURCE_CACHE_DIR = PMT_REPLY_LINE_SOURCE_CACHE_DIR
 REPLY_PROBE_DIR = PMT_REPLY_PROBE_DIR
 LABEL_CHARS_NO_DOT = r"A-Za-z0-9_:\-"
 LABEL_CONTINUATION = rf"(?:[{LABEL_CHARS_NO_DOT}]|\.(?=[{LABEL_CHARS_NO_DOT}]))"
@@ -345,6 +349,87 @@ def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
         target=target_docx,
         work_dir=PMT_MATHTYPE_WORK_DIR / "reply" / target_docx.stem,
     )
+
+
+def file_sha256(path: Path) -> str:
+    """Return a SHA-256 digest for a dependency file."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def hash_json_payload(payload: dict[str, Any]) -> str:
+    """Return a stable digest for a JSON-serializable cache payload."""
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def dependency_record(path: Path) -> dict[str, str]:
+    """Return the stable cache record for one input file."""
+    resolved = path.resolve()
+    return {
+        "path": str(resolved),
+        "sha256": file_sha256(resolved),
+    }
+
+
+def line_source_pdf_backend() -> str:
+    """Return the DOCX-to-PDF backend used on this platform."""
+    return "word-com" if sys.platform == "win32" else "soffice"
+
+
+def cached_line_source_path(kind: str, key: str, suffix: str) -> Path:
+    """Return a persistent line-source cache path for a computed key."""
+    return LINE_SOURCE_CACHE_DIR / kind / f"{key}{suffix}"
+
+
+def work_line_source_path(directory: Path, stem: str, key: str, suffix: str) -> Path:
+    """Return a hash-suffixed transient line-source work path."""
+    return directory / f"{stem}.{key[:12]}{suffix}"
+
+
+def copy_from_cache(cached: Path, target: Path, label: str) -> bool:
+    """Copy a cached line-source artifact into the work directory if present."""
+    if not cached.exists():
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(cached, target)
+    log_info(f"[LINE] Reusing cached {label}: {target}")
+    return True
+
+
+def store_in_cache(source: Path, cached: Path, label: str) -> None:
+    """Store a generated line-source artifact in the persistent cache."""
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, cached)
+    log_debug(f"[LINE] Cached {label}: {cached}")
+
+
+def docx_line_source_pdf_cache_key(source_docx: Path) -> str:
+    """Return a fingerprint for converting a DOCX line source to PDF."""
+    return hash_json_payload(
+        {
+            "kind": "docx-line-source-pdf",
+            "schema": 1,
+            "pmt_version": runtime_cache_version(),
+            "backend": line_source_pdf_backend(),
+            "source": dependency_record(source_docx),
+        }
+    )
+
+
+def prepare_cached_docx_line_source_pdf(source_docx: Path) -> Path:
+    """Convert or reuse the cached PDF for a DOCX line source."""
+    key = docx_line_source_pdf_cache_key(source_docx)
+    cached_pdf = cached_line_source_path("pdf", key, ".pdf")
+    target_pdf = work_line_source_path(LINE_SOURCE_PDF_DIR, source_docx.stem, key, ".pdf")
+    if copy_from_cache(cached_pdf, target_pdf, "line-source PDF"):
+        return target_pdf
+
+    if sys.platform == "win32":
+        export_docx_to_pdf_with_word(source_docx, target_pdf)
+    else:
+        export_docx_to_pdf_with_soffice(source_docx, target_pdf)
+    store_in_cache(target_pdf, cached_pdf, "line-source PDF")
+    return target_pdf
 
 
 def inline_to_text(inline: dict[str, Any]) -> str:
@@ -899,12 +984,7 @@ def prepare_line_source_pdf(line_source: Path) -> Path:
         line_source = target_docx
         suffix = line_source.suffix.lower()
     if suffix in {".docx", ".docm"}:
-        target_pdf = LINE_SOURCE_PDF_DIR / f"{line_source.stem}.pdf"
-        if sys.platform == "win32":
-            export_docx_to_pdf_with_word(line_source, target_pdf)
-        else:
-            export_docx_to_pdf_with_soffice(line_source, target_pdf)
-        return target_pdf
+        return prepare_cached_docx_line_source_pdf(line_source)
     raise RuntimeError(f"Line source must be a Markdown, PDF, or Word document: {line_source}")
 
 

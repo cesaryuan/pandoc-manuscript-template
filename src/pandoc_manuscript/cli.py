@@ -26,7 +26,7 @@ from .build import DEFAULT_OUTPUT_DIR, run_build_command
 from .paths import PMT_DIR
 from .reply_build import BuildReplySettings
 from .resources import iter_project_template_entries, package_resource_path, project_template_root, template_root
-from .tools import ensure_pandoc_tools, pandoc_tools_env, resolve_tool
+from .tools import ensure_pandoc_tools, pandoc_tools_env, resolve_tool, setup_pandoc_tools
 
 
 BuildTarget = Literal["docx", "latex", "json", "clean", "distclean"]
@@ -273,6 +273,28 @@ class BuildCommandSettings(BaseSettings):
             )
 
 
+class SetupSettings(BaseSettings):
+    """Settings for `pmt setup`."""
+
+    model_config = SettingsConfigDict(cli_kebab_case=True, cli_implicit_flags=True)
+
+    project_dir: Path = Field(default=Path("."), description="Project directory that receives .pmt/tools.")
+    force: bool = Field(default=False, description="Redownload and reinstall managed Pandoc tools.")
+
+    def run(self) -> int:
+        """Download project-local Pandoc tools into .pmt/tools."""
+        project_dir = self.project_dir.resolve()
+        if not project_dir.exists():
+            raise FileNotFoundError(f"Project directory not found: {project_dir}")
+
+        with project_directory(project_dir):
+            pandoc, crossref = setup_pandoc_tools(force=self.force)
+
+        log(f"[OK] pandoc: {pandoc.executable} [{pandoc.source}]")
+        log(f"[OK] pandoc-crossref: {crossref.executable} [{crossref.source}]")
+        return 0
+
+
 class CleanSettings(BaseSettings):
     """Settings for `pmt clean` and `pmt distclean`."""
 
@@ -402,6 +424,7 @@ class PmtCli(BaseSettings):
 
     version_flag: bool = Field(default=False, alias="version")
     init: CliSubCommand[InitSettings | None]
+    setup: CliSubCommand[SetupSettings | None]
     build: CliSubCommand[BuildCommandSettings | None]
     build_reply: CliSubCommand[BuildReplySettings | None]
     clean: CliSubCommand[CleanSettings | None]

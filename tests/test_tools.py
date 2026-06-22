@@ -166,3 +166,33 @@ def test_copy_response_with_progress_streams_body_and_finishes(monkeypatch) -> N
 
     assert output.getvalue() == b"abcdef"
     assert updates == [(3, 6, False), (6, 6, False), (6, 6, True)]
+
+
+def test_setup_pandoc_tools_installs_managed_tools_even_when_path_exists(monkeypatch, tmp_path) -> None:
+    """Prepare .pmt/tools explicitly instead of reusing system PATH tools."""
+    tools.TOOL_CACHE.clear()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(shutil, "which", lambda command: f"C:/system/{command}.exe")
+    monkeypatch.setattr(tools, "crossref_pandoc_version", lambda path: "3.9.0.2")
+    monkeypatch.setattr(tools, "pandoc_release_for_crossref", lambda version: {"tag_name": version, "assets": []})
+    calls = []
+
+    def fake_install_release_tool(tool, release=None, *, force_download=False):
+        """Create a fake managed executable without network access."""
+        calls.append((tool, release, force_download))
+        executable = tools.managed_executable(tool)
+        executable.parent.mkdir(parents=True, exist_ok=True)
+        executable.write_text("fake", encoding="utf-8")
+        return tools.ResolvedTool(tool, executable, ".pmt/tools (fake)")
+
+    monkeypatch.setattr(tools, "install_release_tool", fake_install_release_tool)
+
+    pandoc, crossref = tools.setup_pandoc_tools()
+
+    assert pandoc.executable == tools.managed_executable("pandoc")
+    assert crossref.executable == tools.managed_executable("pandoc-crossref")
+    assert calls == [
+        ("pandoc-crossref", None, False),
+        ("pandoc", {"tag_name": "3.9.0.2", "assets": []}, False),
+    ]
+    tools.TOOL_CACHE.clear()

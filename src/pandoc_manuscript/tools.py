@@ -220,8 +220,10 @@ def select_release_asset(tool: str, release: dict[str, Any]) -> dict[str, str]:
     raise RuntimeError(f"No compatible {tool} release asset found. Available assets: {names}")
 
 
-def download_asset(url: str, target: Path) -> None:
+def download_asset(url: str, target: Path, *, force: bool = False) -> None:
     """Download a release asset if it is not already cached."""
+    if force and target.exists():
+        target.unlink()
     if target.exists() and target.stat().st_size > 0:
         return
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -268,13 +270,18 @@ def find_executable(root: Path, command: str) -> Path:
     return sorted(matches, key=lambda path: len(path.parts))[0]
 
 
-def install_release_tool(tool: str, release: dict[str, Any] | None = None) -> ResolvedTool:
+def install_release_tool(
+    tool: str,
+    release: dict[str, Any] | None = None,
+    *,
+    force_download: bool = False,
+) -> ResolvedTool:
     """Download the latest compatible release asset and install its executable."""
     release = release or latest_release(tool)
     tag = str(release.get("tag_name") or release.get("name") or "latest").lstrip("v")
     asset = select_release_asset(tool, release)
     archive = PMT_TOOLS_DOWNLOAD_DIR / asset["name"]
-    download_asset(asset["url"], archive)
+    download_asset(asset["url"], archive, force=force_download)
 
     extract_dir = PMT_TOOLS_EXTRACT_DIR / f"{tool}-{tag}"
     extract_archive(archive, extract_dir)
@@ -295,6 +302,25 @@ def install_release_tool(tool: str, release: dict[str, Any] | None = None) -> Re
     (PMT_TOOLS_BIN_DIR / f"{tool}.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     log_info(f"[TOOLS] Installed {tool} {tag}: {installed}")
     return ResolvedTool(tool, installed, f".pmt/tools ({tag})")
+
+
+def managed_executable(tool: str) -> Path:
+    """Return the pmt-managed executable path for a tool."""
+    return PMT_TOOLS_BIN_DIR / executable_name(tool)
+
+
+def install_managed_tool(
+    tool: str,
+    release: dict[str, Any] | None = None,
+    *,
+    force: bool = False,
+) -> ResolvedTool:
+    """Install or reuse a pmt-managed tool, ignoring system PATH."""
+    managed = managed_executable(tool)
+    if managed.exists() and not force:
+        log_info(f"[TOOLS] {tool} already installed in .pmt/tools: {managed}")
+        return ResolvedTool(tool, managed, ".pmt/tools")
+    return install_release_tool(tool, release=release, force_download=force)
 
 
 def crossref_pandoc_version(crossref: Path) -> str | None:
@@ -346,7 +372,7 @@ def resolve_pandoc(required_version: str | None = None) -> ResolvedTool:
         TOOL_CACHE["pandoc"] = resolved
         return resolved
 
-    managed = PMT_TOOLS_BIN_DIR / executable_name("pandoc")
+    managed = managed_executable("pandoc")
     if managed.exists():
         resolved = ResolvedTool("pandoc", managed, ".pmt/tools")
         TOOL_CACHE["pandoc"] = resolved
@@ -372,7 +398,7 @@ def resolve_tool(tool: str) -> ResolvedTool:
         TOOL_CACHE[tool] = resolved
         return resolved
 
-    managed = PMT_TOOLS_BIN_DIR / executable_name(tool)
+    managed = managed_executable(tool)
     if managed.exists():
         resolved = ResolvedTool(tool, managed, ".pmt/tools")
         TOOL_CACHE[tool] = resolved
@@ -388,6 +414,17 @@ def ensure_pandoc_tools() -> tuple[ResolvedTool, ResolvedTool]:
     """Resolve both Pandoc tools required by the manuscript pipeline."""
     crossref = resolve_tool("pandoc-crossref")
     pandoc = resolve_pandoc(crossref_pandoc_version(crossref.executable))
+    return pandoc, crossref
+
+
+def setup_pandoc_tools(*, force: bool = False) -> tuple[ResolvedTool, ResolvedTool]:
+    """Prepare pmt-managed Pandoc tools for this project."""
+    TOOL_CACHE.clear()
+    crossref = install_managed_tool("pandoc-crossref", force=force)
+    pandoc_release = pandoc_release_for_crossref(crossref_pandoc_version(crossref.executable))
+    pandoc = install_managed_tool("pandoc", release=pandoc_release, force=force)
+    TOOL_CACHE["pandoc"] = pandoc
+    TOOL_CACHE["pandoc-crossref"] = crossref
     return pandoc, crossref
 
 

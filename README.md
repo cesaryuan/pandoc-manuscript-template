@@ -51,6 +51,7 @@ Install the following tools:
 
 2. **Check your environment**:
    ```bash
+   pmt setup
    pmt doctor
    ```
 
@@ -95,6 +96,7 @@ pipeline.
 
 ```bash
 pmt init my-paper     # Create a manuscript project
+pmt setup             # Download project-local Pandoc tools into .pmt/tools
 pmt doctor            # Check/install Pandoc, pandoc-crossref, Python dependencies, and project files
 pmt build docx        # Generate output/docx/manuscript.docx
 pmt build latex       # Generate output/latex/manuscript.tex
@@ -102,12 +104,15 @@ pmt build json        # Generate output/json/manuscript.json
 pmt clean             # Remove generated files
 ```
 
-`pmt build`, `pmt build-reply`, and `pmt doctor` prefer tools already available
-on `PATH`. When either Pandoc tool is missing, `pmt` downloads the matching
-GitHub release asset into `.pmt/cache/tools/downloads/`, extracts it under
-`.pmt/work/tools/`, and installs the executable into `.pmt/tools/bin/` for the
-current project. The managed tools are only added to the child process
-environment; `pmt` does not modify your system `PATH`.
+`pmt setup` prepares project-local tools under `.pmt/tools` even when Pandoc is
+already available on your system `PATH`. Use `pmt setup --force` to redownload
+and reinstall the managed copies. `pmt build`, `pmt build-reply`, and `pmt
+doctor` still prefer tools already available on `PATH`. When either Pandoc tool
+is missing, `pmt` downloads the matching GitHub release asset into
+`.pmt/cache/tools/downloads/`, extracts it under `.pmt/work/tools/`, and
+installs the executable into `.pmt/tools/bin/` for the current project. The
+managed tools are only added to the child process environment; `pmt` does not
+modify your system `PATH`.
 
 Use `pmt build` for non-default inputs:
 

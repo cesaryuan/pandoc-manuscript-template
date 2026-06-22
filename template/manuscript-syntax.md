@@ -1,7 +1,8 @@
 # Manuscript Syntax
 
-This document describes the Markdown syntax, YAML metadata, and DOCX-specific
-formatting controls supported by this manuscript template.
+This document separates manuscript content syntax from style metadata. Use the
+`Manuscript Syntax` section for content written in `manuscript.md`, and the
+`Style Metadata` section for style-related defaults in `style.yml`.
 
 ## Author Metadata
 
@@ -91,72 +92,6 @@ affiliations:
 
 Avoid Pandoc's compact string-only author syntax, such as `author: [First Author, Second Author]`, when you need this template's DOCX author formatting. The post-processing script expects each author to be a mapping so it can read affiliations and correspondence metadata.
 
-## Output Style Metadata
-
-Style-oriented metadata lives in `style.yml` so the manuscript YAML header can stay focused on the paper itself. During `pmt build docx`, `pmt build latex`, the build loads `style.yml` before `manuscript.md`; any field already defined in the manuscript YAML header overrides the style default.
-
-If you want to change style-related content in a generated manuscript project, edit `style.yml`. The top-level keys cover the normal manuscript build, while the optional `reply:` section stores reply-specific overrides used by `pmt build-reply`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
-
-Collapsed numeric citation ranges can use a journal-specific delimiter after Pandoc citeproc renders them. Set `citation-number-range-delimiter` in `style.yml`, or override it in the manuscript YAML header:
-
-```yaml
-citation-number-range-delimiter: "-"  # [1-3]
-```
-
-To add a space after commas between non-consecutive numeric citations, edit the active CSL file's citation layout delimiter. For example, in `pandoc/csl/elsevier-vancouver.csl`, change:
-
-```xml
-<layout prefix="[" suffix="]" delimiter=",">
-```
-
-to:
-
-```xml
-<layout prefix="[" suffix="]" delimiter=", ">
-```
-
-This changes citations such as `[1,3]` to `[1, 3]`. It does not control collapsed ranges such as `[1-3]`, which are handled by `citation-number-range-delimiter`.
-
-For journal submission systems that reject SVG image files, enable DOCX-only
-SVG rasterization in `style.yml`:
-
-```yaml
-docxConvertSvgToPng: true
-# Optional rasterization controls:
-docxSvgToPngDpi: 300
-docxSvgToPngScale: 1
-```
-
-During `pmt build docx`, local Markdown image references ending in `.svg` or
-`.svgz` are converted into PNG files under the pmt cache directory
-(`.pmt/cache/svg-png/` by default), and the temporary Pandoc document uses those PNG paths. The
-original Markdown file is not rewritten. The converter uses the Python `resvg-py` dependency.
-
-The DOCX post-processing step can update paragraph styles from the merged YAML metadata. Add style names under `docxStyle`; each key is matched against an existing DOCX style name, and missing styles are reported as warnings without stopping the build. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
-
-Common Chinese built-in names such as `标题 1`, `正文文本`, and `正文` are automatically mapped to the corresponding Word built-in style names like `Heading 1`, `Body Text`, and `Normal`. Custom styles still need to use their exact DOCX style names.
-
-```yaml
-docxStyle:
-  正文文本:
-    firstLineIndentChars: 2
-    paragraphSpacing:
-      before: 0pt
-      after: 0pt
-```
-
-Use point values for paragraph spacing, such as `6pt`. The first-line indent is written as a Word character-based indent, so `2` means two characters rather than a fixed centimeter or inch value. Fields that are omitted from a style block are left unchanged in the DOCX style.
-
-Common style fields under `docxStyle` include:
-
-- `fontSize`: font size such as `10.5pt` or Chinese Word sizes like `小五` and `四号`
-- `fontColor`: font color such as `#000000` or `rgb(0, 0, 0)`
-- `lineSpacing`: paragraph line spacing such as `1.5` or `18pt`
-- `alignment`: `left`, `center`, `right`, or `justify`
-- `firstLineIndentChars`: Word character-based first-line indent
-- `indentation`: length-based `left`, `right`, `firstLine`, or `hanging` indent values such as `0.5cm`
-- `paragraphSpacing`: `before` and `after` spacing values such as `6pt`
-
 ## Optional LaTeX Source Configuration
 
 The primary workflow is DOCX generation. If you also generate LaTeX source, you can edit the YAML header in `manuscript.md` for document-class-specific output:
@@ -204,19 +139,6 @@ header-includes:
 documentclass: IEEEtran
 classoption: [journal]
 ```
-
-## Changing Citation Styles
-
-1. **Browse styles**: Visit [Zotero Style Repository](https://www.zotero.org/styles)
-2. **Download CSL file**: Save to `pandoc/` directory
-3. **Update `style.yml`**:
-   ```yaml
-   csl: pandoc/your-style.csl
-   ```
-
-Common styles included:
-- `elsevier-vancouver.csl`: Numeric citations (Vancouver style)
-- `engineering-applications-of-artificial-intelligence.csl`: EA-AI journal style
 
 ## Cross-References
 
@@ -376,3 +298,88 @@ All tables are automatically fitted to window width and centered. This can be ov
 - `autofit_tables.py` - Auto-fits tables to window
 
 These modules run automatically during `pmt build docx` and `pmt build-reply` when DOCX post-processing is enabled.
+
+# Style Metadata
+
+This section describes style-related defaults in `style.yml`. Keep paper
+content and manuscript-specific metadata in `manuscript.md`; keep reusable
+formatting, citation, cross-reference, and DOCX style defaults here.
+
+## Output Style Metadata
+
+Style-oriented metadata lives in `style.yml` so the manuscript YAML header can stay focused on the paper itself. During `pmt build docx`, `pmt build latex`, the build loads `style.yml` before `manuscript.md`; any field already defined in the manuscript YAML header overrides the style default.
+
+If you want to change style-related content in a generated manuscript project, edit `style.yml`. The top-level keys cover the normal manuscript build, while the optional `reply:` section stores reply-specific overrides used by `pmt build-reply`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
+
+Collapsed numeric citation ranges can use a journal-specific delimiter after Pandoc citeproc renders them. Set `citation-number-range-delimiter` in `style.yml`, or override it in the manuscript YAML header:
+
+```yaml
+citation-number-range-delimiter: "-"  # [1-3]
+```
+
+To add a space after commas between non-consecutive numeric citations, edit the active CSL file's citation layout delimiter. For example, in `pandoc/csl/elsevier-vancouver.csl`, change:
+
+```xml
+<layout prefix="[" suffix="]" delimiter=",">
+```
+
+to:
+
+```xml
+<layout prefix="[" suffix="]" delimiter=", ">
+```
+
+This changes citations such as `[1,3]` to `[1, 3]`. It does not control collapsed ranges such as `[1-3]`, which are handled by `citation-number-range-delimiter`.
+
+For journal submission systems that reject SVG image files, enable DOCX-only
+SVG rasterization in `style.yml`:
+
+```yaml
+docxConvertSvgToPng: true
+# Optional rasterization controls:
+docxSvgToPngDpi: 300
+docxSvgToPngScale: 1
+```
+
+During `pmt build docx`, local Markdown image references ending in `.svg` or
+`.svgz` are converted into PNG files under the pmt cache directory
+(`.pmt/cache/svg-png/` by default), and the temporary Pandoc document uses those PNG paths. The
+original Markdown file is not rewritten. The converter uses the Python `resvg-py` dependency.
+
+The DOCX post-processing step can update paragraph styles from the merged YAML metadata. Add style names under `docxStyle`; each key is matched against an existing DOCX style name, and missing styles are reported as warnings without stopping the build. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
+
+Common Chinese built-in names such as `标题 1`, `正文文本`, and `正文` are automatically mapped to the corresponding Word built-in style names like `Heading 1`, `Body Text`, and `Normal`. Custom styles still need to use their exact DOCX style names.
+
+```yaml
+docxStyle:
+  正文文本:
+    firstLineIndentChars: 2
+    paragraphSpacing:
+      before: 0pt
+      after: 0pt
+```
+
+Use point values for paragraph spacing, such as `6pt`. The first-line indent is written as a Word character-based indent, so `2` means two characters rather than a fixed centimeter or inch value. Fields that are omitted from a style block are left unchanged in the DOCX style.
+
+Common style fields under `docxStyle` include:
+
+- `fontSize`: font size such as `10.5pt` or Chinese Word sizes like `小五` and `四号`
+- `fontColor`: font color such as `#000000` or `rgb(0, 0, 0)`
+- `lineSpacing`: paragraph line spacing such as `1.5` or `18pt`
+- `alignment`: `left`, `center`, `right`, or `justify`
+- `firstLineIndentChars`: Word character-based first-line indent
+- `indentation`: length-based `left`, `right`, `firstLine`, or `hanging` indent values such as `0.5cm`
+- `paragraphSpacing`: `before` and `after` spacing values such as `6pt`
+
+## Changing Citation Styles
+
+1. **Browse styles**: Visit [Zotero Style Repository](https://www.zotero.org/styles)
+2. **Download CSL file**: Save to `pandoc/` directory
+3. **Update `style.yml`**:
+   ```yaml
+   csl: pandoc/your-style.csl
+   ```
+
+Common styles included:
+- `elsevier-vancouver.csl`: Numeric citations (Vancouver style)
+- `engineering-applications-of-artificial-intelligence.csl`: EA-AI journal style

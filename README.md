@@ -74,7 +74,9 @@ wording, subfigure behavior, and DOCX paragraph formatting.
 
 For supported manuscript syntax, metadata fields, citations, cross-references,
 pseudocode, and DOCX table controls, see
-[`template/manuscript-syntax.md`](template/manuscript-syntax.md).
+[`template/manuscript-syntax.md`](template/manuscript-syntax.md). The same
+document has a peer `Style Metadata` section for style-related defaults and
+`style.yml` fields.
 
 ## Build System
 

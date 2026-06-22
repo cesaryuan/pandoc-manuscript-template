@@ -182,7 +182,7 @@ Example SVG layout (`figures/model-comparison.svg`):
      viewBox="0 0 1600 780">
   <style>
     text {
-      font-family: "Times New Roman", Times, serif;
+      font-family: Times New Roman, Times, serif;
       font-size: 42px;
       fill: #000000;
     }

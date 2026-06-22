@@ -36,7 +36,17 @@ If the user wants to change style-related content, update `style.yml` rather tha
 - Alignment: `:--` left, `:--:` center, `--:` right
 - For advanced DOCX table formatting (cell merging, metadata), see `manuscript-syntax.md`
 
-**Subfigures** (requires `subfigGrid: true` in `style.yml` or merged YAML metadata):
+**Subfigures:** Prefer building multi-panel figure layouts as a single SVG that
+references the child image files with relative paths. Insert that SVG as one
+normal figure in Markdown. This keeps spacing, labels, and panel alignment under
+explicit control and avoids Word table-layout drift. For DOCX builds with linked
+child images inside the SVG, enable `docxConvertSvgToPng: true` so the panels
+are embedded into the generated PNG. See `manuscript-syntax.md` for a complete
+SVG-based example.
+
+Use the built-in `subfigGrid` syntax only when the manuscript needs separate
+child-figure cross-references such as `@fig:a` and `@fig:b` (requires
+`subfigGrid: true` in `style.yml` or merged YAML metadata):
 ```markdown
 <div id="fig:results">
 ![caption of a](a.png){#fig:a width=50%} # Only percent allowed in subfigure width

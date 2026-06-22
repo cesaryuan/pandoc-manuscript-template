@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="160mm"
+     height="76mm"
+     viewBox="0 0 1600 760">
+  <style>
+    text {
+      font-family: "Times New Roman", Times, serif;
+      font-size: 42px;
+      fill: #000000;
+    }
+    .panel-label {
+      font-weight: bold;
+    }
+  </style>
+
+  <rect x="0" y="0" width="1600" height="760" fill="#ffffff"/>
+
+  <image href="../examples/images/subfigure-a-example.png"
+         xlink:href="../examples/images/subfigure-a-example.png"
+         x="60" y="40" width="680" height="520"
+         preserveAspectRatio="xMidYMid meet"/>
+  <image href="../examples/images/subfigure-b-example.png"
+         xlink:href="../examples/images/subfigure-b-example.png"
+         x="860" y="40" width="680" height="520"
+         preserveAspectRatio="xMidYMid meet"/>
+
+  <text x="400" y="670" text-anchor="middle">(a) Baseline setting</text>
+  <text x="1200" y="670" text-anchor="middle">(b) Proposed setting</text>
+</svg>

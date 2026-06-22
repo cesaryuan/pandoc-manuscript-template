@@ -154,6 +154,103 @@ Example:
 See @fig:results for details. As shown in @tbl:comparison and @eq:model...
 ```
 
+## Subfigure Layouts
+
+For most multi-panel figures, prefer creating one SVG layout file that
+references the child image files. The Markdown manuscript then inserts that SVG
+as a normal figure. This approach makes the final layout explicit: panel
+positions, labels such as `(a)` and `(b)`, and shared spacing are controlled in
+one editable source file rather than inferred from a Word table layout.
+
+Recommended file structure:
+
+```text
+manuscript.md
+figures/
+  model-comparison.svg
+  model-comparison-a.png
+  model-comparison-b.png
+```
+
+Example SVG layout (`figures/model-comparison.svg`):
+
+```xml
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="160mm"
+     height="78mm"
+     viewBox="0 0 1600 780">
+  <style>
+    text {
+      font-family: "Times New Roman", Times, serif;
+      font-size: 42px;
+      fill: #000000;
+    }
+    .panel-label {
+      font-weight: bold;
+    }
+  </style>
+
+  <rect x="0" y="0" width="1600" height="780" fill="#ffffff"/>
+
+  <image href="model-comparison-a.png"
+         xlink:href="model-comparison-a.png"
+         x="40" y="40" width="720" height="560"
+         preserveAspectRatio="xMidYMid meet"/>
+  <image href="model-comparison-b.png"
+         xlink:href="model-comparison-b.png"
+         x="840" y="40" width="720" height="560"
+         preserveAspectRatio="xMidYMid meet"/>
+
+  <text x="400" y="710" text-anchor="middle">(a) Baseline setting</text>
+  <text x="1200" y="710" text-anchor="middle">(b) Proposed setting</text>
+</svg>
+```
+
+Reference the composed layout from `manuscript.md` as one figure:
+
+```markdown
+@fig:model-comparison compares the baseline setting with the proposed setting.
+
+![Comparison of baseline and proposed model behavior across two experimental settings.](figures/model-comparison.svg){#fig:model-comparison width=90%}
+```
+
+Keep the child image paths in the SVG relative to the SVG file itself. In the
+example above, `model-comparison-a.png` and `model-comparison-b.png` sit beside
+`model-comparison.svg` under `figures/`. This is important for reproducible DOCX
+builds because the SVG rasterizer resolves embedded image resources from the SVG
+file location.
+
+For DOCX builds that use linked child images inside the SVG, enable DOCX-only
+rasterization in `style.yml`. This also helps with journal submission systems
+that reject SVG images:
+
+```yaml
+docxConvertSvgToPng: true
+docxSvgToPngDpi: 300
+docxSvgToPngScale: 1
+```
+
+With this option, `pmt build docx` converts local Markdown image references such
+as `figures/model-comparison.svg` to cached PNG files for DOCX output. The
+linked child panels are embedded into the generated PNG, and the source Markdown
+and SVG files are not rewritten.
+
+This SVG-based pattern gives the composed figure one cross-reference label,
+`@fig:model-comparison`. The panel markers `(a)` and `(b)` are visual labels
+inside the SVG, not separate Pandoc figure labels. If the manuscript must cite
+individual child panels with separate references such as `@fig:model-a` and
+`@fig:model-b`, use the built-in `subfigGrid` form instead:
+
+```markdown
+<div id="fig:model-comparison-grid">
+![Baseline setting.](figures/model-comparison-a.png){#fig:model-a width=49%}
+![Proposed setting.](figures/model-comparison-b.png){#fig:model-b width=49%}
+
+Comparison of baseline and proposed model behavior.
+</div>
+```
+
 ## Marking Revisions in Red
 
 Use Pandoc custom styles to mark substantive manuscript revisions in generated DOCX files. The default reference DOCX includes a character style named `Revision Char`, so revised inline text can be written as a bracketed span:

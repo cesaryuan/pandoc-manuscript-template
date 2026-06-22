@@ -141,7 +141,11 @@ To illustrate how standard figures are inserted and referenced in this template,
 
 ![A single-figure example showing a synthetic performance trend across evaluation steps.](examples/images/single-figure-example.png){#fig:single-example width=85%}
 
-Multi-panel layouts can be prepared with the built-in subfigure grid support enabled in the YAML header. A simple two-panel example is provided in @fig:subfigure-example to show how child figures can share one main caption while still keeping individual labels. In this layout, the left panel (@fig:subfigure-a) can be used to present one condition or ablation case, while the right panel (@fig:subfigure-b) can show the corresponding comparison setting.
+For most multi-panel layouts, prepare one SVG file that references the child image files with relative paths. The SVG example in @fig:subfigure-svg-example composes two synthetic panels from `examples/images/subfigure-a-example.png` and `examples/images/subfigure-b-example.png`, while Markdown treats the result as one normal figure with one caption and one cross-reference label.
+
+![An SVG-based multi-panel layout whose child panels are referenced by relative image paths inside the SVG file.](figures/subfigure-svg-layout-example.svg){#fig:subfigure-svg-example width=90%}
+
+If the manuscript needs separate child-figure cross-references, use the built-in subfigure grid support enabled in the YAML header. A simple two-panel example is provided in @fig:subfigure-example to show how child figures can share one main caption while still keeping individual labels. In this layout, the left panel (@fig:subfigure-a) can be used to present one condition or ablation case, while the right panel (@fig:subfigure-b) can show the corresponding comparison setting.
 
 <div id="fig:subfigure-example">
 ![Left panel showing one synthetic subfigure example.](examples/images/subfigure-a-example.png){#fig:subfigure-a width=49%}

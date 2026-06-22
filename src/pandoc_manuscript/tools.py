@@ -30,6 +30,7 @@ TOOL_CACHE: dict[str, "ResolvedTool"] = {}
 PROXY_LOGGED = False
 DOWNLOAD_CHUNK_SIZE = 256 * 1024
 PROGRESS_BAR_WIDTH = 28
+PROGRESS_LINE_LENGTH = 0
 
 
 @dataclass(frozen=True)
@@ -154,21 +155,28 @@ def response_content_length(response: Any) -> int | None:
 def progress_line(downloaded: int, total: int | None) -> str:
     """Format a single-line download progress indicator."""
     if not total:
-        return f"\r[TOOLS] Downloaded {format_size(downloaded)}"
+        return f"[TOOLS] Downloaded {format_size(downloaded)}"
     ratio = min(max(downloaded / total, 0), 1)
     filled = int(PROGRESS_BAR_WIDTH * ratio)
     bar = "#" * filled + "-" * (PROGRESS_BAR_WIDTH - filled)
     percent = ratio * 100
-    return f"\r[TOOLS] Downloading [{bar}] {percent:5.1f}% {format_size(downloaded)}/{format_size(total)}"
+    return f"[TOOLS] Downloading [{bar}] {percent:5.1f}% {format_size(downloaded)}/{format_size(total)}"
 
 
 def write_progress(downloaded: int, total: int | None, *, final: bool = False) -> None:
     """Write download progress when INFO logs are enabled."""
+    global PROGRESS_LINE_LENGTH
+
     if not should_log("INFO"):
         return
-    sys.stdout.write(progress_line(downloaded, total))
+    line = progress_line(downloaded, total)
+    padding = " " * max(PROGRESS_LINE_LENGTH - len(line), 0)
+    sys.stdout.write("\r" + line + padding)
     if final:
         sys.stdout.write("\n")
+        PROGRESS_LINE_LENGTH = 0
+    else:
+        PROGRESS_LINE_LENGTH = len(line)
     sys.stdout.flush()
 
 

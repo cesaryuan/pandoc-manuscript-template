@@ -132,6 +132,25 @@ def test_progress_line_shows_percentage_for_known_size() -> None:
 
     assert "50.0%" in line
     assert "512 B/1.0 KiB" in line
+    assert "\r" not in line
+
+
+def test_write_progress_clears_previous_longer_line(monkeypatch) -> None:
+    """Pad shorter progress updates so stale terminal characters disappear."""
+    output = io.StringIO()
+    long_line = tools.progress_line(10 * 1024 * 1024, 10 * 1024 * 1024)
+    short_line = tools.progress_line(1, None)
+    padding = " " * (len(long_line) - len(short_line))
+
+    monkeypatch.setattr(tools.sys, "stdout", output)
+    monkeypatch.setattr(tools, "should_log", lambda level: True)
+    monkeypatch.setattr(tools, "PROGRESS_LINE_LENGTH", 0)
+
+    tools.write_progress(10 * 1024 * 1024, 10 * 1024 * 1024)
+    tools.write_progress(1, None, final=True)
+
+    assert "\r" + short_line + padding + "\n" in output.getvalue()
+    assert tools.PROGRESS_LINE_LENGTH == 0
 
 
 class FakeDownloadResponse:

@@ -12,8 +12,13 @@ citation-number-range-delimiter: "–"
 # local MathType/OLE conversion setup.
 mathtype: false
 
-# Set to true to rasterize referenced SVG images to PNG during DOCX builds.
-# Use `{to-png=true}` on a single image when only one SVG needs conversion.
+# Set to true to inline local child images inside referenced SVG files during
+# DOCX builds. This keeps SVG text/vector elements sharp while making linked
+# child images visible in Word.
+docxEmbedSvgImages: true
+
+# Set to true to rasterize every referenced SVG image to PNG during DOCX builds.
+# Use `{to-png=true}` on a single image when only one SVG needs rasterization.
 docxConvertSvgToPng: false
 # docxSvgToPngDpi: 300
 # docxSvgToPngScale: 1

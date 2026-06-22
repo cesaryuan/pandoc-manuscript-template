@@ -23,7 +23,15 @@ from .metadata import (
 )
 from .mathtype.convert_marked_docx import convert_marked_docx
 from .mathtype.ole_parts import build_helper, check_mathtype_availability
-from .paths import PMT_DIR, PMT_FILTER_WORK_DIR, PMT_MATHTYPE_WORK_DIR, PMT_SVG_PNG_CACHE_DIR, PMT_WORK_DIR, pmt_path
+from .paths import (
+    PMT_DIR,
+    PMT_FILTER_WORK_DIR,
+    PMT_MATHTYPE_WORK_DIR,
+    PMT_SVG_EMBED_CACHE_DIR,
+    PMT_SVG_PNG_CACHE_DIR,
+    PMT_WORK_DIR,
+    pmt_path,
+)
 from .postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from .postprocess_docx import postprocess_docx as run_docx_postprocess
 from .resources import package_resource_path, template_root
@@ -303,6 +311,22 @@ def should_convert_docx_svg_to_png(metadata: dict[str, Any]) -> bool:
     )
 
 
+def should_embed_docx_svg_images(metadata: dict[str, Any]) -> bool:
+    """Return True when DOCX builds should inline child images inside SVG files."""
+    return metadata_bool(
+        metadata_first(
+            metadata,
+            (
+                'docxEmbedSvgImages',
+                'docx-embed-svg-images',
+                'embedSvgImages',
+                'embed-svg-images',
+            ),
+            False,
+        )
+    )
+
+
 def python_filter_wrapper(filter_path: Path, name: str) -> Path:
     """Create a Pandoc filter wrapper that runs with pmt's Python interpreter.
 
@@ -343,11 +367,16 @@ def docx_svg_to_png_filter_args() -> list[str]:
     return ['--filter', to_pandoc_path(python_filter_wrapper(filter_path, 'svg_to_png_filter'))]
 
 
-def docx_svg_to_png_filter_env(metadata: dict[str, Any], convert_all: bool | None = None) -> dict[str, str]:
-    """Return environment settings consumed by the SVG-to-PNG Pandoc filter."""
-    if convert_all is None:
-        convert_all = should_convert_docx_svg_to_png(metadata)
-    output_root = PMT_SVG_PNG_CACHE_DIR
+def docx_svg_embed_images_filter_args() -> list[str]:
+    """Return Pandoc args for the DOCX self-contained SVG image filter."""
+    filter_path = resource_path('pandoc/filters/svg_embed_images.py')
+    if not filter_path.exists():
+        raise FileNotFoundError(f"SVG child-image embedding filter not found: {filter_path}")
+    return ['--filter', to_pandoc_path(python_filter_wrapper(filter_path, 'svg_embed_images_filter'))]
+
+
+def docx_svg_base_dirs() -> list[Path]:
+    """Return lookup roots shared by DOCX SVG filters."""
     manuscript_dir = Path(SETTINGS.manuscript_file).parent
     base_dirs = [Path.cwd(), manuscript_dir]
     unique_base_dirs = []
@@ -355,10 +384,34 @@ def docx_svg_to_png_filter_env(metadata: dict[str, Any], convert_all: bool | Non
         resolved = base_dir.resolve()
         if resolved not in unique_base_dirs:
             unique_base_dirs.append(resolved)
+    return unique_base_dirs
+
+
+def docx_svg_embed_images_filter_env(
+    metadata: dict[str, Any],
+    embed_images: bool | None = None,
+) -> dict[str, str]:
+    """Return environment settings consumed by the SVG child-image embedding filter."""
+    if embed_images is None:
+        embed_images = should_embed_docx_svg_images(metadata)
+
+    return {
+        'PMT_SVG_EMBED_DIR': str(PMT_SVG_EMBED_CACHE_DIR.resolve()),
+        'PMT_SVG_EMBED_BASE_DIRS': os.pathsep.join(str(path) for path in docx_svg_base_dirs()),
+        'PMT_SVG_EMBED_PMT_VERSION': runtime_cache_version(),
+        'PMT_SVG_EMBED_IMAGES': 'true' if embed_images else 'false',
+    }
+
+
+def docx_svg_to_png_filter_env(metadata: dict[str, Any], convert_all: bool | None = None) -> dict[str, str]:
+    """Return environment settings consumed by the SVG-to-PNG Pandoc filter."""
+    if convert_all is None:
+        convert_all = should_convert_docx_svg_to_png(metadata)
+    output_root = PMT_SVG_PNG_CACHE_DIR
 
     return {
         'PMT_SVG_TO_PNG_DIR': str(output_root.resolve()),
-        'PMT_SVG_TO_PNG_BASE_DIRS': os.pathsep.join(str(path) for path in unique_base_dirs),
+        'PMT_SVG_TO_PNG_BASE_DIRS': os.pathsep.join(str(path) for path in docx_svg_base_dirs()),
         'PMT_SVG_TO_PNG_DPI': str(
             metadata_float(metadata, ('docxSvgToPngDpi', 'docx-svg-to-png-dpi'), 300)
         ),
@@ -503,6 +556,12 @@ def build_docx():
     pandoc_env = {}
     extra_args.extend(reference_doc_args())
     extra_args.extend(table_metadata_filter_args())
+
+    embed_svg_images = should_embed_docx_svg_images(metadata)
+    if embed_svg_images:
+        log_info("[INFO] Embedding linked child images inside SVG files for DOCX")
+    extra_args.extend(docx_svg_embed_images_filter_args())
+    pandoc_env.update(docx_svg_embed_images_filter_env(metadata, embed_images=embed_svg_images))
 
     convert_all_svg = should_convert_docx_svg_to_png(metadata)
     if convert_all_svg:

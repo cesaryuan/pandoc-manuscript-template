@@ -40,9 +40,11 @@ If the user wants to change style-related content, update `style.yml` rather tha
 references the child image files with relative paths. Insert that SVG as one
 normal figure in Markdown. This keeps spacing, labels, and panel alignment under
 explicit control and avoids Word table-layout drift. For DOCX builds with linked
-child images inside one SVG, add `to-png=true` to that image; use
-`docxConvertSvgToPng: true` only when all SVG images should be rasterized. See
-`manuscript-syntax.md` for a complete SVG-based example.
+child images inside one SVG, keep `docxEmbedSvgImages: true` in `style.yml` so
+the generated DOCX uses a self-contained SVG. Add `to-png=true` to an image only
+when that SVG must be rasterized, and use `docxConvertSvgToPng: true` only when
+all SVG images should be rasterized. See `manuscript-syntax.md` for a complete
+SVG-based example.
 
 Use the built-in `subfigGrid` syntax only when the manuscript needs separate
 child-figure cross-references such as `@fig:a` and `@fig:b` (requires

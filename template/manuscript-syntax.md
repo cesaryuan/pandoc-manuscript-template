@@ -212,31 +212,37 @@ Reference the composed layout from `manuscript.md` as one figure:
 ```markdown
 @fig:model-comparison compares the baseline setting with the proposed setting.
 
-![Comparison of baseline and proposed model behavior across two experimental settings.](figures/model-comparison.svg){#fig:model-comparison width=90% to-png=true}
+![Comparison of baseline and proposed model behavior across two experimental settings.](figures/model-comparison.svg){#fig:model-comparison width=90%}
 ```
 
 Keep the child image paths in the SVG relative to the SVG file itself. In the
 example above, `model-comparison-a.png` and `model-comparison-b.png` sit beside
 `model-comparison.svg` under `figures/`. This is important for reproducible DOCX
-builds because the SVG rasterizer resolves embedded image resources from the SVG
-file location.
+builds because the SVG child-image embedding filter resolves local resources
+from the SVG file location.
 
-For DOCX builds that use linked child images inside an individual SVG, add
-`to-png=true` to that image. The local image is converted to PNG even when the
-global `docxConvertSvgToPng` option is disabled. To rasterize every SVG image in
-the DOCX build, enable the global option in `style.yml`:
+For DOCX builds that use linked child images inside SVG files, keep child-image
+embedding enabled in `style.yml`:
+
+```yaml
+docxEmbedSvgImages: true
+```
+
+With this option, `pmt build docx` converts local Markdown image references such
+as `figures/model-comparison.svg` to cached self-contained SVG files under
+`.pmt/cache/svg-embedded/`. The linked child panels are embedded into the cached
+SVG as data URIs, while SVG text and vector elements remain SVG. The source
+Markdown and SVG files are not rewritten.
+
+If one SVG must be rasterized for a specific submission target, add
+`to-png=true` to that image. To rasterize every SVG image in the DOCX build,
+enable the global option in `style.yml`:
 
 ```yaml
 docxConvertSvgToPng: true
 docxSvgToPngDpi: 300
 docxSvgToPngScale: 1
 ```
-
-With either the per-image attribute or the global option, `pmt build docx`
-converts matching local Markdown image references such as
-`figures/model-comparison.svg` to cached PNG files for DOCX output. The linked
-child panels are embedded into the generated PNG, and the source Markdown and
-SVG files are not rewritten.
 
 This SVG-based pattern gives the composed figure one cross-reference label,
 `@fig:model-comparison`. The panel markers `(a)` and `(b)` are visual labels
@@ -466,8 +472,16 @@ to:
 
 This changes citations such as `[1,3]` to `[1, 3]`. It does not control collapsed ranges such as `[1-3]`, which are handled by `citation-number-range-delimiter`.
 
-For journal submission systems that reject SVG image files, enable DOCX-only
-SVG rasterization in `style.yml`. If only one SVG needs rasterization, add
+When SVG files reference local child images with paths, enable DOCX-only
+child-image embedding in `style.yml`. This writes cached self-contained SVG
+files for DOCX output while keeping SVG text and vector elements sharp:
+
+```yaml
+docxEmbedSvgImages: true
+```
+
+For journal submission systems that reject SVG image files entirely, enable
+DOCX-only SVG rasterization instead. If only one SVG needs rasterization, add
 `to-png=true` to that Markdown image instead of enabling the global option:
 
 ```yaml
@@ -477,10 +491,10 @@ docxSvgToPngDpi: 300
 docxSvgToPngScale: 1
 ```
 
-During `pmt build docx`, local Markdown image references ending in `.svg` or
-`.svgz` are converted into PNG files under the pmt cache directory
-(`.pmt/cache/svg-png/` by default), and the temporary Pandoc document uses those PNG paths. The
-original Markdown file is not rewritten. The converter uses the Python `resvg-py` dependency.
+During `pmt build docx`, self-contained SVG cache files are written under
+`.pmt/cache/svg-embedded/`, and PNG rasterization outputs are written under
+`.pmt/cache/svg-png/`. The original Markdown and SVG files are not rewritten.
+The PNG converter uses the Python `resvg-py` dependency.
 
 The DOCX post-processing step can update paragraph styles from the merged YAML metadata. Add style names under `docxStyle`; each key is matched against an existing DOCX style name, and missing styles are reported as warnings without stopping the build. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
 

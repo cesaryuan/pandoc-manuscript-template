@@ -53,6 +53,7 @@ IGNORE_NAMES = {
 }
 
 AGENTS_TEMPLATE_DESTINATION = "AGENTS.md"
+AGENTS_DIRECTORY_DESTINATION = ".agents"
 AGENTS_TEMPLATE_START = "<!-- pmt template guidance: begin -->"
 AGENTS_TEMPLATE_END = "<!-- pmt template guidance: end -->"
 
@@ -110,6 +111,40 @@ def merge_agents_template(source: Path, destination: Path) -> None:
     log(f"[OK] Merged AGENTS.md: {destination}")
 
 
+def merge_template_directory(source: Path, destination: Path) -> tuple[int, int]:
+    """Copy missing files from a packaged template directory into an existing project.
+
+    This backs `pmt init --merge` for directory-style agent assets, where user
+    edits must win over packaged defaults when paths collide.
+    """
+    if destination.exists() and not destination.is_dir():
+        raise FileExistsError(f"Target exists and is not a directory: {destination}")
+
+    copied = 0
+    skipped = 0
+    destination.mkdir(parents=True, exist_ok=True)
+    for source_child in source.rglob("*"):
+        relative_path = source_child.relative_to(source)
+        if any(part in IGNORE_NAMES or part.endswith(".pyc") for part in relative_path.parts):
+            continue
+
+        destination_child = destination / relative_path
+        if source_child.is_dir():
+            destination_child.mkdir(parents=True, exist_ok=True)
+            continue
+
+        if destination_child.exists():
+            skipped += 1
+            continue
+
+        destination_child.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_child, destination_child)
+        copied += 1
+
+    log(f"[OK] Merged {source.name}: copied {copied}, kept existing {skipped}: {destination}")
+    return copied, skipped
+
+
 class InitSettings(BaseSettings):
     """Settings for `pmt init`."""
 
@@ -119,7 +154,7 @@ class InitSettings(BaseSettings):
     force: bool = Field(default=False, description="Overwrite existing template entries in the target project.")
     merge: bool = Field(
         default=False,
-        description="Merge the packaged AGENTS.md guidance into an existing AGENTS.md file.",
+        description="Merge packaged agent guidance into existing AGENTS.md and .agents entries.",
     )
 
     def run(self) -> int:
@@ -155,6 +190,14 @@ class InitSettings(BaseSettings):
             if destination_name == AGENTS_TEMPLATE_DESTINATION and destination.exists():
                 if self.merge:
                     merge_agents_template(source, destination)
+                elif not self.force:
+                    continue
+                else:
+                    copy_template_entry(source, destination, overwrite=True)
+                continue
+            if destination_name == AGENTS_DIRECTORY_DESTINATION and destination.exists():
+                if self.merge:
+                    merge_template_directory(source, destination)
                 elif not self.force:
                     continue
                 else:

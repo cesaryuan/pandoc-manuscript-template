@@ -57,6 +57,7 @@ def iter_project_template_entries() -> Iterable[tuple[str, str]]:
     """Yield source and destination pairs copied by `pmt init` into a new paper project."""
     yield from (
         ("AGENTS.md", "AGENTS.md"),
+        (".agents", ".agents"),
         ("manuscript.md", "manuscript.md"),
         ("style.yml", "style.yml"),
         (".gitignore", ".gitignore"),

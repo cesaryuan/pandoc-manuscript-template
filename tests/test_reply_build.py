@@ -102,6 +102,70 @@ def test_replace_citations_protects_unresolved_clusters() -> None:
     assert resolved == "Cluster [@zhang2022critical; @missing] and bare [53]."
 
 
+def test_extract_probe_map_reads_superscript_csl_citation_without_probe_space() -> None:
+    """Read CSL superscript citations when citeproc removes the space before Cite."""
+    document = {
+        "blocks": [
+            {
+                "t": "Para",
+                "c": [
+                    {"t": "Str", "c": reply_build.CITATION_PROBE_SENTINEL},
+                    {"t": "Space"},
+                    {"t": "Str", "c": "smith2023machine"},
+                    {
+                        "t": "Cite",
+                        "c": [
+                            [],
+                            [{"t": "Superscript", "c": [{"t": "Str", "c": "1"}]}],
+                        ],
+                    },
+                ],
+            }
+        ]
+    }
+
+    resolved = reply_build.extract_probe_map(
+        document,
+        reply_build.CITATION_PROBE_SENTINEL,
+        ["smith2023machine"],
+        ("???",),
+    )
+
+    assert resolved == {"smith2023machine": "^1^"}
+
+
+def test_extract_probe_map_reads_superscript_csl_cluster_without_probe_space() -> None:
+    """Read CSL superscript citation clusters from Pandoc's Cite inline tail."""
+    document = {
+        "blocks": [
+            {
+                "t": "Para",
+                "c": [
+                    {"t": "Str", "c": reply_build.CITATION_CLUSTER_PROBE_SENTINEL},
+                    {"t": "Space"},
+                    {"t": "Str", "c": "0"},
+                    {
+                        "t": "Cite",
+                        "c": [
+                            [],
+                            [{"t": "Superscript", "c": [{"t": "Str", "c": "2,3"}]}],
+                        ],
+                    },
+                ],
+            }
+        ]
+    }
+
+    resolved = reply_build.extract_probe_map(
+        document,
+        reply_build.CITATION_CLUSTER_PROBE_SENTINEL,
+        ["0"],
+        ("???",),
+    )
+
+    assert resolved == {"0": "^2,3^"}
+
+
 def test_prepare_line_source_pdf_uses_soffice_on_non_windows(tmp_path, monkeypatch) -> None:
     """Convert DOCX line sources with soffice when Word COM is unavailable."""
     source_docx = tmp_path / "manuscript.docx"

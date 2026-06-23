@@ -466,7 +466,7 @@ def prepare_cached_docx_line_source_pdf(source_docx: Path) -> Path:
 
 
 def inline_to_text(inline: dict[str, Any]) -> str:
-    """Convert a Pandoc JSON inline node to plain text for probe parsing."""
+    """Convert a Pandoc JSON inline node to reply-safe Markdown text."""
     tag = inline.get("t")
     content = inline.get("c")
 
@@ -478,7 +478,11 @@ def inline_to_text(inline: dict[str, Any]) -> str:
         return " "
     if tag in {"Code", "Math"} and isinstance(content, list):
         return str(content[-1])
-    if tag in {"Emph", "Strong", "Span", "SmallCaps", "Strikeout", "Superscript", "Subscript"}:
+    if tag == "Superscript":
+        # Superscript CSL styles drop brackets and emit the cite as a Cite inline
+        # directly after the probe label; keep Markdown markup for the final DOCX.
+        return f"^{inlines_to_text(content or [])}^"
+    if tag in {"Emph", "Strong", "Span", "SmallCaps", "Strikeout", "Subscript"}:
         if tag == "Span" and isinstance(content, list) and len(content) >= 2:
             return inlines_to_text(content[1])
         return inlines_to_text(content or [])
@@ -494,9 +498,27 @@ def inline_to_text(inline: dict[str, Any]) -> str:
 
 
 def inlines_to_text(inlines: list[dict[str, Any]]) -> str:
-    """Flatten Pandoc JSON inlines into normalized display text."""
+    """Flatten Pandoc JSON inlines into normalized reply Markdown text."""
     text = "".join(inline_to_text(inline) for inline in inlines)
     return re.sub(r"\s+", " ", text.replace("\u00a0", " ")).strip()
+
+
+def split_probe_inlines(inlines: list[dict[str, Any]], sentinel: str) -> tuple[str, list[dict[str, Any]]] | None:
+    """Return a probe label and display tail from a matching Pandoc paragraph."""
+    if not inlines or inlines[0].get("t") != "Str" or inlines[0].get("c") != sentinel:
+        return None
+
+    index = 1
+    while index < len(inlines) and inlines[index].get("t") in {"Space", "SoftBreak", "LineBreak"}:
+        index += 1
+    if index >= len(inlines) or inlines[index].get("t") != "Str":
+        return None
+
+    label = str(inlines[index].get("c"))
+    index += 1
+    while index < len(inlines) and inlines[index].get("t") in {"Space", "SoftBreak", "LineBreak"}:
+        index += 1
+    return label, inlines[index:]
 
 
 def extract_probe_map(
@@ -513,14 +535,11 @@ def extract_probe_map(
         if block.get("t") != "Para":
             continue
         inlines = block.get("c", [])
-        if len(inlines) < 4:
+        probe = split_probe_inlines(inlines, sentinel)
+        if probe is None:
             continue
-        if inlines[0].get("t") != "Str" or inlines[0].get("c") != sentinel:
-            continue
-        if inlines[2].get("t") != "Str":
-            continue
-        label = inlines[2].get("c")
-        display = inlines_to_text(inlines[4:])
+        label, display_inlines = probe
+        display = inlines_to_text(display_inlines)
         if display and label in requested and not any(marker in display for marker in unresolved_markers):
             resolved[label] = display
 

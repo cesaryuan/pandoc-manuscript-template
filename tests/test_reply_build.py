@@ -266,6 +266,125 @@ def test_build_reply_docx_uses_svg_filters(tmp_path, monkeypatch) -> None:
     assert str(tmp_path.resolve()) in env["PMT_SVG_EMBED_BASE_DIRS"]
 
 
+def test_render_reply_txt_markdown_keeps_markdown_but_removes_output_only_syntax() -> None:
+    """Keep TXT-safe Markdown while replacing images and removing block labels."""
+    markdown = """<br>
+
+::: {custom-style="Reply to Reviewers"}
+**Bold** and _emphasis_ stay.<br/>
+:::
+
+1\\. Ordered item
+
+![Layout](figures/layout.png){#fig:layout width=80%}
+
+Table: Metrics {#tbl:metrics}
+
+Next paragraph after caption.
+
+| A | B |
+|---|---|
+| 1 | 2 |
+
+: Table 8 Caption line.
+3\\. Ordered item after caption
+
+$$
+a+b
+$$ {#eq:sum}
+"""
+
+    text = reply_build.render_reply_txt_markdown(markdown)
+
+    assert not text.startswith("\n")
+    assert "**Bold** and _emphasis_ stay." in text
+    assert "1. Ordered item" in text
+    assert "1\\. Ordered item" not in text
+    assert "[Image: Layout]" in text
+    assert "Table: Metrics" in text
+    assert "Table: Metrics\n\nNext paragraph after caption." in text
+    assert "| A | B |" in text
+    assert ": Table 8 Caption line.\n\n3. Ordered item after caption" in text
+    assert "$$\na+b\n$$" in text
+    assert "\n\n\n" not in text
+    assert "custom-style" not in text
+    assert ":::" not in text
+    assert "<br" not in text.lower()
+    assert "{#fig:layout" not in text
+    assert "{#tbl:metrics}" not in text
+    assert "{#eq:sum}" not in text
+
+
+def test_build_reply_txt_resolves_placeholders_without_docx_equation_layout(tmp_path, monkeypatch) -> None:
+    """Write resolved TXT output without DOCX-only equation tab markup."""
+    reply = tmp_path / "reply.md"
+    reply.write_text(
+        """See Figure @fig:layout at (Line `stable prose`).
+
+Prior work [@a; @b] remains relevant.
+
+![Layout](figures/layout.png){#fig:layout width=80%}
+
+$$ x+y $$ {#eq:sum}
+""",
+        encoding="utf-8",
+    )
+    manuscript = tmp_path / "manuscript.md"
+    manuscript.write_text("# Manuscript\n", encoding="utf-8")
+    style = tmp_path / "style.yml"
+    style.write_text("reply: {}\n", encoding="utf-8")
+    output = tmp_path / "reply.txt"
+    flattened_style = tmp_path / "style.reply.flat.yml"
+
+    monkeypatch.setattr(reply_build, "write_reply_style_metadata_file", lambda _: flattened_style)
+    monkeypatch.setattr(reply_build, "resolve_reference_map", lambda *args: {"fig:layout": "Figure 3"})
+    monkeypatch.setattr(reply_build, "resolve_citation_map", lambda *args: {"a": "[1]", "b": "[2]"})
+    monkeypatch.setattr(reply_build, "resolve_citation_cluster_map", lambda *args: {"[@a; @b]": "[1, 2]"})
+    monkeypatch.setattr(reply_build, "resolve_line_regexes", lambda text, source: text.replace("(Line `stable prose`)", "(Line 42)"))
+
+    reply_build.build_reply_txt(
+        reply=reply,
+        manuscript=manuscript,
+        manuscript_line_source=manuscript,
+        output=output,
+        style=style,
+        from_format="markdown",
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert "See Figure 3 at (Line 42)." in text
+    assert "Prior work [1, 2] remains relevant." in text
+    assert "[Image: Layout]" in text
+    assert "$$ x+y $$" in text
+    assert "{#eq:sum}" not in text
+    assert "<w:tab" not in text
+
+
+def test_run_build_reply_command_routes_txt_output(tmp_path, monkeypatch) -> None:
+    """Use the TXT builder when the exact output path ends in .txt."""
+    reply = tmp_path / "reply.md"
+    reply.write_text("Reply\n", encoding="utf-8")
+    calls = []
+
+    def fake_build_reply_txt(**kwargs) -> None:
+        """Capture TXT builder arguments without touching external tools."""
+        calls.append(kwargs)
+
+    monkeypatch.setattr(reply_build, "build_reply_txt", fake_build_reply_txt)
+    monkeypatch.setattr(reply_build, "build_reply_docx", lambda **kwargs: pytest.fail("DOCX builder should not run"))
+
+    result = reply_build.run_build_reply_command(markdown=str(reply), output_file=str(tmp_path / "reply.txt"))
+
+    assert result == 0
+    assert calls[0]["output"] == tmp_path / "reply.txt"
+
+
+def test_reply_output_format_rejects_unknown_suffix(tmp_path) -> None:
+    """Require an explicit supported reply output suffix."""
+    with pytest.raises(ValueError, match=r"use \.docx or \.txt"):
+        reply_build.reply_output_format(tmp_path / "reply.md")
+
+
 class FakePdfPage:
     """Minimal PyMuPDF page double for line-number extraction tests."""
 

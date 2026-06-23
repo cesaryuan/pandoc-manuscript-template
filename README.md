@@ -128,12 +128,18 @@ For DOCX output, pass `--reference-doc custom-reference.docx` to override the
 bundled Word reference document. The option is supported by `pmt build docx`
 and `pmt build-reply`.
 
-Reviewer replies can be built with the same DOCX pipeline. The `build-reply` command resolves manuscript cross-references and citations against the manuscript before converting the reply letter:
+Reviewer replies can be built as DOCX or TXT. The `build-reply` command
+resolves manuscript cross-references and citations against the manuscript before
+writing the reply letter:
 
 ```bash
 pmt build-reply reply.md \
   --reply-manuscript manuscript.md \
   -o output/docx/reply.docx
+
+pmt build-reply reply.md \
+  --reply-manuscript manuscript.md \
+  -o output/txt/reply.txt
 ```
 
 The reply build reads its reply-specific defaults from the `reply:` section in
@@ -141,7 +147,15 @@ The reply build reads its reply-specific defaults from the `reply:` section in
 line source is only read when the reply uses ``(Line `regex`)`` placeholders.
 Labeled display equations such as `$$ ... $$ {#eq:label}` in the reply are also
 numbered from the matching manuscript equation and rendered with the same
-tab-stop layout used for DOCX equations.
+tab-stop layout used for DOCX equations. TXT output is selected by an `.txt`
+output path. It preserves Markdown syntax for bold, emphasis, tables, and
+formulas, replaces images with `[Image: ...]` placeholders, resolves line
+placeholders and manuscript cross-references, and removes trailing
+`{#eq:...}`, `{#fig:...}`, and `{#tbl:...}` label attributes from formulas,
+images, and tables. It also removes reply-only
+`::: {custom-style="Reply to Reviewers"}` wrappers and `<br>` tags, collapses
+the resulting extra blank lines to at most one blank line, and restores escaped
+ordered-list markers such as `1\.` to `1.`.
 Markdown line sources are first built to a temporary DOCX; DOCX sources are then
 exported to PDF through Word COM on Windows or `soffice --headless --convert-to
 pdf` on Linux and other non-Windows systems. Line placeholders are resolved

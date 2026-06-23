@@ -1,4 +1,4 @@
-"""Build reviewer-reply DOCX files using manuscript numbering and citations."""
+"""Build reviewer-reply DOCX/TXT files using manuscript numbering and citations."""
 
 from __future__ import annotations
 
@@ -72,6 +72,20 @@ CITATION_PROBE_SENTINEL = "PANDOC_REPLY_CITE_PROBE"
 CITATION_CLUSTER_PROBE_SENTINEL = "PANDOC_REPLY_CITE_CLUSTER_PROBE"
 CROSSREF_PREFIXES = ("sec:", "fig:", "tbl:", "eq:")
 LINE_REGEX_PATTERN = re.compile(r"\(Line `([^`]+)`\)")
+IMAGE_MARKDOWN_PATTERN = re.compile(r"!\[(?P<alt>[^\]]*)\]\((?P<target>[^)]*)\)(?:\s*\{[^}]*\})?")
+LABELED_CAPTION_ATTRIBUTE_PATTERN = re.compile(
+    r"(?m)^(?P<caption>\s*(?:Table|Figure)?:\s+.*?)"
+    r"[ \t]*\{#(?:tbl|fig):[A-Za-z0-9][^}\r\n]*\}[ \t]*$"
+)
+STANDALONE_LABEL_ATTRIBUTE_PATTERN = re.compile(r"(?m)^[ \t]*\{#(?:eq|fig|tbl):[A-Za-z0-9][^}]*\}[ \t]*\r?\n?")
+REPLY_CUSTOM_STYLE_DIV_OPEN_PATTERN = re.compile(
+    r"^\s*:::\s*\{[^}\n]*custom-style\s*=\s*['\"]Reply to Reviewers['\"][^}\n]*\}\s*$"
+)
+DIV_CLOSE_PATTERN = re.compile(r"^\s*:::\s*$")
+BR_TAG_PATTERN = re.compile(r"(?i)<br\s*/?>")
+ESCAPED_ORDERED_LIST_MARKER_PATTERN = re.compile(r"(?m)^(\s*\d+)\\\.(?=\s)")
+ORDERED_LIST_MARKER_PATTERN = re.compile(r"^\s*\d+\.(?=\s)")
+EXTRA_BLANK_LINES_PATTERN = re.compile(r"(?:[ \t]*\r?\n){3,}")
 ANSI_RED = "\033[31m"
 ANSI_RESET = "\033[0m"
 PREFIX_WORDS = {
@@ -136,7 +150,7 @@ class BuildReplySettings(BaseSettings):
     output_file: str = Field(
         default=DEFAULT_REPLY_OUTPUT_FILE,
         validation_alias=AliasChoices("o", "output-file"),
-        description="Explicit reply DOCX output path.",
+        description="Explicit reply DOCX or TXT output path.",
     )
 
     def run(self) -> int:
@@ -748,6 +762,82 @@ def replace_labeled_equation_blocks(markdown: str, reference_map: dict[str, str]
     return resolved
 
 
+def strip_labeled_equation_attributes(markdown: str) -> str:
+    """Remove reply-side equation labels while preserving display-math Markdown."""
+
+    def replace_match(match: re.Match[str]) -> str:
+        """Return the original display equation without the Pandoc label attribute."""
+        return f"$${match.group('math')}$$"
+
+    return DISPLAY_EQUATION_LABEL_PATTERN.sub(replace_match, markdown)
+
+
+def image_placeholder(match: re.Match[str]) -> str:
+    """Return a readable placeholder for an image removed from TXT output."""
+    alt = match.group("alt").strip()
+    target = match.group("target").strip().split(None, 1)[0]
+    label = alt or target or "image"
+    return f"[Image: {label}]"
+
+
+def strip_reply_custom_style_divs(markdown: str) -> str:
+    """Remove reply-only custom-style div wrappers from TXT output."""
+    stripped_lines: list[str] = []
+    reply_div_depth = 0
+    for line in markdown.splitlines(keepends=True):
+        line_text = line.strip()
+        if REPLY_CUSTOM_STYLE_DIV_OPEN_PATTERN.fullmatch(line_text):
+            reply_div_depth += 1
+            continue
+        if reply_div_depth and DIV_CLOSE_PATTERN.fullmatch(line_text):
+            reply_div_depth -= 1
+            continue
+        stripped_lines.append(line)
+    return "".join(stripped_lines)
+
+
+def normalize_txt_markdown_spacing(markdown: str) -> str:
+    """Collapse cleanup leftovers to at most one blank line."""
+    return EXTRA_BLANK_LINES_PATTERN.sub("\n\n", markdown).strip("\r\n")
+
+
+def unescape_ordered_list_markers(markdown: str) -> str:
+    """Restore escaped ordered-list markers such as `1\\.` in TXT output."""
+    return ESCAPED_ORDERED_LIST_MARKER_PATTERN.sub(r"\1.", markdown)
+
+
+def ensure_blank_line_before_ordered_lists(markdown: str) -> str:
+    """Reinsert one blank line before an ordered-list item after prose or captions."""
+    lines = markdown.splitlines()
+    normalized_lines: list[str] = []
+    for line in lines:
+        if (
+            ORDERED_LIST_MARKER_PATTERN.match(line)
+            and normalized_lines
+            and normalized_lines[-1].strip()
+            and not ORDERED_LIST_MARKER_PATTERN.match(normalized_lines[-1])
+        ):
+            normalized_lines.append("")
+        normalized_lines.append(line)
+    return "\n".join(normalized_lines)
+
+
+def render_reply_txt_markdown(markdown: str) -> str:
+    """Prepare resolved reply Markdown for journal TXT submission."""
+    text = strip_reply_custom_style_divs(markdown)
+    text = BR_TAG_PATTERN.sub("", text)
+    text = unescape_ordered_list_markers(text)
+    text = ensure_blank_line_before_ordered_lists(text)
+    text = IMAGE_MARKDOWN_PATTERN.sub(image_placeholder, text)
+    text = strip_labeled_equation_attributes(text)
+    text = LABELED_CAPTION_ATTRIBUTE_PATTERN.sub(lambda match: match.group("caption"), text)
+    text = STANDALONE_LABEL_ATTRIBUTE_PATTERN.sub("", text)
+    text = normalize_txt_markdown_spacing(text)
+    if text and not text.endswith("\n"):
+        text += "\n"
+    return text
+
+
 def replace_citations(
     markdown: str,
     citation_map: dict[str, str],
@@ -778,6 +868,33 @@ def replace_citations(
     for index, cluster in enumerate(protected_clusters):
         resolved = resolved.replace(f"@@PMT_CITE_CLUSTER_{index}@@", cluster)
     return resolved
+
+
+def resolve_reply_markdown(
+    reply_text: str,
+    manuscript: Path,
+    manuscript_line_source: Path,
+    flattened_style: Path,
+    from_format: str,
+    *,
+    format_labeled_equations: bool,
+) -> str:
+    """Resolve manuscript-derived reply placeholders before writing an output format."""
+    labels = extract_reference_labels(reply_text)
+    if format_labeled_equations:
+        labels += extract_labeled_equation_labels(reply_text)
+    labels = sorted(set(labels))
+    citations = extract_citation_keys(reply_text)
+    citation_clusters = extract_citation_clusters(reply_text)
+    reference_map = resolve_reference_map(manuscript, flattened_style, labels, from_format)
+    citation_map = resolve_citation_map(manuscript, flattened_style, citations, from_format)
+    citation_cluster_map = resolve_citation_cluster_map(manuscript, flattened_style, citation_clusters, from_format)
+
+    resolved_text = resolve_line_regexes(reply_text, manuscript_line_source)
+    if format_labeled_equations:
+        resolved_text = replace_labeled_equation_blocks(resolved_text, reference_map)
+    resolved_text = replace_references(resolved_text, reference_map)
+    return replace_citations(resolved_text, citation_map, citation_cluster_map)
 
 
 def normalized_pdf_line_text(text: str) -> str:
@@ -1152,7 +1269,7 @@ def resolve_line_regexes(markdown: str, line_source: Path) -> str:
 
 
 def ensure_output_writable(output: Path) -> None:
-    """Fail early when an existing DOCX output is locked by Word or another app."""
+    """Fail early when an existing output is locked by another app."""
     if not output.exists():
         return
     if output.is_dir():
@@ -1165,10 +1282,7 @@ def ensure_output_writable(output: Path) -> None:
         lock_like_errors = {errno.EACCES, errno.EPERM}
         lock_like_winerrors = {5, 32, 33}
         if exc.errno in lock_like_errors or getattr(exc, "winerror", None) in lock_like_winerrors:
-            raise RuntimeError(
-                "Output DOCX appears to be open or locked. Close it in Word and retry: "
-                f"{output}"
-            ) from exc
+            raise RuntimeError(f"Output file appears to be open or locked. Close it and retry: {output}") from exc
         raise
 
 
@@ -1226,16 +1340,14 @@ def build_reply_docx(
     if use_mathtype:
         ensure_output_writable(pandoc_output)
 
-    labels = sorted(set(extract_reference_labels(reply_text) + extract_labeled_equation_labels(reply_text)))
-    citations = extract_citation_keys(reply_text)
-    citation_clusters = extract_citation_clusters(reply_text)
-    reference_map = resolve_reference_map(manuscript, flattened_style, labels, from_format)
-    citation_map = resolve_citation_map(manuscript, flattened_style, citations, from_format)
-    citation_cluster_map = resolve_citation_cluster_map(manuscript, flattened_style, citation_clusters, from_format)
-    resolved_text = resolve_line_regexes(reply_text, manuscript_line_source)
-    resolved_text = replace_labeled_equation_blocks(resolved_text, reference_map)
-    resolved_text = replace_references(resolved_text, reference_map)
-    resolved_text = replace_citations(resolved_text, citation_map, citation_cluster_map)
+    resolved_text = resolve_reply_markdown(
+        reply_text,
+        manuscript,
+        manuscript_line_source,
+        flattened_style,
+        from_format,
+        format_labeled_equations=True,
+    )
 
     output.parent.mkdir(parents=True, exist_ok=True)
     temp_reply_path = resolved_reply_path(reply)
@@ -1296,6 +1408,33 @@ def build_reply_docx(
     log_success(f"[OK] Reply DOCX created: {output}")
 
 
+def build_reply_txt(
+    reply: Path,
+    manuscript: Path,
+    manuscript_line_source: Path,
+    output: Path,
+    style: Path,
+    from_format: str,
+) -> None:
+    """Build a reviewer-reply TXT file with resolved manuscript placeholders."""
+    ensure_output_writable(output)
+    reply_text = reply.read_text(encoding="utf-8")
+    flattened_style = write_reply_style_metadata_file(style)
+    resolved_text = resolve_reply_markdown(
+        reply_text,
+        manuscript,
+        manuscript_line_source,
+        flattened_style,
+        from_format,
+        format_labeled_equations=False,
+    )
+    txt_text = render_reply_txt_markdown(resolved_text)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(txt_text, encoding="utf-8")
+    log_success(f"[OK] Reply TXT created: {output}")
+
+
 def checked_markdown_path(markdown_path: str | Path) -> Path:
     """Return an existing reply markdown path, raising clear input errors."""
     path = Path(markdown_path)
@@ -1307,10 +1446,18 @@ def checked_markdown_path(markdown_path: str | Path) -> Path:
 
 
 def reply_output_path(reply: Path, output_file: str | None) -> Path:
-    """Return the exact DOCX output file for a reply build."""
+    """Return the exact output file for a reply build."""
     if output_file and output_file != DEFAULT_REPLY_OUTPUT_FILE:
         return Path(output_file)
     return Path(DEFAULT_OUTPUT_DIR) / "docx" / f"{reply.stem}.docx"
+
+
+def reply_output_format(output: Path) -> str:
+    """Return the reply output format selected by the output file suffix."""
+    suffix = output.suffix.lower()
+    if suffix in {".docx", ".txt"}:
+        return suffix.removeprefix(".")
+    raise ValueError(f"Unsupported reply output suffix `{output.suffix}`; use .docx or .txt")
 
 
 def reply_reference_doc_path(reference_doc: str | None) -> Path:
@@ -1333,16 +1480,32 @@ def run_build_reply_command(
     reply = checked_markdown_path(markdown)
 
     try:
-        log_info("\n[DOCX] Building reviewer reply DOCX...\n")
-        build_reply_docx(
-            reply=reply,
-            manuscript=Path(reply_manuscript or DEFAULT_REPLY_MANUSCRIPT_FILE),
-            manuscript_line_source=Path(manuscript_line_source or DEFAULT_REPLY_LINE_SOURCE),
-            output=reply_output_path(reply, output_file),
-            reference_doc=reply_reference_doc_path(reference_doc),
-            style=Path(DEFAULT_STYLE_FILE),
-            from_format=from_format or DEFAULT_REPLY_FROM_FORMAT,
-        )
+        output = reply_output_path(reply, output_file)
+        output_format = reply_output_format(output)
+        manuscript = Path(reply_manuscript or DEFAULT_REPLY_MANUSCRIPT_FILE)
+        line_source = Path(manuscript_line_source or DEFAULT_REPLY_LINE_SOURCE)
+        active_from_format = from_format or DEFAULT_REPLY_FROM_FORMAT
+        if output_format == "txt":
+            log_info("\n[TXT] Building reviewer reply TXT...\n")
+            build_reply_txt(
+                reply=reply,
+                manuscript=manuscript,
+                manuscript_line_source=line_source,
+                output=output,
+                style=Path(DEFAULT_STYLE_FILE),
+                from_format=active_from_format,
+            )
+        else:
+            log_info("\n[DOCX] Building reviewer reply DOCX...\n")
+            build_reply_docx(
+                reply=reply,
+                manuscript=manuscript,
+                manuscript_line_source=line_source,
+                output=output,
+                reference_doc=reply_reference_doc_path(reference_doc),
+                style=Path(DEFAULT_STYLE_FILE),
+                from_format=active_from_format,
+            )
         return 0
     except KeyboardInterrupt:
         log_warning("\n\n[WARN] Build interrupted by user.")

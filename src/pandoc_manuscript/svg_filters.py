@@ -154,7 +154,10 @@ def python_filter_wrapper(filter_path: Path, name: str) -> Path:
         encoding="utf-8",
         newline="\n",
     )
-    wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    # Shared workspaces can reuse a wrapper owned by another user when it is
+    # already executable, so only touch the mode when the execute bit is missing.
+    if not os.access(wrapper_path, os.X_OK):
+        wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return wrapper_path
 
 

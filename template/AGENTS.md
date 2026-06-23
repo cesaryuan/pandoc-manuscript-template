@@ -21,6 +21,11 @@ If the user wants to change style-related content, update `style.yml` rather tha
 - Sections: `# Title {#sec:label}` → `[@sec:label]`
 - Citations: `[@key]` (parenthetical), `[@key1; @key2]` (multiple)
 
+When writing formulas, do not wrap style macros inside `\hat{...}` such as
+`\hat{\mathbf{C}}` or `\hat{\mathcal{C}}`. Write the hat inside the style macro
+instead, for example `\mathbf{\hat{C}}` or `\mathcal{\hat{C}}`, because
+MathType-exported PDFs may otherwise hide the hat.
+
 **Tables:** Please prefer to use pipe_tables which is identical to PHP Markdown Extra tables.
 
 ```markdown

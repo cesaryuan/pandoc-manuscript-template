@@ -22,6 +22,7 @@ from pydantic_settings import BaseSettings, CliPositionalArg, CliSuppress, Setti
 
 from . import runtime_cache_version
 from .logging_utils import log_debug, log_error, log_info, log_success, log_warning
+from .math_checks import warn_mathtype_hat_style_order
 from .metadata import load_merged_metadata_with_status, merge_metadata, parse_yaml_file
 from .mathtype.convert_marked_docx import convert_marked_docx
 from .mathtype.marked_docx import extract_marked_equation_requests
@@ -1163,6 +1164,7 @@ def build_markdown_line_source_docx(source_markdown: Path, target_docx: Path) ->
             target="docx",
             markdown=str(source_markdown),
             output_file=str(target_docx),
+            warn_hat_order=False,
         )
     finally:
         for key, value in previous_settings.model_dump().items():
@@ -1504,6 +1506,9 @@ def run_build_reply_command(
         manuscript = Path(reply_manuscript or DEFAULT_REPLY_MANUSCRIPT_FILE)
         line_source = Path(manuscript_line_source or DEFAULT_REPLY_LINE_SOURCE)
         active_from_format = from_format or DEFAULT_REPLY_FROM_FORMAT
+        warn_mathtype_hat_style_order(reply)
+        if manuscript.exists() and manuscript.is_file() and manuscript.resolve() != reply.resolve():
+            warn_mathtype_hat_style_order(manuscript)
         if output_format == "txt":
             log_info("\n[TXT] Building reviewer reply TXT...\n")
             build_reply_txt(

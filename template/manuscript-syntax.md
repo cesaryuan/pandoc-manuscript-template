@@ -154,6 +154,11 @@ Example:
 See @fig:results for details. As shown in @tbl:comparison and @eq:model...
 ```
 
+When a formula needs both `\hat{...}` and a style macro such as `\mathbf{...}`,
+write the hat inside the style macro, for example `\mathbf{\hat{C}}` rather
+than `\hat{\mathbf{C}}`. `pmt build` and `pmt build-reply` warn about the
+latter form because MathType-exported PDFs may hide the hat.
+
 ## Subfigure Layouts
 
 For most multi-panel figures, prefer creating one SVG layout file that

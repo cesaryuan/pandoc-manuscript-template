@@ -12,6 +12,7 @@ from typing import Any, Tuple
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .logging_utils import log_error, log_info, log_success, log_warning
+from .math_checks import warn_mathtype_hat_style_order
 from .metadata import (
     MissingYamlFrontMatterError,
     load_merged_metadata_with_status,
@@ -580,6 +581,7 @@ def run_build_command(
     output_dir: str | None = None,
     output_file: str | None = None,
     reference_doc: str | None = None,
+    warn_hat_order: bool = True,
 ) -> int:
     """Run the selected manuscript build target with direct settings values."""
     configure_output_file(None)
@@ -604,6 +606,8 @@ def run_build_command(
 
     if target in {"docx", "latex", "json"}:
         configure_manuscript(manuscript_arg or SETTINGS.manuscript_file, derive_project_name=bool(manuscript_arg))
+        if warn_hat_order:
+            warn_mathtype_hat_style_order(Path(SETTINGS.manuscript_file))
 
     targets = {
         "docx": build_docx,

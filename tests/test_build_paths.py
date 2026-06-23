@@ -1,6 +1,8 @@
 from pathlib import Path
 import sys
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from pandoc_manuscript import build, reply_build
@@ -87,6 +89,31 @@ def test_svg_to_png_env_keeps_global_conversion_switch(monkeypatch) -> None:
     env = build.docx_svg_to_png_filter_env({"docxConvertSvgToPng": True})
 
     assert env["PMT_SVG_TO_PNG_CONVERT_ALL"] == "true"
+
+
+def test_svg_to_png_env_passes_width_control(monkeypatch) -> None:
+    """Pass the optional SVG-to-PNG output width to the shared DOCX filter."""
+    monkeypatch.setattr(build.SETTINGS, "manuscript_file", "manuscript.md")
+
+    env = build.docx_svg_to_png_filter_env({"docxSvgToPngWidth": 1600})
+
+    assert env["PMT_SVG_TO_PNG_WIDTH"] == "1600"
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"docxSvgToPngWidth": 1600, "docxSvgToPngScale": 2},
+        {"docxSvgToPngWidth": 1600, "docxSvgToPngDpi": 300},
+        {"docxSvgToPngScale": 2, "docxSvgToPngDpi": 300},
+    ],
+)
+def test_svg_to_png_size_controls_are_mutually_exclusive(monkeypatch, metadata: dict[str, object]) -> None:
+    """Reject ambiguous global SVG-to-PNG size controls."""
+    monkeypatch.setattr(build.SETTINGS, "manuscript_file", "manuscript.md")
+
+    with pytest.raises(ValueError, match="Only one of docxSvgToPngWidth"):
+        build.docx_svg_to_png_filter_env(metadata)
 
 
 def test_python_filter_wrapper_uses_pmt_work_dir(monkeypatch, tmp_path) -> None:

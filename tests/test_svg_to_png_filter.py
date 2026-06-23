@@ -29,6 +29,7 @@ class DummyDoc:
     pmt_svg_output_root = Path(".pmt/cache/svg-png")
     pmt_svg_dpi = 300
     pmt_svg_scale = 1
+    pmt_svg_width = None
     pmt_svg_pmt_version = "test"
     pmt_svg_convert_all = False
 
@@ -67,7 +68,7 @@ def test_to_png_scale_attribute_overrides_one_svg(monkeypatch) -> None:
     calls: list[tuple[float, str | None]] = []
 
     def fake_rewrite(elem: pf.Image, *args: object) -> pf.Image:
-        calls.append((args[3], args[5]))
+        calls.append((args[3], args[6]))
         elem.url = ".pmt/cache/svg-png/figure.scale-2.png"
         return elem
 
@@ -95,6 +96,7 @@ def test_to_png_scale_attribute_uses_distinct_cache_path(tmp_path, monkeypatch) 
         target: Path,
         dpi: float,
         scale: float,
+        width: int | None,
         pmt_version: str,
     ) -> Path:
         targets.append(target)
@@ -103,7 +105,7 @@ def test_to_png_scale_attribute_uses_distinct_cache_path(tmp_path, monkeypatch) 
     monkeypatch.setattr(svg_filter, "ensure_png", fake_ensure_png)
 
     elem = image(str(source))
-    svg_filter.rewrite_image(elem, [tmp_path], tmp_path / ".pmt/cache/svg-png", 300, 2, "test", "scale-2")
+    svg_filter.rewrite_image(elem, [tmp_path], tmp_path / ".pmt/cache/svg-png", 300, 2, None, "test", "scale-2")
 
     assert targets == [tmp_path / ".pmt/cache/svg-png/figure.scale-2.png"]
     assert elem.url.endswith("figure.scale-2.png")
@@ -175,7 +177,7 @@ def test_url_encoded_chinese_child_href_is_decoded_before_resvg(tmp_path, monkey
 
     monkeypatch.setitem(sys.modules, "resvg_py", SimpleNamespace(svg_to_bytes=fake_svg_to_bytes))
 
-    svg_filter.ensure_png(source, target, 300, 1, "test")
+    svg_filter.ensure_png(source, target, 300, 1, None, "test")
 
     assert target.read_bytes() == b"png-bytes"
     assert calls
@@ -184,3 +186,25 @@ def test_url_encoded_chinese_child_href_is_decoded_before_resvg(tmp_path, monkey
     assert "%E7" not in svg_string
     metadata = json.loads(target.with_suffix(".png.meta.json").read_text(encoding="utf-8"))
     assert metadata["resources"][0]["path"].endswith("纹理.png")
+
+
+def test_global_width_is_passed_to_resvg(tmp_path, monkeypatch) -> None:
+    """Pass docxSvgToPngWidth through to the renderer as a pixel width."""
+    svg_filter = load_svg_filter()
+    source = tmp_path / "figure.svg"
+    source.write_text("<svg xmlns='http://www.w3.org/2000/svg'/>\n", encoding="utf-8")
+    target = tmp_path / ".pmt/cache/svg-png/figure.png"
+    calls: list[dict[str, object]] = []
+
+    def fake_svg_to_bytes(**kwargs: object) -> bytes:
+        calls.append(kwargs)
+        return b"png-bytes"
+
+    monkeypatch.setitem(sys.modules, "resvg_py", SimpleNamespace(svg_to_bytes=fake_svg_to_bytes))
+
+    svg_filter.ensure_png(source, target, 300, 1, 1600, "test")
+
+    assert target.read_bytes() == b"png-bytes"
+    assert calls[0]["width"] == 1600
+    metadata = json.loads(target.with_suffix(".png.meta.json").read_text(encoding="utf-8"))
+    assert metadata["width"] == 1600

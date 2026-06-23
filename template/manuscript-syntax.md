@@ -237,12 +237,13 @@ Markdown and SVG files are not rewritten.
 If one SVG must be rasterized for a specific submission target, add
 `to-png=true` to that image. Add `to-png-scale=2` on the same image when it
 needs a higher PNG scale than the global default. To rasterize every SVG image
-in the DOCX build, enable the global option in `style.yml`:
+in the DOCX build, enable the global option in `style.yml`. Use at most one
+global sizing control: `docxSvgToPngWidth`, `docxSvgToPngDpi`, or
+`docxSvgToPngScale`.
 
 ```yaml
 docxConvertSvgToPng: true
-docxSvgToPngDpi: 300
-docxSvgToPngScale: 1
+docxSvgToPngWidth: 1600
 ```
 
 This SVG-based pattern gives the composed figure one cross-reference label,
@@ -490,9 +491,10 @@ DOCX-only SVG rasterization instead. If only one SVG needs rasterization, add
 
 ```yaml
 docxConvertSvgToPng: true
-# Optional rasterization controls:
-docxSvgToPngDpi: 300
-docxSvgToPngScale: 1
+# Optional rasterization control; enable at most one:
+docxSvgToPngWidth: 1600
+# docxSvgToPngDpi: 300
+# docxSvgToPngScale: 1
 ```
 
 During `pmt build docx`, self-contained SVG cache files are written under

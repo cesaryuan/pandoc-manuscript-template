@@ -82,6 +82,22 @@ def parse_float_env(name: str, default: float) -> float:
     return parsed
 
 
+def parse_int_env(name: str) -> int | None:
+    """Parse an optional positive integer environment option."""
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        log_warning(f"[WARN] Invalid {name}={value!r}; ignoring")
+        return None
+    if parsed <= 0:
+        log_warning(f"[WARN] {name} must be positive; ignoring")
+        return None
+    return parsed
+
+
 def parse_bool_value(value: object) -> bool:
     """Parse metadata-style booleans used by env vars and image attributes."""
     if isinstance(value, bool):
@@ -315,6 +331,7 @@ def convert_with_resvg_py(
     target: Path,
     dpi: float,
     scale: float,
+    width: int | None = None,
     svg_string: str | None = None,
 ) -> str:
     """Convert SVG to PNG with the pure package-managed resvg binding."""
@@ -326,6 +343,8 @@ def convert_with_resvg_py(
         "dpi": dpi,
         "zoom": scale if scale != 1 else None,
     }
+    if width is not None:
+        render_args["width"] = width
     if svg_string is None:
         png_bytes = resvg_py.svg_to_bytes(svg_path=str(source), **render_args)
     else:
@@ -339,11 +358,12 @@ def convert_svg_to_png(
     target: Path,
     dpi: float,
     scale: float,
+    width: int | None = None,
     svg_string: str | None = None,
 ) -> str:
     """Convert one SVG file to PNG using the required resvg-py dependency."""
     target.parent.mkdir(parents=True, exist_ok=True)
-    return convert_with_resvg_py(source, target, dpi, scale, svg_string=svg_string)
+    return convert_with_resvg_py(source, target, dpi, scale, width=width, svg_string=svg_string)
 
 
 def cache_metadata_path(target: Path) -> Path:
@@ -355,6 +375,7 @@ def expected_cache_metadata(
     source: Path,
     dpi: float,
     scale: float,
+    width: int | None,
     pmt_version: str,
     resources: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
@@ -368,6 +389,7 @@ def expected_cache_metadata(
         "resources": resources or [],
         "dpi": dpi,
         "scale": scale,
+        "width": width,
         "pmt_version": pmt_version,
     }
 
@@ -394,13 +416,14 @@ def write_cache_metadata(target: Path, metadata: dict[str, object], converter: s
     )
 
 
-def ensure_png(source: Path, target: Path, dpi: float, scale: float, pmt_version: str) -> Path:
+def ensure_png(source: Path, target: Path, dpi: float, scale: float, width: int | None, pmt_version: str) -> Path:
     """Create or reuse the PNG cache file for one SVG source."""
     normalization = normalize_svg_resource_hrefs(source)
     expected_metadata = expected_cache_metadata(
         source,
         dpi,
         scale,
+        width,
         pmt_version,
         resources=normalization.resources,
     )
@@ -409,7 +432,7 @@ def ensure_png(source: Path, target: Path, dpi: float, scale: float, pmt_version
         log_debug(f"[svg-to-png] Reusing {target}")
         return target
 
-    converter = convert_svg_to_png(source, target, dpi, scale, svg_string=normalization.svg_string)
+    converter = convert_svg_to_png(source, target, dpi, scale, width=width, svg_string=normalization.svg_string)
     write_cache_metadata(target, expected_metadata, converter)
     CONVERTED.add(target)
     log_debug(f"[svg-to-png] Converted {source} -> {target} with {converter}")
@@ -422,6 +445,7 @@ def rewrite_image(
     output_root: Path,
     dpi: float,
     scale: float,
+    width: int | None,
     pmt_version: str,
     cache_suffix: str | None = None,
 ) -> pf.Image | None:
@@ -441,6 +465,7 @@ def rewrite_image(
         with_cache_suffix(output_path_for(source, output_root, base_dirs), cache_suffix),
         dpi,
         scale,
+        width,
         pmt_version,
     )
     elem.url = target.as_posix()
@@ -453,6 +478,10 @@ def action(elem: pf.Element, doc: pf.Doc) -> pf.Element | None:
         return None
     requested_by_image = image_requests_png(elem)
     effective_scale, has_scale_override = image_scale_override(elem, doc.pmt_svg_scale)
+    if doc.pmt_svg_width is not None and has_scale_override:
+        log_warning("[WARN] Ignoring to-png-scale because docxSvgToPngWidth is set")
+        effective_scale = doc.pmt_svg_scale
+        has_scale_override = False
     remove_to_png_attributes(elem)
     path_text = path_from_url(elem.url)
     if path_text is None or not is_svg_path(path_text):
@@ -470,6 +499,7 @@ def action(elem: pf.Element, doc: pf.Doc) -> pf.Element | None:
         doc.pmt_svg_output_root,
         doc.pmt_svg_dpi,
         effective_scale,
+        doc.pmt_svg_width,
         doc.pmt_svg_pmt_version,
         cache_suffix,
     )
@@ -481,6 +511,7 @@ def prepare(doc: pf.Doc) -> None:
     doc.pmt_svg_output_root = Path(os.getenv("PMT_SVG_TO_PNG_DIR", "tmp/svg-png")).resolve()
     doc.pmt_svg_dpi = parse_float_env("PMT_SVG_TO_PNG_DPI", 300)
     doc.pmt_svg_scale = parse_float_env("PMT_SVG_TO_PNG_SCALE", 1)
+    doc.pmt_svg_width = parse_int_env("PMT_SVG_TO_PNG_WIDTH")
     doc.pmt_svg_pmt_version = os.getenv("PMT_SVG_TO_PNG_PMT_VERSION", "unknown")
     doc.pmt_svg_convert_all = parse_bool_value(os.getenv("PMT_SVG_TO_PNG_CONVERT_ALL"))
 

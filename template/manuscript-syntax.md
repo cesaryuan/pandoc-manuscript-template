@@ -453,6 +453,8 @@ Style-oriented metadata lives in `style.yml` so the manuscript YAML header can s
 
 If you want to change style-related content in a generated manuscript project, edit `style.yml`. The top-level keys cover the normal manuscript build, while the optional `reply:` section stores reply-specific overrides used by `pmt build-reply`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
 
+In reviewer replies, `pmt build-reply` resolves `@fig:...`, `@tbl:...`, `@sec:...`, and `@eq:...` references from the manuscript before building the DOCX. A labeled display equation copied into the reply, for example `$$ ... $$ {#eq:model}`, is also assigned the matching manuscript equation number and rewritten to the DOCX tab-stop equation layout. If the label cannot be resolved from the manuscript, the original Markdown block is left unchanged so the missing label remains visible.
+
 Collapsed numeric citation ranges can use a journal-specific delimiter after Pandoc citeproc renders them. Set `citation-number-range-delimiter` in `style.yml`, or override it in the manuscript YAML header:
 
 ```yaml

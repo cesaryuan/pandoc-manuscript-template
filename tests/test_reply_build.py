@@ -11,6 +11,50 @@ from pandoc_manuscript import reply_build
 from pandoc_manuscript.reply_build import extract_citation_clusters, replace_citations
 
 
+def test_extract_labeled_equation_labels() -> None:
+    """Find display equation labels that need manuscript-derived numbering."""
+    markdown = r"""
+$$
+a+b
+$$ {#eq:first}
+
+See @fig:overview.
+
+$$ c+d $$ {#eq:second}
+"""
+
+    assert reply_build.extract_labeled_equation_labels(markdown) == ["eq:first", "eq:second"]
+
+
+def test_replace_labeled_equation_blocks_uses_manuscript_number_and_tabs() -> None:
+    """Rewrite labeled reply equations as tab-layout Word formulas with manuscript numbers."""
+    markdown = r"""
+The revised metric is:
+
+$$
+\mathrm{MFR}=\frac{1}{|\Omega_{\mathrm{ROI}}|}\sum_{\mathbf{p}\in\Omega_{\mathrm{ROI}}}\mathbf{1}\left[V(\mathbf{p})=0\right]
+$$ {#eq:missing-face-ratio}
+"""
+
+    resolved = reply_build.replace_labeled_equation_blocks(
+        markdown,
+        {"eq:missing-face-ratio": "Equation 12"},
+    )
+
+    assert "{#eq:missing-face-ratio}" not in resolved
+    assert '<w:tab w:val="center"' in resolved
+    assert '<w:tab w:val="right"' in resolved
+    assert "$\\mathrm{MFR}=" in resolved
+    assert "(12)" in resolved
+
+
+def test_replace_labeled_equation_blocks_keeps_unresolved_equations() -> None:
+    """Leave equation blocks unchanged when the manuscript probe cannot resolve them."""
+    markdown = "$$ a+b $$ {#eq:missing}"
+
+    assert reply_build.replace_labeled_equation_blocks(markdown, {}) == markdown
+
+
 def test_extract_citation_clusters_skips_crossrefs() -> None:
     """Extract bibliography clusters without treating cross-references as citations."""
     markdown = "See [@zhang2022critical; @li2023neuralangelo] and [@fig:overview]."

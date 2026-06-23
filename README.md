@@ -139,6 +139,9 @@ pmt build-reply reply.md \
 The reply build reads its reply-specific defaults from the `reply:` section in
 `style.yml`, while `--manuscript-line-source` defaults to `manuscript.md`. The
 line source is only read when the reply uses ``(Line `regex`)`` placeholders.
+Labeled display equations such as `$$ ... $$ {#eq:label}` in the reply are also
+numbered from the matching manuscript equation and rendered with the same
+tab-stop layout used for DOCX equations.
 Markdown line sources are first built to a temporary DOCX; DOCX sources are then
 exported to PDF through Word COM on Windows or `soffice --headless --convert-to
 pdf` on Linux and other non-Windows systems. Line placeholders are resolved

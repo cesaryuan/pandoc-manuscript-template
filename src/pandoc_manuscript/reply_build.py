@@ -60,6 +60,11 @@ LABEL_CHARS_NO_DOT = r"A-Za-z0-9_:\-"
 LABEL_CONTINUATION = rf"(?:[{LABEL_CHARS_NO_DOT}]|\.(?=[{LABEL_CHARS_NO_DOT}]))"
 REF_PATTERN = re.compile(rf"@((?:sec|fig|tbl|eq):[A-Za-z0-9]{LABEL_CONTINUATION}*)")
 REF_BOUNDARY = rf"(?![{LABEL_CHARS_NO_DOT}]|\.(?=[{LABEL_CHARS_NO_DOT}]))"
+DISPLAY_EQUATION_LABEL_PATTERN = re.compile(
+    rf"(?<!\$)\$\$(?!\$)(?P<math>.*?)(?<!\$)\$\$(?!\$)\s*"
+    rf"\{{#(?P<label>eq:[A-Za-z0-9]{LABEL_CONTINUATION}*)(?P<attrs>[^}}]*)\}}",
+    re.DOTALL,
+)
 CITATION_PATTERN = re.compile(r"(?<![\w:])@([A-Za-z0-9_][A-Za-z0-9_:.#/$%&+?<>~/-]*)")
 CITATION_CLUSTER_PATTERN = re.compile(r"\[([^\]\n]*@[^\]\n]*)\]")
 PROBE_SENTINEL = "PANDOC_REPLY_REF_PROBE"
@@ -75,6 +80,13 @@ PREFIX_WORDS = {
     "tbl": "Table",
     "eq": "Equation",
 }
+REPLY_EQUATION_OPENXML_PREFIX = (
+    '<w:pPr><w:tabs>'
+    '<w:tab w:val="center" w:leader="none" w:pos="4888" />'
+    '<w:tab w:val="right" w:leader="none" w:pos="9746" />'
+    '</w:tabs></w:pPr><w:r><w:tab /></w:r>'
+)
+REPLY_EQUATION_OPENXML_NUMBER_TAB = '<w:r><w:tab /></w:r>'
 BUILD_REPLY_CLI_CONFIG = SettingsConfigDict(
     cli_kebab_case=True,
     cli_implicit_flags=True,
@@ -211,6 +223,13 @@ def extract_reference_labels(markdown: str) -> list[str]:
     """Return unique manuscript-style cross-reference labels used in reply text."""
     labels = sorted(set(REF_PATTERN.findall(markdown)))
     log_info(f"[INFO] Found {len(labels)} manuscript-style references in reply.")
+    return labels
+
+
+def extract_labeled_equation_labels(markdown: str) -> list[str]:
+    """Return equation labels attached to display-math blocks in reply text."""
+    labels = sorted({match.group("label") for match in DISPLAY_EQUATION_LABEL_PATTERN.finditer(markdown)})
+    log_info(f"[INFO] Found {len(labels)} labeled reply equation block(s).")
     return labels
 
 
@@ -677,6 +696,56 @@ def replace_references(markdown: str, reference_map: dict[str, str]) -> str:
 
     return resolved
 
+
+def compact_display_math_for_inline(math: str) -> str:
+    """Collapse display-math line breaks so Pandoc keeps the tab-layout formula inline."""
+    return re.sub(r"[ \t]*\r?\n[ \t]*", " ", math.strip())
+
+
+def equation_label_number(label: str, reference_map: dict[str, str]) -> str | None:
+    """Return a parenthesized equation number resolved from manuscript crossrefs."""
+    display = reference_map.get(label)
+    if not display:
+        return None
+
+    short = number_only(label, display)
+    if re.fullmatch(r"\(.+\)", short):
+        return short
+    return f"({short})"
+
+
+def raw_openxml_inline(xml: str) -> str:
+    """Wrap a small OpenXML fragment as a Pandoc raw inline."""
+    return f"`{xml}`{{=openxml}}"
+
+
+def replace_labeled_equation_blocks(markdown: str, reference_map: dict[str, str]) -> str:
+    """Render labeled reply equations with manuscript numbers and Word tab stops."""
+    replacements = 0
+
+    def replace_match(match: re.Match[str]) -> str:
+        """Return a tab-layout equation paragraph or keep unresolved syntax unchanged."""
+        nonlocal replacements
+        label = match.group("label")
+        number = equation_label_number(label, reference_map)
+        if number is None:
+            return match.group(0)
+
+        replacements += 1
+        math = compact_display_math_for_inline(match.group("math"))
+        # Reply builds intentionally skip pandoc-crossref on the reply itself, so
+        # use the manuscript-resolved number and the same tab layout as style.yml.
+        return (
+            f"{raw_openxml_inline(REPLY_EQUATION_OPENXML_PREFIX)}"
+            f"${math}$"
+            f"{raw_openxml_inline(REPLY_EQUATION_OPENXML_NUMBER_TAB)}"
+            f"{number}"
+        )
+
+    resolved = DISPLAY_EQUATION_LABEL_PATTERN.sub(replace_match, markdown)
+    if replacements:
+        log_info(f"[INFO] Formatted {replacements} labeled reply equation block(s) with manuscript numbering.")
+    return resolved
 
 
 def replace_citations(
@@ -1157,13 +1226,14 @@ def build_reply_docx(
     if use_mathtype:
         ensure_output_writable(pandoc_output)
 
-    labels = extract_reference_labels(reply_text)
+    labels = sorted(set(extract_reference_labels(reply_text) + extract_labeled_equation_labels(reply_text)))
     citations = extract_citation_keys(reply_text)
     citation_clusters = extract_citation_clusters(reply_text)
     reference_map = resolve_reference_map(manuscript, flattened_style, labels, from_format)
     citation_map = resolve_citation_map(manuscript, flattened_style, citations, from_format)
     citation_cluster_map = resolve_citation_cluster_map(manuscript, flattened_style, citation_clusters, from_format)
     resolved_text = resolve_line_regexes(reply_text, manuscript_line_source)
+    resolved_text = replace_labeled_equation_blocks(resolved_text, reference_map)
     resolved_text = replace_references(resolved_text, reference_map)
     resolved_text = replace_citations(resolved_text, citation_map, citation_cluster_map)
 

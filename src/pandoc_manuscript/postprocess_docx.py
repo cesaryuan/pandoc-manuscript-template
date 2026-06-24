@@ -67,7 +67,7 @@ except ImportError as e:
 
 def run_pipeline_step(label: str, action: Callable[[], None]) -> None:
     """Run one post-processing step with consistent pipeline logging."""
-    log_info(f"[postprocess] Step: {label}...")
+    log_debug(f"[postprocess] Step: {label}...")
     try:
         action()
         log_debug("[postprocess] Step completed")
@@ -243,7 +243,7 @@ def postprocess_docx(
         # ===================================================================
         log_info("[postprocess] Saving all changes to document...")
         doc.save(str(docx_path_abs))
-        log_success("[postprocess] Document saved successfully")
+        log_debug("[postprocess] Document saved successfully")
 
         log_success("[postprocess] DOCX post-processing completed successfully")
         return True

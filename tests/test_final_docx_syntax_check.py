@@ -1,4 +1,4 @@
-from pandoc_manuscript.postprocess.final_docx_syntax_check import (
+from pandoc_manuscript.docx.postprocess.final_docx_syntax_check import (
     detect_unrendered_pandoc_syntax,
 )
 

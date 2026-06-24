@@ -54,8 +54,8 @@ if __package__ in (None, ""):
     # Allow direct execution while reusing the repository-wide logging gate.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ..runtime.logging import log_error, log_success, log_warning
-from ..project.metadata import parse_yaml_header
+from ...runtime.logging import log_error, log_success, log_warning
+from ...project.metadata import parse_yaml_header
 
 try:
     from docx import Document

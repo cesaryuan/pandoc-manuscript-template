@@ -10,7 +10,7 @@ from docx.oxml.ns import qn
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from pandoc_manuscript.postprocess.process_equation_metadata import process_equation_metadata
+from pandoc_manuscript.docx.postprocess.process_equation_metadata import process_equation_metadata
 
 
 def test_equation_revision_attr_filter_wraps_display_equation_and_keeps_label() -> None:

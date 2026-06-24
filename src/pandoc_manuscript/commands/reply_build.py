@@ -34,7 +34,7 @@ from ..runtime.paths import (
     PMT_REPLY_LINE_SOURCE_PDF_DIR,
     PMT_REPLY_PROBE_DIR,
 )
-from ..postprocess.final_docx_syntax_check import validate_final_docx_syntax
+from ..docx.postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from ..docx.postprocess import postprocess_docx
 from ..project.resources import template_root
 from ..docx import svg_filters as svg_filter_helpers

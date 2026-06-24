@@ -27,7 +27,7 @@ from ..runtime.paths import (
     PMT_WORK_DIR,
     pmt_path,
 )
-from ..postprocess.final_docx_syntax_check import validate_final_docx_syntax
+from ..docx.postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from ..docx.postprocess import postprocess_docx as run_docx_postprocess
 from ..project.resources import package_resource_path, template_root
 from ..docx.svg_filters import (

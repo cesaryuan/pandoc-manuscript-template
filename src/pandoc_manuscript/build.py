@@ -432,7 +432,7 @@ def project_metadata_csl() -> Any:
     return csl
 
 
-def build_docx():
+def build_docx(*, warn_hat_order: bool = True):
     """Generate DOCX file with optional post-processing."""
     log_info("\n[DOCX] Building DOCX...\n")
 
@@ -442,6 +442,8 @@ def build_docx():
     extra_args = []
     metadata = load_build_metadata()
     use_mathtype = resolve_mathtype_build_enabled(should_use_mathtype(metadata))
+    if use_mathtype and warn_hat_order:
+        warn_mathtype_hat_style_order(Path(SETTINGS.manuscript_file))
     pandoc_output = docx_file
     pandoc_env = {}
     extra_args.extend(reference_doc_args())
@@ -606,11 +608,9 @@ def run_build_command(
 
     if target in {"docx", "latex", "json"}:
         configure_manuscript(manuscript_arg or SETTINGS.manuscript_file, derive_project_name=bool(manuscript_arg))
-        if warn_hat_order:
-            warn_mathtype_hat_style_order(Path(SETTINGS.manuscript_file))
 
     targets = {
-        "docx": build_docx,
+        "docx": lambda: build_docx(warn_hat_order=warn_hat_order),
         "latex": build_latex,
         "json": build_json,
         "clean": clean,

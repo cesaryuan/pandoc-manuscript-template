@@ -1350,6 +1350,8 @@ def build_reply_docx(
     reference_doc: Path,
     style: Path,
     from_format: str,
+    *,
+    warn_hat_order: bool = True,
 ) -> None:
     """Build a reviewer-reply DOCX with manuscript references resolved first."""
     ensure_output_writable(output)
@@ -1357,6 +1359,10 @@ def build_reply_docx(
     flattened_style = write_reply_style_metadata_file(style)
     metadata = load_reply_metadata(reply, flattened_style)
     use_mathtype = resolve_mathtype_enabled(metadata_bool(metadata.get("mathtype")))
+    if use_mathtype and warn_hat_order:
+        warn_mathtype_hat_style_order(reply)
+        if manuscript.exists() and manuscript.is_file() and manuscript.resolve() != reply.resolve():
+            warn_mathtype_hat_style_order(manuscript)
     pandoc_output = mathtype_marked_docx_path(output) if use_mathtype else output
     if use_mathtype:
         ensure_output_writable(pandoc_output)
@@ -1506,9 +1512,6 @@ def run_build_reply_command(
         manuscript = Path(reply_manuscript or DEFAULT_REPLY_MANUSCRIPT_FILE)
         line_source = Path(manuscript_line_source or DEFAULT_REPLY_LINE_SOURCE)
         active_from_format = from_format or DEFAULT_REPLY_FROM_FORMAT
-        warn_mathtype_hat_style_order(reply)
-        if manuscript.exists() and manuscript.is_file() and manuscript.resolve() != reply.resolve():
-            warn_mathtype_hat_style_order(manuscript)
         if output_format == "txt":
             log_info("\n[TXT] Building reviewer reply TXT...\n")
             build_reply_txt(

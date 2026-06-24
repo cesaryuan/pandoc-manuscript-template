@@ -124,8 +124,8 @@ pmt build docx paper.md -o build/paper.docx
 pmt build latex paper.md -o build/paper.tex
 ```
 
-Before `pmt build` or `pmt build-reply` starts the real conversion, it warns
-about MathType-sensitive formulas such as `\hat{\mathbf{C}}`. Rewrite these as
+When a DOCX build actually starts MathType conversion, `pmt` warns about
+MathType-sensitive formulas such as `\hat{\mathbf{C}}`. Rewrite these as
 `\mathbf{\hat{C}}` because MathType-exported PDFs may drop the hat otherwise.
 
 For DOCX output, pass `--reference-doc custom-reference.docx` to override the

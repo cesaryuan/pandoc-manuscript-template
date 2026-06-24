@@ -4,6 +4,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from pandoc_manuscript import cli
+from pandoc_manuscript.commands import setup as setup_command
 from pandoc_manuscript.tooling.pandoc_tools import ResolvedTool
 
 
@@ -19,7 +20,7 @@ def test_setup_command_runs_in_project_directory(tmp_path, monkeypatch) -> None:
             ResolvedTool("pandoc-crossref", Path(".pmt/tools/bin/pandoc-crossref"), ".pmt/tools"),
         )
 
-    monkeypatch.setattr(cli, "setup_pandoc_tools", fake_setup_pandoc_tools)
+    monkeypatch.setattr(setup_command, "setup_pandoc_tools", fake_setup_pandoc_tools)
 
     result = cli.SetupSettings(project_dir=tmp_path, force=True).run()
 

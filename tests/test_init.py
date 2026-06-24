@@ -4,6 +4,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from pandoc_manuscript import cli
+from pandoc_manuscript.commands import init as init_command
 from pandoc_manuscript.cli import InitSettings
 from pandoc_manuscript.tooling.pandoc_tools import ResolvedTool
 
@@ -46,7 +47,7 @@ def test_init_setup_runs_after_project_creation(tmp_path, monkeypatch) -> None:
             ResolvedTool("pandoc-crossref", Path(".pmt/tools/bin/pandoc-crossref"), ".pmt/tools"),
         )
 
-    monkeypatch.setattr(cli, "setup_pandoc_tools", fake_setup_pandoc_tools)
+    monkeypatch.setattr(init_command, "setup_pandoc_tools", fake_setup_pandoc_tools)
 
     InitSettings(directory=str(target), setup=True).run()
 

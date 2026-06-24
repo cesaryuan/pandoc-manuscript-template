@@ -7,9 +7,10 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any, Literal, Tuple
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field
+from pydantic_settings import BaseSettings, CliPositionalArg, CliSuppress, SettingsConfigDict
 
 from ..runtime.logging import log_error, log_info, log_success, log_warning
 from ..checks.math import warn_mathtype_hat_style_order
@@ -37,6 +38,7 @@ from ..docx.svg_filters import (
 )
 from ..docx import svg_filters as svg_filter_helpers
 from ..tooling.pandoc_tools import ensure_pandoc_tools, pandoc_command, pandoc_tools_env
+from .common import project_directory
 
 # ============================================================================
 # SETTINGS
@@ -44,6 +46,17 @@ from ..tooling.pandoc_tools import ensure_pandoc_tools, pandoc_command, pandoc_t
 
 
 DEFAULT_OUTPUT_DIR = "output"
+BuildTarget = Literal["docx", "latex", "json", "clean", "distclean"]
+BUILD_CLI_CONFIG = SettingsConfigDict(
+    cli_kebab_case=True,
+    cli_implicit_flags=True,
+    cli_hide_none_type=True,
+    cli_parse_none_str="auto",
+    cli_shortcuts={
+        "manuscript_option": ["-m", "--manuscript"],
+        "output_file": ["-o", "--output-file"],
+    },
+)
 
 
 class BuildSettings(BaseSettings):
@@ -65,6 +78,50 @@ class BuildSettings(BaseSettings):
 
 
 SETTINGS = BuildSettings()
+
+
+class BuildCommandSettings(BaseSettings):
+    """Settings for `pmt build`."""
+
+    model_config = BUILD_CLI_CONFIG
+
+    target: CliPositionalArg[BuildTarget] = Field(default="docx", description="Build target.")
+    markdown: CliPositionalArg[str | None] = Field(
+        default=None,
+        description="Input markdown file. Auto: manuscript.md.",
+    )
+    manuscript_option: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("m", "manuscript"),
+        description="Input markdown file, equivalent to the positional MARKDOWN argument.",
+    )
+    output_file: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("o", "output-file"),
+        description="Exact output file path for DOCX, LaTeX, and JSON builds.",
+    )
+    project_dir: Path = Field(default=Path("."), description="Manuscript project directory.")
+    reference_doc: CliSuppress[str | None] = Field(
+        default=None,
+        description="Override the bundled DOCX reference document.",
+    )
+
+    def run(self) -> int:
+        """Run the selected build target."""
+        project_dir = self.project_dir.resolve()
+        if not project_dir.exists():
+            raise FileNotFoundError(f"Project directory not found: {project_dir}")
+
+        with project_directory(project_dir):
+            return int(
+                run_build_command(
+                    target=self.target,
+                    markdown=self.markdown,
+                    manuscript_option=self.manuscript_option,
+                    output_file=self.output_file,
+                    reference_doc=self.reference_doc,
+                )
+            )
 
 # ============================================================================
 # UTILITY FUNCTIONS

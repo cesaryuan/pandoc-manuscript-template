@@ -10,9 +10,9 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..logging_utils import log_debug, log_info, log_warning
-from ..paths import PMT_MATHTYPE_CACHE_DIR
-from ..resources import package_resource_path
+from ..runtime.logging import log_debug, log_info, log_warning
+from ..runtime.paths import PMT_MATHTYPE_CACHE_DIR
+from ..project.resources import package_resource_path
 
 from .compound_file import CompoundFile
 

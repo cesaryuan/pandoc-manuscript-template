@@ -57,7 +57,7 @@ from .common import (
     validate_existing_file,
 )
 
-from ..metadata import load_merged_metadata
+from ..project.metadata import load_merged_metadata
 
 
 ALIGNMENT_VALUES = {

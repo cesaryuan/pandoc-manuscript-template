@@ -25,7 +25,7 @@ from typing import Any
 
 from lxml import etree
 
-from .logging_utils import log_error, log_info, log_warning
+from ..runtime.logging import log_error, log_info, log_warning
 
 
 WD_ALERTS_NONE = 0
@@ -351,7 +351,7 @@ def mathtype_native_stream(ole_bytes: bytes) -> bytes:
     The outer OLE compound-file bytes can change even when the formula is the
     same, so this stream is a better binary proxy for the equation payload.
     """
-    from .mathtype.compound_file import CompoundFile
+    from ..mathtype.compound_file import CompoundFile
 
     return CompoundFile(ole_bytes).read_stream("Equation Native")
 

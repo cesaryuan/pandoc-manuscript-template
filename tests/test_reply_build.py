@@ -7,8 +7,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from pandoc_manuscript import reply_build
-from pandoc_manuscript.reply_build import extract_citation_clusters, replace_citations
+from pandoc_manuscript.commands import reply_build
+from pandoc_manuscript.commands.reply_build import extract_citation_clusters, replace_citations
 
 
 def test_extract_labeled_equation_labels() -> None:

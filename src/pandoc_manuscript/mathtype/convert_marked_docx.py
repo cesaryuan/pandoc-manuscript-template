@@ -4,8 +4,8 @@
 import argparse
 from pathlib import Path
 
-from ..logging_utils import log_info
-from ..paths import PMT_MATHTYPE_WORK_DIR
+from ..runtime.logging import log_info
+from ..runtime.paths import PMT_MATHTYPE_WORK_DIR
 
 from .marked_docx import extract_marked_equation_requests, inspect_docx, replace_marked_omml_with_generated
 from .ole_parts import build_helper, generate_equation_parts

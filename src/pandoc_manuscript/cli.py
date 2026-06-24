@@ -22,11 +22,11 @@ from pydantic_settings import (
 )
 
 from . import __version__
-from .build import DEFAULT_OUTPUT_DIR, run_build_command
-from .paths import PMT_DIR
-from .reply_build import BuildReplySettings
-from .resources import iter_project_template_entries, project_template_root, template_root
-from .tools import ensure_pandoc_tools, pandoc_tools_env, resolve_tool, setup_pandoc_tools
+from .commands.build import DEFAULT_OUTPUT_DIR, run_build_command
+from .runtime.paths import PMT_DIR
+from .commands.reply_build import BuildReplySettings
+from .project.resources import iter_project_template_entries, project_template_root, template_root
+from .tooling.pandoc_tools import ensure_pandoc_tools, pandoc_tools_env, resolve_tool, setup_pandoc_tools
 
 
 BuildTarget = Literal["docx", "latex", "json", "clean", "distclean"]
@@ -395,7 +395,7 @@ class DoctorSettings(BaseSettings):
 
         checks.extend(
             [
-                ("pmt package build module", True, "pandoc_manuscript.build"),
+                ("pmt package build module", True, "pandoc_manuscript.commands.build"),
                 ("pmt pandoc defaults", (root / "pandoc" / "pandoc-docx.yml").exists(), str(root / "pandoc")),
                 (
                     "pmt DOCX metadata filter",

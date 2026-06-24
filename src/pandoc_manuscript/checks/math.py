@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
-from .logging_utils import log_warning
+from ..runtime.logging import log_warning
 
 
 # MathType-exported PDFs can drop the hat when a style macro is nested inside

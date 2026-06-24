@@ -22,7 +22,7 @@ except ImportError as e:
     print("Install with: pip install python-docx pyyaml")
     sys.exit(1)
 
-from ..metadata import load_merged_metadata
+from ..project.metadata import load_merged_metadata
 from .common import open_docx, print_debug, print_debug_success, print_warning, save_docx, validate_existing_file
 
 

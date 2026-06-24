@@ -11,7 +11,7 @@ from docx.styles.style import _ParagraphStyle
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
-from ..logging_utils import log_message
+from ..runtime.logging import log_message
 
 
 BODY_TEXT_STYLE_NAMES = ("Body Text", "正文文本")

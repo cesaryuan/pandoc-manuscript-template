@@ -20,31 +20,31 @@ import yaml
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, CliPositionalArg, CliSuppress, SettingsConfigDict
 
-from . import runtime_cache_version
-from .logging_utils import log_debug, log_error, log_info, log_success, log_warning
-from .math_checks import warn_mathtype_hat_style_order
-from .metadata import load_merged_metadata_with_status, merge_metadata, parse_yaml_file
-from .mathtype.convert_marked_docx import convert_marked_docx
-from .mathtype.marked_docx import extract_marked_equation_requests
-from .mathtype.ole_parts import build_helper, check_mathtype_availability
-from .paths import (
+from .. import runtime_cache_version
+from ..runtime.logging import log_debug, log_error, log_info, log_success, log_warning
+from ..checks.math import warn_mathtype_hat_style_order
+from ..project.metadata import load_merged_metadata_with_status, merge_metadata, parse_yaml_file
+from ..mathtype.convert_marked_docx import convert_marked_docx
+from ..mathtype.marked_docx import extract_marked_equation_requests
+from ..mathtype.ole_parts import build_helper, check_mathtype_availability
+from ..runtime.paths import (
     PMT_MATHTYPE_WORK_DIR,
     PMT_REPLY_LINE_SOURCE_CACHE_DIR,
     PMT_REPLY_LINE_SOURCE_DOCX_DIR,
     PMT_REPLY_LINE_SOURCE_PDF_DIR,
     PMT_REPLY_PROBE_DIR,
 )
-from .postprocess.final_docx_syntax_check import validate_final_docx_syntax
-from .postprocess_docx import postprocess_docx
-from .resources import template_root
-from . import svg_filters as svg_filter_helpers
-from .svg_filters import (
+from ..postprocess.final_docx_syntax_check import validate_final_docx_syntax
+from ..docx.postprocess import postprocess_docx
+from ..project.resources import template_root
+from ..docx import svg_filters as svg_filter_helpers
+from ..docx.svg_filters import (
     should_convert_docx_svg_to_png,
     should_embed_docx_svg_images,
     svg_embed_images_filter_args,
     svg_to_png_filter_args,
 )
-from .tools import pandoc_command, pandoc_tools_env
+from ..tooling.pandoc_tools import pandoc_command, pandoc_tools_env
 
 
 DEFAULT_OUTPUT_DIR = "output"

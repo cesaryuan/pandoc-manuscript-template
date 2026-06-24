@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..logging_utils import log_debug
+from ..runtime.logging import log_debug
 
 from .docx_ole import (
     MathTypeTemplate,

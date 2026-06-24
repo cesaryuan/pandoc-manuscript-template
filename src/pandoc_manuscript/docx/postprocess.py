@@ -11,8 +11,8 @@ Post-process DOCX file - orchestrator script.
 This script calls individual processing scripts in sequence.
 
 Usage:
-    import postprocess_docx
-    postprocess_docx.postprocess_docx("path/to/file.docx", metadata)
+    from pandoc_manuscript.docx import postprocess
+    postprocess.postprocess_docx("path/to/file.docx", metadata)
 """
 
 import argparse
@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
-from .logging_utils import log_debug, log_info, log_success
+from ..runtime.logging import log_debug, log_info, log_success
 
 try:
     from docx import Document
@@ -31,24 +31,24 @@ except ImportError:
 
 # Import processing modules
 try:
-    from .postprocess.common import print_error, print_debug_success, print_warning
-    from .postprocess.merge_table_cells import merge_table_cells
-    from .postprocess.process_equation_metadata import process_equation_metadata
-    from .postprocess.process_table_metadata import process_table_metadata
-    from .postprocess.autofit_tables import autofit_tables
-    from .postprocess.table_text_style import process_all_tables as convert_table_text_style, ensure_table_text_style_exists
-    from .postprocess.para_after_table_style import process_para_after_table_style
-    from .postprocess.insert_author_info import insert_author_info_to_doc
-    from .postprocess.clear_subfigure_table_format import clear_subfigure_table_format
-    from .postprocess.format_equation_layout_tables import format_equation_layout_tables
-    from .postprocess.docx_style import apply_docx_style_metadata, format_applied_style_summary
-    from .postprocess.inline_math_spacing import add_space_after_standalone_inline_math
-    from .postprocess.line_numbers import apply_line_number_metadata
-    from .postprocess.where_paragraph_style import process_where_paragraph_styles
-    from .postprocess.reply_blue_italic_style import apply_reply_blue_italic_style
+    from ..postprocess.common import print_error, print_debug_success, print_warning
+    from ..postprocess.merge_table_cells import merge_table_cells
+    from ..postprocess.process_equation_metadata import process_equation_metadata
+    from ..postprocess.process_table_metadata import process_table_metadata
+    from ..postprocess.autofit_tables import autofit_tables
+    from ..postprocess.table_text_style import process_all_tables as convert_table_text_style, ensure_table_text_style_exists
+    from ..postprocess.para_after_table_style import process_para_after_table_style
+    from ..postprocess.insert_author_info import insert_author_info_to_doc
+    from ..postprocess.clear_subfigure_table_format import clear_subfigure_table_format
+    from ..postprocess.format_equation_layout_tables import format_equation_layout_tables
+    from ..postprocess.docx_style import apply_docx_style_metadata, format_applied_style_summary
+    from ..postprocess.inline_math_spacing import add_space_after_standalone_inline_math
+    from ..postprocess.line_numbers import apply_line_number_metadata
+    from ..postprocess.where_paragraph_style import process_where_paragraph_styles
+    from ..postprocess.reply_blue_italic_style import apply_reply_blue_italic_style
 except ImportError as e:
     print(f"Error: Failed to import processing modules: {e}")
-    print("Make sure all scripts are in the same directory:")
+    print("Make sure the pandoc_manuscript package is installed with its postprocess modules:")
     print("  - metadata.py")
     print("  - merge_table_cells.py")
     print("  - process_equation_metadata.py")
@@ -271,7 +271,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  Prefer calling postprocess_docx.postprocess_docx(docx_path, metadata) from build.py.
+  Prefer calling postprocess_docx(docx_path, metadata) from the build command.
   For standalone debugging, pass a pre-merged metadata JSON file with --metadata-json.
 
 Processing steps:

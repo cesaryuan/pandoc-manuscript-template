@@ -5,9 +5,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from pandoc_manuscript import build, reply_build
+from pandoc_manuscript.commands import build, reply_build
 from pandoc_manuscript.mathtype import ole_parts
-from pandoc_manuscript.paths import (
+from pandoc_manuscript.runtime.paths import (
     PMT_CACHE_DIR,
     PMT_DIR,
     PMT_REPLY_LINE_SOURCE_CACHE_DIR,

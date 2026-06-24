@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from pandoc_manuscript import cli
 from pandoc_manuscript.cli import InitSettings
-from pandoc_manuscript.tools import ResolvedTool
+from pandoc_manuscript.tooling.pandoc_tools import ResolvedTool
 
 
 def test_init_copies_packaged_agents_directory(tmp_path) -> None:

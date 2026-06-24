@@ -5,8 +5,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from pandoc_manuscript import tools
-from pandoc_manuscript.paths import PMT_TOOLS_BIN_DIR
+from pandoc_manuscript.tooling import pandoc_tools as tools
+from pandoc_manuscript.runtime.paths import PMT_TOOLS_BIN_DIR
 
 
 def test_pandoc_asset_selection_uses_platform_preferences(monkeypatch) -> None:

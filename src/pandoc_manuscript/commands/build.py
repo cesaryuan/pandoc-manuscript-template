@@ -11,32 +11,32 @@ from typing import Any, Tuple
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .logging_utils import log_error, log_info, log_success, log_warning
-from .math_checks import warn_mathtype_hat_style_order
-from .metadata import (
+from ..runtime.logging import log_error, log_info, log_success, log_warning
+from ..checks.math import warn_mathtype_hat_style_order
+from ..project.metadata import (
     MissingYamlFrontMatterError,
     load_merged_metadata_with_status,
     parse_yaml_file,
     parse_yaml_header,
 )
-from .mathtype.convert_marked_docx import convert_marked_docx
-from .mathtype.ole_parts import build_helper, check_mathtype_availability
-from .paths import (
+from ..mathtype.convert_marked_docx import convert_marked_docx
+from ..mathtype.ole_parts import build_helper, check_mathtype_availability
+from ..runtime.paths import (
     PMT_DIR,
     PMT_MATHTYPE_WORK_DIR,
     PMT_WORK_DIR,
     pmt_path,
 )
-from .postprocess.final_docx_syntax_check import validate_final_docx_syntax
-from .postprocess_docx import postprocess_docx as run_docx_postprocess
-from .resources import package_resource_path, template_root
-from .svg_filters import (
+from ..postprocess.final_docx_syntax_check import validate_final_docx_syntax
+from ..docx.postprocess import postprocess_docx as run_docx_postprocess
+from ..project.resources import package_resource_path, template_root
+from ..docx.svg_filters import (
     python_filter_wrapper,
     should_convert_docx_svg_to_png,
     should_embed_docx_svg_images,
 )
-from . import svg_filters as svg_filter_helpers
-from .tools import ensure_pandoc_tools, pandoc_command, pandoc_tools_env
+from ..docx import svg_filters as svg_filter_helpers
+from ..tooling.pandoc_tools import ensure_pandoc_tools, pandoc_command, pandoc_tools_env
 
 # ============================================================================
 # SETTINGS

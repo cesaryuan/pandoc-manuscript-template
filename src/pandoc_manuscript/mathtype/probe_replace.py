@@ -5,8 +5,8 @@ import argparse
 import shutil
 from pathlib import Path
 
-from ..logging_utils import log_info
-from ..paths import PMT_MATHTYPE_WORK_DIR
+from ..runtime.logging import log_info
+from ..runtime.paths import PMT_MATHTYPE_WORK_DIR
 
 from .docx_ole import replace_omml_with_template
 

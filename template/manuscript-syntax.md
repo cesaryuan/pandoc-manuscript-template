@@ -302,6 +302,16 @@ For tables, use revision attributes on the table caption. Use `revision-rows="*"
 
 The underscore forms `revision_rows` and `revision_columns` are equivalent and are documented with the other DOCX table attributes below.
 
+For native Word display equations, add `revision=true` in the equation attribute list. `pmt build docx` strips that custom attribute before `pandoc-crossref` runs, keeps labels such as `#eq:model`, and then colors the generated Word equation red during DOCX post-processing.
+
+```markdown
+$$
+\mathbf{y} = \mathbf{A}\mathbf{x} + \mathbf{b}
+$$ {#eq:linear-model revision=true}
+```
+
+This revision coloring currently targets native Word equations only. If the DOCX build later converts equations to MathType OLE objects, this equation-level red coloring is not preserved.
+
 ## Writing Pseudocode
 
 For method or workflow descriptions, the recommended pattern is to write pseudocode as a one-column pipe table. This format is easy to edit in Markdown and stays visually stable after DOCX conversion.

@@ -60,7 +60,6 @@ class BuildSettings(BaseSettings):
     json_dir: str = "output/json"
     output_file: str | None = None
     enable_docx_postprocess: bool = True
-    mathtype_marker_filter: str = "mathtype/mathtype_markers.lua"
     mathtype_work_dir: str = pmt_path(PMT_MATHTYPE_WORK_DIR)
     reference_doc: str | None = None
 
@@ -313,11 +312,11 @@ def docx_svg_to_png_filter_env(metadata: dict[str, Any], convert_all: bool | Non
     )
 
 
-def table_metadata_filter_args() -> list[str]:
-    """Return Pandoc args for embedding hidden table-attribute markers into DOCX."""
-    filter_path = resource_path("pandoc/filters/table_metadata.lua")
+def docx_metadata_filter_args() -> list[str]:
+    """Return Pandoc args for DOCX-only hidden metadata markers."""
+    filter_path = resource_path("pandoc/filters/docx_metadata.lua")
     if not filter_path.exists():
-        raise FileNotFoundError(f"Table metadata Pandoc filter not found: {filter_path}")
+        raise FileNotFoundError(f"DOCX metadata Pandoc filter not found: {filter_path}")
     return ["--lua-filter", to_pandoc_path(filter_path)]
 
 
@@ -328,14 +327,6 @@ def mathtype_marked_docx_path() -> Path:
     # Keep the marker DOCX out of the final output directory but preserve it for
     # debugging failed conversions.
     return work_dir / f"{SETTINGS.project_name}.marked.docx"
-
-
-def mathtype_filter_args() -> list[str]:
-    """Return Pandoc args that insert hidden LaTeX markers before DOCX writing."""
-    marker_filter = resource_path(SETTINGS.mathtype_marker_filter)
-    if not marker_filter.exists():
-        raise FileNotFoundError(f"MathType marker filter not found: {marker_filter}")
-    return ['--lua-filter', to_pandoc_path(marker_filter)]
 
 
 def resolve_mathtype_build_enabled(requested: bool) -> bool:
@@ -447,7 +438,7 @@ def build_docx(*, warn_hat_order: bool = True):
     pandoc_output = docx_file
     pandoc_env = {}
     extra_args.extend(reference_doc_args())
-    extra_args.extend(table_metadata_filter_args())
+    extra_args.extend(docx_metadata_filter_args())
 
     embed_svg_images = should_embed_docx_svg_images(metadata)
     if embed_svg_images:
@@ -468,7 +459,7 @@ def build_docx(*, warn_hat_order: bool = True):
 
     if use_mathtype:
         pandoc_output = mathtype_marked_docx_path()
-        extra_args.extend(mathtype_filter_args())
+        pandoc_env["PMT_ENABLE_MATHTYPE_MARKERS"] = "true"
 
     # Run pandoc
     run_pandoc(

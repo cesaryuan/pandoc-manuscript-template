@@ -10,6 +10,7 @@ template: ${.}/templates/default.xml
 
 # Filters are applied in order
 filters:
+  - ${.}/filters/equation_revision_attr.lua
   - pandoc-crossref  # Must come before citeproc
   - citeproc
   - ${.}/filters/citation_number_range_delimiter.lua

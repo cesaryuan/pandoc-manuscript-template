@@ -295,7 +295,7 @@ def test_build_reply_docx_uses_svg_filters(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(reply_build, "replace_citations", lambda text, refs, clusters=None: text)
     monkeypatch.setattr(reply_build, "resolved_reply_path", lambda _: resolved_reply)
     monkeypatch.setattr(reply_build, "pandoc_command", lambda: "pandoc")
-    monkeypatch.setattr(reply_build, "table_metadata_filter_args", lambda: ["--lua-filter", "table.lua"])
+    monkeypatch.setattr(reply_build, "docx_metadata_filter_args", lambda: ["--lua-filter", "docx-metadata.lua"])
     monkeypatch.setattr(reply_build, "svg_embed_images_filter_args", lambda: ["--filter", "embed.py"])
     monkeypatch.setattr(reply_build, "svg_to_png_filter_args", lambda: ["--filter", "png.py"])
     monkeypatch.setattr(reply_build, "pandoc_tools_env", lambda env=None: env or {})

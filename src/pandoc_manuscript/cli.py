@@ -25,7 +25,7 @@ from . import __version__
 from .build import DEFAULT_OUTPUT_DIR, run_build_command
 from .paths import PMT_DIR
 from .reply_build import BuildReplySettings
-from .resources import iter_project_template_entries, package_resource_path, project_template_root, template_root
+from .resources import iter_project_template_entries, project_template_root, template_root
 from .tools import ensure_pandoc_tools, pandoc_tools_env, resolve_tool, setup_pandoc_tools
 
 
@@ -398,9 +398,9 @@ class DoctorSettings(BaseSettings):
                 ("pmt package build module", True, "pandoc_manuscript.build"),
                 ("pmt pandoc defaults", (root / "pandoc" / "pandoc-docx.yml").exists(), str(root / "pandoc")),
                 (
-                    "pmt MathType marker filter",
-                    package_resource_path("mathtype/mathtype_markers.lua").exists(),
-                    str(package_resource_path("mathtype/mathtype_markers.lua")),
+                    "pmt DOCX metadata filter",
+                    (root / "pandoc" / "filters" / "docx_metadata.lua").exists(),
+                    str(root / "pandoc" / "filters" / "docx_metadata.lua"),
                 ),
                 ("project directory", project_dir.exists(), str(project_dir)),
                 ("project manuscript.md", (project_dir / "manuscript.md").exists(), str(project_dir / "manuscript.md")),

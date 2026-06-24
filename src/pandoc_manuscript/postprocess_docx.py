@@ -33,6 +33,7 @@ except ImportError:
 try:
     from .postprocess.common import print_error, print_debug_success, print_warning
     from .postprocess.merge_table_cells import merge_table_cells
+    from .postprocess.process_equation_metadata import process_equation_metadata
     from .postprocess.process_table_metadata import process_table_metadata
     from .postprocess.autofit_tables import autofit_tables
     from .postprocess.table_text_style import process_all_tables as convert_table_text_style, ensure_table_text_style_exists
@@ -50,6 +51,7 @@ except ImportError as e:
     print("Make sure all scripts are in the same directory:")
     print("  - metadata.py")
     print("  - merge_table_cells.py")
+    print("  - process_equation_metadata.py")
     print("  - process_table_metadata.py")
     print("  - autofit_tables.py")
     print("  - table_text_style.py")
@@ -163,6 +165,11 @@ def postprocess_docx(
             processed, settings = process_table_metadata(doc)
             print_debug_success(f"Processed {processed} table(s), Applied {settings} setting(s)")
 
+        def process_equation_metadata_step() -> None:
+            """Apply revision=true display-equation markers before other math layout fixes."""
+            processed, runs = process_equation_metadata(doc)
+            print_debug_success(f"Processed {processed} equation(s), Updated {runs} math run(s)")
+
         def clear_subfigure_table_format_step() -> None:
             """Clear formatting from tables used only for subfigure layout."""
             processed_count = clear_subfigure_table_format(doc)
@@ -227,6 +234,7 @@ def postprocess_docx(
             ("Converting table text style", convert_table_text_style_step),
             ("Applying post-table paragraph style", apply_para_after_table_style_step),
             ("Auto-fitting tables to window", autofit_tables_step),
+            ("Applying equation revision metadata", process_equation_metadata_step),
             ("Applying table attribute metadata", process_table_metadata_step),
             ("Formatting equation layout tables", format_equation_layout_tables_step),
             ("Applying where paragraph style", apply_where_paragraph_style_step),

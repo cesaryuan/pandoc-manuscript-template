@@ -36,7 +36,7 @@ from .paths import (
 )
 from .postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from .postprocess_docx import postprocess_docx
-from .resources import package_resource_path, template_root
+from .resources import template_root
 from . import svg_filters as svg_filter_helpers
 from .svg_filters import (
     should_convert_docx_svg_to_png,
@@ -319,19 +319,11 @@ def mathtype_marked_docx_path(output: Path) -> Path:
     return work_dir / f"{output.stem}.marked.docx"
 
 
-def mathtype_filter_args() -> list[str]:
-    """Return Pandoc args that insert hidden LaTeX markers before DOCX writing."""
-    marker_filter = package_resource_path("mathtype/mathtype_markers.lua")
-    if not marker_filter.exists():
-        raise FileNotFoundError(f"MathType marker filter not found: {marker_filter}")
-    return ["--lua-filter", to_pandoc_path(marker_filter)]
-
-
-def table_metadata_filter_args() -> list[str]:
-    """Return Pandoc args for embedding hidden reply table-attribute markers."""
-    filter_path = template_root() / "pandoc" / "filters" / "table_metadata.lua"
+def docx_metadata_filter_args() -> list[str]:
+    """Return Pandoc args for hidden DOCX metadata markers used by reply builds."""
+    filter_path = template_root() / "pandoc" / "filters" / "docx_metadata.lua"
     if not filter_path.exists():
-        raise FileNotFoundError(f"Table metadata Pandoc filter not found: {filter_path}")
+        raise FileNotFoundError(f"DOCX metadata Pandoc filter not found: {filter_path}")
     return ["--lua-filter", to_pandoc_path(filter_path)]
 
 
@@ -1381,7 +1373,6 @@ def build_reply_docx(
     temp_reply_path.write_text(resolved_text, encoding="utf-8")
 
     try:
-        mathtype_args = mathtype_filter_args() if use_mathtype else []
         embed_svg_images = should_embed_docx_svg_images(metadata)
         convert_all_svg = should_convert_docx_svg_to_png(metadata)
         if embed_svg_images:
@@ -1396,6 +1387,8 @@ def build_reply_docx(
             **svg_embed_images_filter_env(reply, metadata, embed_images=embed_svg_images),
             **svg_to_png_filter_env(reply, metadata, convert_all=convert_all_svg),
         }
+        if use_mathtype:
+            svg_filter_env["PMT_ENABLE_MATHTYPE_MARKERS"] = "true"
         cmd = [
             pandoc_command(),
             str(temp_reply_path),
@@ -1407,9 +1400,8 @@ def build_reply_docx(
             str(reference_doc),
             "--resource-path",
             reply_resource_path(reply),
-            *table_metadata_filter_args(),
+            *docx_metadata_filter_args(),
             *svg_filter_args,
-            *mathtype_args,
         ]
         run_command(cmd, env=pandoc_tools_env(svg_filter_env))
 

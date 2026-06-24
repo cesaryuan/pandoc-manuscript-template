@@ -53,7 +53,7 @@ This section describes the methodology employed in the research.
 
 : Experimental setup configuration {#tbl:setup}
 
-The table above demonstrates basic table formatting. For DOCX output, you can use advanced formatting features by adding Pandoc table attributes or cell merge markers (see examples in @tbl:advanced-formatting and @tbl:merged-cells).
+The table above demonstrates basic table formatting. [For DOCX output, you can use advanced formatting features by adding Pandoc table attributes or cell merge markers]{custom-style="Revision Char"} (see examples in @tbl:advanced-formatting and @tbl:merged-cells).
 
 ## Advanced Table Formatting (DOCX Only)
 

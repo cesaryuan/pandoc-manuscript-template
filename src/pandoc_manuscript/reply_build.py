@@ -1019,7 +1019,12 @@ def extract_pdf_numbered_lines_by_layout(document: Any) -> list[tuple[int, int, 
             continue
 
         body_left = min(bbox[0] for _, bbox in text_lines)
-        margin_numbers = [(number, bbox) for number, bbox in number_lines if bbox[2] < body_left - 2]
+        # Some pages introduce slightly indented body lines late in the page
+        # (for example, reference entries starting with "[1]"), which can move
+        # `body_left` close enough to the line-number column that comparing the
+        # number box's right edge becomes too strict. Anchor on the left edge
+        # instead so the true margin-number column still survives extraction.
+        margin_numbers = [(number, bbox) for number, bbox in number_lines if bbox[0] < body_left - 2]
         body_lines = group_body_lines_by_y(text_lines)
 
         for number, number_bbox in margin_numbers:

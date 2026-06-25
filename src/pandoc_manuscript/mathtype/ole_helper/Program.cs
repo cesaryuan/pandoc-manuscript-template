@@ -456,8 +456,35 @@ internal static class Program
 
         var bytes = options.BinaryInput
             ? File.ReadAllBytes(options.InputPath)
-            : EncodeText(File.ReadAllText(options.InputPath, Encoding.UTF8), options.EncodingName);
+            : EncodeText(ReadTextInput(options), options.EncodingName);
         return new Payload(formatId, bytes);
+    }
+
+    /// <summary>
+    /// Read text input from a file, or accept literal TeX passed through --input.
+    /// </summary>
+    private static string ReadTextInput(Options options)
+    {
+        if (File.Exists(options.InputPath))
+        {
+            return File.ReadAllText(options.InputPath, Encoding.UTF8);
+        }
+
+        if (IsTeXInputFormat(options.Format))
+        {
+            Log("using literal TeX input");
+            return options.InputPath;
+        }
+
+        throw new FileNotFoundException($"Input file was not found: {options.InputPath}", options.InputPath);
+    }
+
+    /// <summary>
+    /// Return whether the clipboard format accepts literal LaTeX formula text.
+    /// </summary>
+    private static bool IsTeXInputFormat(string formatName)
+    {
+        return formatName.Equals("TeX Input Language", StringComparison.OrdinalIgnoreCase);
     }
 
     private static PreviewMetadata WriteWmfPreview(object created, string outputPath)

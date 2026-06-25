@@ -10,6 +10,7 @@ from typing import Any
 
 import yaml
 
+from ...docx.equation_layout import sync_eqn_block_template_with_page_margins
 from ...runtime.logging import log_info, log_warning
 from ...runtime.metadata import load_merged_metadata_with_status, merge_metadata, parse_yaml_file
 from ...runtime.paths import PMT_REPLY_PROBE_DIR
@@ -82,6 +83,13 @@ def write_reply_style_metadata_file(style: Path) -> Path:
     """Write flattened reply metadata for filters that need top-level keys."""
     REPLY_PROBE_DIR.mkdir(parents=True, exist_ok=True)
     metadata = load_reply_style_metadata(style)
+    metadata, tab_stops = sync_eqn_block_template_with_page_margins(metadata)
+    if tab_stops is not None:
+        center_tab, right_tab = tab_stops
+        log_info(
+            "[INFO] Synced reply eqnBlockTemplate tab stops from docxPageMargins: "
+            f"center={center_tab}, right={right_tab}"
+        )
     flattened_style = REPLY_PROBE_DIR / "style.reply.flat.yml"
     flattened_style.write_text(
         yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False),
@@ -448,9 +456,23 @@ def raw_openxml_inline(xml: str) -> str:
     return f"`{xml}`{{=openxml}}"
 
 
-def replace_labeled_equation_blocks(markdown: str, reference_map: dict[str, str]) -> str:
+def equation_openxml_prefix_from_metadata(metadata: dict[str, Any]) -> str:
+    """Return the reply equation OpenXML prefix aligned with current metadata."""
+    synced_metadata, _ = sync_eqn_block_template_with_page_margins(
+        {**metadata, "eqnBlockTemplate": REPLY_EQUATION_OPENXML_PREFIX}
+    )
+    template = synced_metadata.get("eqnBlockTemplate")
+    return template if isinstance(template, str) else REPLY_EQUATION_OPENXML_PREFIX
+
+
+def replace_labeled_equation_blocks(
+    markdown: str,
+    reference_map: dict[str, str],
+    metadata: dict[str, Any] | None = None,
+) -> str:
     """Render labeled reply equations with manuscript numbers and Word tab stops."""
     replacements = 0
+    openxml_prefix = equation_openxml_prefix_from_metadata(metadata or {})
 
     def replace_match(match: re.Match[str]) -> str:
         """Return a tab-layout equation paragraph or keep unresolved syntax unchanged."""
@@ -463,7 +485,7 @@ def replace_labeled_equation_blocks(markdown: str, reference_map: dict[str, str]
         replacements += 1
         math = compact_display_math_for_inline(match.group("math"))
         return (
-            f"{raw_openxml_inline(REPLY_EQUATION_OPENXML_PREFIX)}"
+            f"{raw_openxml_inline(openxml_prefix)}"
             f"${math}$"
             f"{raw_openxml_inline(REPLY_EQUATION_OPENXML_NUMBER_TAB)}"
             f"{number}"
@@ -602,9 +624,10 @@ def resolve_reply_markdown(
     reference_map = resolve_reference_map(manuscript, flattened_style, labels, from_format)
     citation_map = resolve_citation_map(manuscript, flattened_style, citations, from_format)
     citation_cluster_map = resolve_citation_cluster_map(manuscript, flattened_style, citation_clusters, from_format)
+    metadata = parse_yaml_file(flattened_style)
 
     resolved_text = reply_line_source.resolve_line_regexes(reply_text, manuscript_line_source)
     if format_labeled_equations:
-        resolved_text = replace_labeled_equation_blocks(resolved_text, reference_map)
+        resolved_text = replace_labeled_equation_blocks(resolved_text, reference_map, metadata)
     resolved_text = replace_references(resolved_text, reference_map)
     return replace_citations(resolved_text, citation_map, citation_cluster_map)

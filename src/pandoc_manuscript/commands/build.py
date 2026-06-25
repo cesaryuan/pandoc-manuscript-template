@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Literal, Tuple
 
+import yaml
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, CliPositionalArg, CliSuppress, SettingsConfigDict
 
@@ -23,8 +24,10 @@ from ..mathtype.convert_marked_docx import convert_marked_docx
 from ..mathtype.ole_parts import build_helper, check_mathtype_availability
 from ..runtime.paths import (
     PMT_MATHTYPE_WORK_DIR,
+    PMT_WORK_DIR,
     pmt_path,
 )
+from ..docx.equation_layout import sync_eqn_block_template_with_page_margins
 from ..docx.postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from ..docx.postprocess import postprocess_docx as run_docx_postprocess
 from ..runtime.resources import package_resource_path, template_root
@@ -409,11 +412,31 @@ def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
     )
 
 
+def adjusted_docx_metadata_file(metadata: dict[str, Any]) -> Path:
+    """Write build metadata with equation tab stops synced to docxPageMargins."""
+    synced_metadata, tab_stops = sync_eqn_block_template_with_page_margins(metadata)
+    metadata_dir = PMT_WORK_DIR / "metadata"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    metadata_file = metadata_dir / "style.docx.generated.yml"
+    metadata_file.write_text(
+        yaml.safe_dump(synced_metadata, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    if tab_stops is not None:
+        center_tab, right_tab = tab_stops
+        log_info(
+            "[INFO] Synced eqnBlockTemplate tab stops from docxPageMargins: "
+            f"center={center_tab}, right={right_tab}"
+        )
+    return metadata_file
+
+
 def run_pandoc(
     defaults_file: Path,
     output_file: Path,
     extra_args: list[str] | None = None,
     extra_env: dict[str, str] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     """Run Pandoc with original defaults so ${.} resolves beside that file."""
     extra_args = extra_args or []
@@ -421,7 +444,7 @@ def run_pandoc(
         pandoc_command(),
         '--defaults',
         str(defaults_file),
-        *style_metadata_args(),
+        *style_metadata_args(metadata),
         *project_csl_args(),
         '--output',
         to_pandoc_path(output_file),
@@ -438,8 +461,10 @@ def reference_doc_args() -> list[str]:
     return ['--reference-doc', to_pandoc_path(Path(SETTINGS.reference_doc))]
 
 
-def style_metadata_args() -> list[str]:
+def style_metadata_args(metadata: dict[str, Any] | None = None) -> list[str]:
     """Return Pandoc CLI args for project style metadata when style.yml exists."""
+    if metadata is not None and should_use_style_metadata_file():
+        return ["--metadata-file", to_pandoc_path(adjusted_docx_metadata_file(metadata))]
     return [
         arg
         for metadata_file in style_metadata_files()
@@ -514,6 +539,7 @@ def build_docx(*, warn_hat_order: bool = True):
         pandoc_output,
         extra_args=extra_args,
         extra_env=pandoc_env,
+        metadata=metadata,
     )
 
     # Post-process DOCX if enabled

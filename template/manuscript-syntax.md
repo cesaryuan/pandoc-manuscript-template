@@ -536,6 +536,10 @@ docxPageMargins:
   right: 3.17cm
 ```
 
+For DOCX builds, `pmt` also derives the two OpenXML `w:pos` tab stops in
+`eqnBlockTemplate` from these left/right margins. This keeps tab-stop equations
+centered in the writable text width when page margins change.
+
 Common Chinese built-in names such as `标题 1`, `正文文本`, and `正文` are automatically mapped to the corresponding Word built-in style names like `Heading 1`, `Body Text`, and `Normal`. Custom styles still need to use their exact DOCX style names.
 
 ```yaml

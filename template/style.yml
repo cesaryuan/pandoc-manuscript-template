@@ -76,11 +76,11 @@ tableEqns: true
 #   +-------+----------------------------------------------------+---------+
 ## 制表符排版 Word 公式
 # eqnBlockTemplate: | # 用制表符排版公式，不需要后处理脚本，但是 Display Math 在 docx 中会显示为行内公式
-#    `<w:pPr><w:tabs><w:tab w:val="center" w:leader="none" w:pos="4888" /><w:tab w:val="right" w:leader="none" w:pos="9746" /></w:tabs></w:pPr><w:r><w:tab /></w:r>`{=openxml} $$t$$ `<w:r><w:tab /></w:r>`{=openxml} $$nmi$$
+#    `<w:pPr><w:tabs><w:tab w:val="center" w:leader="none" w:pos="4156" /><w:tab w:val="right" w:leader="none" w:pos="8312" /></w:tabs></w:pPr><w:r><w:tab /></w:r>`{=openxml} $$t$$ `<w:r><w:tab /></w:r>`{=openxml} $$nmi$$
 # eqnBlockInlineMath: true    # Support for centered equations and right-aligned numbering
 ## 制表符排版 Mathtype 公式
 eqnBlockTemplate: | # 用制表符排版公式，不需要后处理脚本，但是 Display Math 在 docx 中会显示为行内公式
-   `<w:pPr><w:tabs><w:tab w:val="center" w:leader="none" w:pos="4888" /><w:tab w:val="right" w:leader="none" w:pos="9746" /></w:tabs></w:pPr><w:r><w:tab /></w:r>`{=openxml}$$t$$`<w:r><w:tab /></w:r>`{=openxml}$$nmi$$
+   `<w:pPr><w:tabs><w:tab w:val="center" w:leader="none" w:pos="4156" /><w:tab w:val="right" w:leader="none" w:pos="8312" /></w:tabs></w:pPr><w:r><w:tab /></w:r>`{=openxml}$$t$$`<w:r><w:tab /></w:r>`{=openxml}$$nmi$$
 eqnBlockInlineMath: true    # Support for centered equations and right-aligned numbering
 
 ## Options for section numbering and auto-labeling

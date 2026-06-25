@@ -223,7 +223,9 @@ def build_reply_docx(
     try:
         embed_svg_images = should_embed_docx_svg_images(metadata)
         convert_all_svg = should_convert_docx_svg_to_png(metadata)
-        if embed_svg_images:
+        if convert_all_svg and svg_filter_helpers.requested_docx_svg_image_embedding(metadata):
+            log_info("[INFO] Skipping reply SVG child-image embedding because docxConvertSvgToPng is enabled")
+        elif embed_svg_images:
             log_info("[INFO] Embedding linked child images inside reply SVG files for DOCX")
         if convert_all_svg:
             log_info("[INFO] Converting referenced reply SVG images to PNG for DOCX")

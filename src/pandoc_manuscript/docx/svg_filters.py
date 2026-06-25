@@ -15,6 +15,18 @@ from ..runtime.resources import template_root
 SVG_TO_PNG_DPI_KEYS = ("docxSvgToPngDpi", "docx-svg-to-png-dpi")
 SVG_TO_PNG_SCALE_KEYS = ("docxSvgToPngScale", "docx-svg-to-png-scale")
 SVG_TO_PNG_WIDTH_KEYS = ("docxSvgToPngWidth", "docx-svg-to-png-width")
+DOCX_SVG_EMBED_IMAGE_KEYS = (
+    "docxEmbedSvgImages",
+    "docx-embed-svg-images",
+    "embedSvgImages",
+    "embed-svg-images",
+)
+DOCX_SVG_TO_PNG_KEYS = (
+    "docxConvertSvgToPng",
+    "docx-convert-svg-to-png",
+    "convertSvgToPng",
+    "convert-svg-to-png",
+)
 
 
 def to_pandoc_path(path: Path) -> str:
@@ -94,17 +106,12 @@ def validate_svg_to_png_controls(metadata: dict[str, Any]) -> None:
         raise ValueError(f"Only one of docxSvgToPngWidth, docxSvgToPngScale, docxSvgToPngDpi can be set; got: {options}")
 
 
-def should_embed_docx_svg_images(metadata: dict[str, Any]) -> bool:
-    """Return True when DOCX builds should inline child images inside SVG files."""
+def requested_docx_svg_image_embedding(metadata: dict[str, Any]) -> bool:
+    """Return the raw SVG child-image embedding flag before PNG conversion overrides it."""
     return metadata_bool(
         metadata_first(
             metadata,
-            (
-                "docxEmbedSvgImages",
-                "docx-embed-svg-images",
-                "embedSvgImages",
-                "embed-svg-images",
-            ),
+            DOCX_SVG_EMBED_IMAGE_KEYS,
             True,
         )
     )
@@ -115,15 +122,17 @@ def should_convert_docx_svg_to_png(metadata: dict[str, Any]) -> bool:
     return metadata_bool(
         metadata_first(
             metadata,
-            (
-                "docxConvertSvgToPng",
-                "docx-convert-svg-to-png",
-                "convertSvgToPng",
-                "convert-svg-to-png",
-            ),
+            DOCX_SVG_TO_PNG_KEYS,
             False,
         )
     )
+
+
+def should_embed_docx_svg_images(metadata: dict[str, Any]) -> bool:
+    """Return True when DOCX builds should inline child images inside SVG files."""
+    if should_convert_docx_svg_to_png(metadata):
+        return False
+    return requested_docx_svg_image_embedding(metadata)
 
 
 def python_filter_wrapper(filter_path: Path, name: str) -> Path:

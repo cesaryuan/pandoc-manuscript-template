@@ -62,6 +62,17 @@ def test_svg_embed_env_keeps_global_embedding_switch(monkeypatch) -> None:
     assert env["PMT_SVG_EMBED_IMAGES"] == "true"
 
 
+def test_svg_embed_env_disables_embedding_when_global_png_conversion_is_enabled(monkeypatch) -> None:
+    """Keep full SVG rasterization from doing redundant child-image embedding first."""
+    monkeypatch.setattr(build.SETTINGS, "manuscript_file", "manuscript.md")
+
+    env = build.docx_svg_embed_images_filter_env(
+        {"docxEmbedSvgImages": True, "docxConvertSvgToPng": True}
+    )
+
+    assert env["PMT_SVG_EMBED_IMAGES"] == "false"
+
+
 def test_reply_svg_embed_env_uses_shared_cache(tmp_path) -> None:
     """Route reply self-contained SVG cache files through the shared pmt cache."""
     reply = tmp_path / "reply.md"

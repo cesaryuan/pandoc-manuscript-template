@@ -238,7 +238,9 @@ With this option, `pmt build docx` converts local Markdown image references such
 as `figures/model-comparison.svg` to cached self-contained SVG files under
 `.pmt/cache/svg-embedded/`. The linked child panels are embedded into the cached
 SVG as data URIs, while SVG text and vector elements remain SVG. The source
-Markdown and SVG files are not rewritten.
+Markdown and SVG files are not rewritten. If `docxConvertSvgToPng: true` is
+enabled, `docxEmbedSvgImages` is automatically disabled because the full SVG is
+rasterized instead.
 
 If one SVG must be rasterized for a specific submission target, add
 `to-png=true` to that image. Add `to-png-scale=2` on the same image when it

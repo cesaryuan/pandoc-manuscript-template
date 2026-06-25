@@ -486,12 +486,14 @@ def build_docx(*, warn_hat_order: bool = True):
     extra_args.extend(docx_metadata_filter_args())
 
     embed_svg_images = should_embed_docx_svg_images(metadata)
-    if embed_svg_images:
+    convert_all_svg = should_convert_docx_svg_to_png(metadata)
+    if convert_all_svg and svg_filter_helpers.requested_docx_svg_image_embedding(metadata):
+        log_info("[INFO] Skipping SVG child-image embedding because docxConvertSvgToPng is enabled")
+    elif embed_svg_images:
         log_info("[INFO] Embedding linked child images inside SVG files for DOCX")
     extra_args.extend(docx_svg_embed_images_filter_args())
     pandoc_env.update(docx_svg_embed_images_filter_env(metadata, embed_images=embed_svg_images))
 
-    convert_all_svg = should_convert_docx_svg_to_png(metadata)
     if convert_all_svg:
         log_info("[INFO] Converting referenced SVG images to PNG for DOCX")
     extra_args.extend(docx_svg_to_png_filter_args())

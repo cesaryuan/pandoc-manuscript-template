@@ -8,10 +8,13 @@ import platform
 import re
 import shutil
 import subprocess
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..runtime.logging import log_debug, log_info, log_warning
+from tqdm import tqdm
+
+from ..runtime.logging import log_debug, log_info, log_warning, should_log
 from ..runtime.paths import PMT_MATHTYPE_CACHE_DIR
 from ..runtime.resources import package_resource_path
 
@@ -531,6 +534,20 @@ def inspect_ole(path: Path) -> CompoundFile:
     return compound
 
 
+def iter_equation_requests_with_progress(
+    requests: list[EquationRequest],
+) -> Iterator[tuple[int, EquationRequest]]:
+    """Yield MathType requests with a progress bar for slow COM conversion."""
+    return tqdm(
+        enumerate(requests, start=1),
+        total=len(requests),
+        desc="[mathtype] converting equations",
+        unit="eq",
+        dynamic_ncols=True,
+        disable=None if should_log("INFO") else True,
+    )
+
+
 def generate_equation_parts(requests: list[EquationRequest], output_dir: Path) -> list[GeneratedEquation]:
     """Generate OLE bins and WMF previews for all marker-bound formulas."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -547,7 +564,7 @@ def generate_equation_parts(requests: list[EquationRequest], output_dir: Path) -
             "equations will fall back to MathType's current default size"
         )
 
-    for index, request in enumerate(requests, start=1):
+    for index, request in iter_equation_requests_with_progress(requests):
         latex = request.latex
         input_path = output_dir / f"eq_{index:03d}.tex"
         ole_path = output_dir / f"eq_{index:03d}.ole.bin"

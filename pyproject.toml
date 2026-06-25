@@ -66,6 +66,11 @@ Issues = "https://github.com/cesaryuan/pandoc-manuscript-template/issues"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
 [tool.hatch.build]
 exclude = [
   ".git",

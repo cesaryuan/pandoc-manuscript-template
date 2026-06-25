@@ -96,7 +96,7 @@ output/docx/manuscript.docx
 如果你更喜欢先全局安装一次工具：
 
 ```bash
-uv tool install pandoc-manuscript-template
+uv tool install --upgrade pandoc-manuscript-template
 pmt init my-paper
 ```
 

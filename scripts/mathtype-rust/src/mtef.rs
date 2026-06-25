@@ -1,4 +1,8 @@
 use crate::ast::*;
+use crate::generated::char_tables::{
+    EncodedChar, StyledChar, BIG_OPERATOR_GLYPHS, MATHBB_CHARS, MATHCAL_CHARS, OPERATOR_CHARS,
+    SPECIAL_CHARS,
+};
 
 const MTEF_FIXED_DEFS: &[u8] = &[
     0x13, b'W', b'i', b'n', b'A', b'l', b'l', b'B', b'a', b's', b'i', b'c', b'C', b'o', b'd', b'e',
@@ -326,11 +330,7 @@ fn write_char(ch: char, out: &mut Vec<u8>, writer: &mut MtefWriter) -> Result<()
         writer.ensure_euclid_math_one(out);
     }
     if let Some(special) = special_char(ch) {
-        out.push(0x02);
-        out.push(0x04);
-        out.push(special.typeface);
-        write_u16(special.mtcode, out);
-        out.push(special.font_pos);
+        write_table_char(special.typeface, special.mtcode, special.font_pos, out);
         return Ok(());
     }
 
@@ -341,18 +341,19 @@ fn write_char(ch: char, out: &mut Vec<u8>, writer: &mut MtefWriter) -> Result<()
         ));
     }
 
-    out.push(0x02);
-    if is_symbol_char(ch) {
-        out.push(0x04);
-        out.push(0x86);
-        let mtcode = if ch == '-' { 0x2212 } else { code as u16 };
-        write_u16(mtcode, out);
-        out.push(code as u8);
+    if let Some(operator) = encoded_char(OPERATOR_CHARS, ch) {
+        write_table_char(operator.typeface, operator.mtcode, operator.font_pos, out);
+    } else if ch == '*' {
+        // MathType's TeX input does not produce a probe CHAR for literal '*';
+        // keep the legacy Symbol-font mapping for existing parser behavior.
+        write_table_char(0x86, code as u16, Some(code as u8), out);
     } else if is_function_char(ch) {
+        out.push(0x02);
         out.push(0x00);
         out.push(0x82);
         write_u16(code as u16, out);
     } else {
+        out.push(0x02);
         out.push(0x00);
         out.push(if ch.is_ascii_digit() { 0x88 } else { 0x83 });
         write_u16(code as u16, out);
@@ -360,70 +361,29 @@ fn write_char(ch: char, out: &mut Vec<u8>, writer: &mut MtefWriter) -> Result<()
     Ok(())
 }
 
-struct SpecialChar {
-    typeface: u8,
-    mtcode: u16,
-    font_pos: u8,
+/// Return MathType's generated style/font-position tuple for TeX command symbols.
+fn special_char(ch: char) -> Option<StyledChar> {
+    SPECIAL_CHARS.iter().copied().find(|entry| entry.ch == ch)
 }
 
-/// Return MathType's exact style/font-position tuple for TeX command symbols.
-fn special_char(ch: char) -> Option<SpecialChar> {
-    let greek_lower_pos = match ch {
-        'α' => Some((0x03b1, b'a')),
-        'β' => Some((0x03b2, b'b')),
-        'γ' => Some((0x03b3, b'g')),
-        'δ' => Some((0x03b4, b'd')),
-        'λ' => Some((0x03bb, b'l')),
-        'π' => Some((0x03c0, b'p')),
-        'ρ' => Some((0x03c1, b'r')),
-        'χ' => Some((0x03c7, b'c')),
-        'ω' => Some((0x03c9, b'w')),
-        _ => None,
-    };
-    if let Some((mtcode, font_pos)) = greek_lower_pos {
-        return Some(SpecialChar {
-            typeface: 0x84,
-            mtcode,
-            font_pos,
-        });
-    }
+/// Return a generated character entry from a table.
+fn encoded_char(table: &[EncodedChar], ch: char) -> Option<EncodedChar> {
+    table.iter().copied().find(|entry| entry.ch == ch)
+}
 
-    let greek_upper_pos = match ch {
-        'Δ' => Some((0x0394, b'D')),
-        'Ψ' => Some((0x03a8, b'Y')),
-        _ => None,
-    };
-    if let Some((mtcode, font_pos)) = greek_upper_pos {
-        return Some(SpecialChar {
-            typeface: 0x85,
-            mtcode,
-            font_pos,
-        });
+/// Write one generated CHAR record, preserving whether MathType used a font position.
+fn write_table_char(typeface: u8, mtcode: u16, font_pos: Option<u8>, out: &mut Vec<u8>) {
+    out.push(0x02);
+    if let Some(font_pos) = font_pos {
+        out.push(0x04);
+        out.push(typeface);
+        write_u16(mtcode, out);
+        out.push(font_pos);
+    } else {
+        out.push(0x00);
+        out.push(typeface);
+        write_u16(mtcode, out);
     }
-
-    let symbol = match ch {
-        'ϵ' => {
-            return Some(SpecialChar {
-                typeface: 0x7f,
-                mtcode: 0x03f5,
-                font_pos: 0xf2,
-            })
-        }
-        '×' => Some((0x00d7, 0xb4)),
-        '⋅' => Some((0x22c5, 0xd7)),
-        '∈' => Some((0x2208, 0xce)),
-        '∞' => Some((0x221e, 0xa5)),
-        '←' => Some((0x2190, 0xac)),
-        '…' => Some((0x2026, 0xbc)),
-        '≠' => Some((0x2260, 0xb9)),
-        '≥' => Some((0x2265, 0xb3)),
-        _ => None,
-    };
-    symbol.map(|(mtcode, font_pos)| SpecialChar {
-        typeface: 0x86,
-        mtcode,
-        font_pos,
-    })
 }
 
 /// Write MathType's fnSPACE character used for spacing commands.
@@ -504,18 +464,19 @@ fn write_font_char(
             write_u16(code as u16, out);
         }
         FontKind::MathCal => {
-            let typeface = if writer.euclid_math_two_defined && !writer.euclid_math_one_defined {
-                0x7e
+            let entry = math_font_char(MATHCAL_CHARS, ch, "mathcal")?;
+            if entry.font_pos.is_some() {
+                let typeface = if writer.euclid_math_two_defined && !writer.euclid_math_one_defined
+                {
+                    0x7e
+                } else {
+                    0x7f
+                };
+                writer.ensure_euclid_math_one(out);
+                write_table_char(typeface, entry.mtcode, entry.font_pos, out);
             } else {
-                0x7f
-            };
-            writer.ensure_euclid_math_one(out);
-            let (mtcode, font_pos) = mathcal_char(ch)?;
-            out.push(0x02);
-            out.push(0x04);
-            out.push(typeface);
-            write_u16(mtcode, out);
-            out.push(font_pos);
+                write_table_char(entry.typeface, entry.mtcode, entry.font_pos, out);
+            }
         }
         FontKind::MathSf => {
             out.extend_from_slice(&[
@@ -528,40 +489,26 @@ fn write_font_char(
             write_u16(code as u16, out);
         }
         FontKind::MathBb => {
-            let typeface = if writer.euclid_math_one_defined {
-                0x7e
+            let entry = math_font_char(MATHBB_CHARS, ch, "mathbb")?;
+            if entry.font_pos.is_some() {
+                let typeface = if writer.euclid_math_one_defined {
+                    0x7e
+                } else {
+                    0x7f
+                };
+                writer.ensure_euclid_math_two(out);
+                write_table_char(typeface, entry.mtcode, entry.font_pos, out);
             } else {
-                0x7f
-            };
-            writer.ensure_euclid_math_two(out);
-            let (mtcode, font_pos) = mathbb_char(ch)?;
-            out.push(0x02);
-            out.push(0x04);
-            out.push(typeface);
-            write_u16(mtcode, out);
-            out.push(font_pos);
+                write_table_char(entry.typeface, entry.mtcode, entry.font_pos, out);
+            }
         }
     }
     Ok(())
 }
 
-/// Return Euclid Math One codes for calligraphic uppercase letters in the manuscript.
-fn mathcal_char(ch: char) -> Result<(u16, u8), String> {
-    match ch {
-        'F' => Ok((0x2131, b'F')),
-        'L' => Ok((0x2112, b'L')),
-        'P' => Ok((0xf10f, b'P')),
-        'R' => Ok((0x211b, b'R')),
-        other => Err(format!("unsupported mathcal character: {other}")),
-    }
-}
-
-/// Return Euclid Math One codes for blackboard letters in the manuscript.
-fn mathbb_char(ch: char) -> Result<(u16, u8), String> {
-    match ch {
-        'I' => Ok((0xf088, b'I')),
-        other => Err(format!("unsupported mathbb character: {other}")),
-    }
+/// Return one generated math-font mapping or a font-specific error.
+fn math_font_char(table: &[EncodedChar], ch: char, font_name: &str) -> Result<EncodedChar, String> {
+    encoded_char(table, ch).ok_or_else(|| format!("unsupported {font_name} character: {ch}"))
 }
 
 /// Write simple MathType embellishments such as \bar{I} and \hat{P}.
@@ -665,11 +612,6 @@ fn write_embellished_char(ch: char, kinds: &[AccentKind], out: &mut Vec<u8>) -> 
     }
     out.push(0x00);
     Ok(())
-}
-
-/// Return true for operators MathType stores through Symbol font positions.
-fn is_symbol_char(ch: char) -> bool {
-    matches!(ch, '+' | '-' | '=' | '<' | '>' | '*')
 }
 
 /// Return true for punctuation MathType writes with the function style.
@@ -788,7 +730,7 @@ fn write_big_op(
     if final_limit_state.color != ColorState::Black {
         color_black(out);
     }
-    write_big_op_glyph(kind, out);
+    write_big_op_glyph(kind, out)?;
     out.push(0x00);
     Ok(WriteState {
         size: limit_size,
@@ -797,16 +739,21 @@ fn write_big_op(
 }
 
 /// Write the Sigma/Pi glyph MathType appends at the end of a big-op template.
-fn write_big_op_glyph(kind: BigOpKind, out: &mut Vec<u8>) {
-    let (mtcode, font_pos) = match kind {
-        BigOpKind::Sum => (0x2211, 0xe5),
-        BigOpKind::Product => (0x220f, 0xd5),
+fn write_big_op_glyph(kind: BigOpKind, out: &mut Vec<u8>) -> Result<(), String> {
+    let name = match kind {
+        BigOpKind::Sum => "sum",
+        BigOpKind::Product => "product",
     };
+    let glyph = BIG_OPERATOR_GLYPHS
+        .iter()
+        .find(|glyph| glyph.name == name)
+        .ok_or_else(|| format!("missing generated big-operator glyph: {name}"))?;
     out.push(0x02);
     out.push(0x04);
     out.push(0x86);
-    write_u16(mtcode, out);
-    out.push(font_pos);
+    write_u16(glyph.mtcode, out);
+    out.push(glyph.font_pos);
+    Ok(())
 }
 
 /// Write a postfix script template; selectors match MathType sub/sup variants.

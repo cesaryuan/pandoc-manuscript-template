@@ -1,5 +1,6 @@
 mod ast;
 mod cli;
+mod generated;
 mod mtef;
 mod ole;
 mod parser;

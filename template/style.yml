@@ -38,7 +38,16 @@ docxStyle:
     paragraphSpacing:
       before: 0pt
       after: 0pt
-
+# Reviewer reply output overrides. `pmt build reply` merges the top-level
+# metadata above with this section, and these values take precedence for replies.
+reply:
+  docxStyle:
+    正文文本:
+      firstLineIndentChars: 0
+      paragraphSpacing:
+        before: 6pt
+        after: 6pt
+        
 # Pandoc-crossref settings for cross-references
 ## Item caption prefix format: {figureTitle} {number}{titleDelim} {caption}
 figureTitle: "Figure "
@@ -75,16 +84,7 @@ subfigGrid: true            # Subfigure grid layout support
 subfigureChildTemplate: ($$i$$) $$t$$
 subfigureTemplate: $$figureTitle$$ $$i$$$$titleDelim$$ $$t$$
 
-# Reviewer reply output overrides. `pmt build reply` merges the top-level
-# metadata above with this section, and these values take precedence for replies.
-reply:
-  docxStyle:
-    正文文本:
-      firstLineIndentChars: 0
-      paragraphSpacing:
-        before: 6pt
-        after: 6pt
-
+# Options for bibliography
 reference-section-title: References
 link-citations: true
 # Citation Style Language (CSL) file

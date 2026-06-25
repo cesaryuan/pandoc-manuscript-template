@@ -47,6 +47,7 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        ConfigureConsoleEncoding();
         var existingMathTypeProcessIds = SnapshotMathTypeProcessIds();
         try
         {
@@ -72,6 +73,21 @@ internal static class Program
             }
             CloseMathTypeProcessesOpenedByHelper(existingMathTypeProcessIds);
             return 1;
+        }
+    }
+
+    /// <summary>
+    /// Force UTF-8 so localized helper failures survive Python stderr capture.
+    /// </summary>
+    private static void ConfigureConsoleEncoding()
+    {
+        try
+        {
+            Console.OutputEncoding = new UTF8Encoding(false);
+        }
+        catch (Exception)
+        {
+            // Encoding is best-effort; Python also has a legacy-codepage fallback.
         }
     }
 

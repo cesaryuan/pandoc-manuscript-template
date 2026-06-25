@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import locale
 import os
 import platform
 import re
@@ -260,23 +261,48 @@ def check_mathtype_availability() -> MathTypeAvailability:
     return MathTypeAvailability(tuple(reasons), tuple(details))
 
 
-def run(command: list[str], echo_stdout: bool = True) -> subprocess.CompletedProcess:
+def decode_process_output(data: bytes) -> str:
+    """Decode helper output without corrupting localized Windows diagnostics.
+
+    Older helper executables may write redirected stderr using the active
+    Windows code page instead of UTF-8, so fall back before replacing bytes.
+    """
+    if not data:
+        return ""
+
+    encodings = ["utf-8", locale.getpreferredencoding(False), "gb18030"]
+    if os.name == "nt":
+        encodings.extend(["mbcs", "oem"])
+
+    seen: set[str] = set()
+    for encoding in encodings:
+        normalized = encoding.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        try:
+            return data.decode(encoding)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
+def run(command: list[str], echo_stdout: bool = True) -> subprocess.CompletedProcess[str]:
     """Run a command and echo its useful output for MathType logs."""
     result = subprocess.run(
         command,
         check=False,
-        text=True,
         capture_output=True,
-        encoding="utf-8",
-        errors="replace",
     )
+    stdout = decode_process_output(result.stdout)
+    stderr = decode_process_output(result.stderr)
     if echo_stdout and result.stdout.strip():
-        log_info(result.stdout.strip())
-    if result.stderr.strip():
-        log_warning(result.stderr.strip())
+        log_info(stdout.strip())
+    if stderr.strip():
+        log_warning(stderr.strip())
     if result.returncode != 0:
         raise RuntimeError(f"command failed: {' '.join(command)}")
-    return result
+    return subprocess.CompletedProcess(command, result.returncode, stdout=stdout, stderr=stderr)
 
 
 def build_helper() -> None:

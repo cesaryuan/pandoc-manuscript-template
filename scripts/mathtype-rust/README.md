@@ -58,6 +58,32 @@ scripts\mathtype-rust\target\debug\mathtype-rust.exe `
 `--latex` 和 `--input` 必须二选一。PowerShell 中建议用单引号包住 LaTeX，
 避免 `$` 被当成变量展开。
 
+## Generate WMF Preview From MTEF
+
+Rust 程序只负责生成 OLE 和裸 MTEF。若需要 WMF 预览，可以把 `--mtef-output`
+写出的裸 MTEF 交给 `MathTypeOleHelper.exe`，让 MathType SDK 执行
+`MTEF -> PICT/WMF`：
+
+```powershell
+scripts\mathtype-rust\target\debug\mathtype-rust.exe `
+  --latex '$$1=a$$' `
+  --output C:\tmp\formula.rust.ole.bin `
+  --mtef-output C:\tmp\formula.mtef.bin
+
+src\pandoc_manuscript\mathtype\ole_helper\bin\Release\net48\MathTypeOleHelper.exe `
+  --method sdk-xform-ole `
+  --binary `
+  --format "MathType EF" `
+  --input C:\tmp\formula.mtef.bin `
+  --output C:\tmp\formula.sdk.ole.bin `
+  --preview-output C:\tmp\formula.wmf `
+  --metadata-output C:\tmp\formula.json
+```
+
+这里的 `sdk-xform-ole --binary` 只接受裸 MTEF 输入；不要直接把 LaTeX 文本传给
+该方法，因为 MathType 的 `.tdl` 文件是输出 translator，不会把 LaTeX 解析成
+公式结构。
+
 ## Source Layout
 
 `src` 目录按功能拆分：

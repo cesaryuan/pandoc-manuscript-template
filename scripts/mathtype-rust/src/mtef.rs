@@ -34,6 +34,12 @@ const EUCLID_MATH_TWO_DEFS: &[u8] = &[
     0x06, 0x00,
 ];
 
+const EUCLID_MATH_TWO_AFTER_ONE_DEFS: &[u8] = &[
+    0x13, b'E', b'u', b'c', b'l', b'i', b'd', b'M', b'a', b't', b'h', b'2', 0x00, 0x11, 0x08, b'E',
+    b'u', b'c', b'l', b'i', b'd', b' ', b'M', b'a', b't', b'h', b' ', b'T', b'w', b'o', 0x00, 0x08,
+    0x07, 0x00,
+];
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SizeState {
     Full,
@@ -74,7 +80,11 @@ impl MtefWriter {
     /// Emit Euclid Math Two once for blackboard characters such as \mathbb{I}.
     fn ensure_euclid_math_two(&mut self, out: &mut Vec<u8>) {
         if !self.euclid_math_two_defined {
-            out.extend_from_slice(EUCLID_MATH_TWO_DEFS);
+            if self.euclid_math_one_defined {
+                out.extend_from_slice(EUCLID_MATH_TWO_AFTER_ONE_DEFS);
+            } else {
+                out.extend_from_slice(EUCLID_MATH_TWO_DEFS);
+            }
             self.euclid_math_two_defined = true;
         }
     }
@@ -518,11 +528,16 @@ fn write_font_char(
             write_u16(code as u16, out);
         }
         FontKind::MathBb => {
+            let typeface = if writer.euclid_math_one_defined {
+                0x7e
+            } else {
+                0x7f
+            };
             writer.ensure_euclid_math_two(out);
             let (mtcode, font_pos) = mathbb_char(ch)?;
             out.push(0x02);
             out.push(0x04);
-            out.push(0x7f);
+            out.push(typeface);
             write_u16(mtcode, out);
             out.push(font_pos);
         }
@@ -536,6 +551,7 @@ fn mathcal_char(ch: char) -> Result<(u16, u8), String> {
         'F' => Ok((0x2131, b'F')),
         'L' => Ok((0x2112, b'L')),
         'P' => Ok((0xf10f, b'P')),
+        'R' => Ok((0x211b, b'R')),
         other => Err(format!("unsupported mathcal character: {other}")),
     }
 }
@@ -677,7 +693,7 @@ fn write_fraction(
     let numerator_state = write_line(numerator, out, current_size, writer)?;
     if numerator_state.size != current_size {
         write_size(current_size, out);
-        if expr_starts_with_big_op(denominator) && numerator_state.color != ColorState::Default {
+        if numerator_state.color != ColorState::Default {
             color_default(out);
         }
     } else {
@@ -686,15 +702,6 @@ fn write_fraction(
     let denominator_state = write_line(denominator, out, current_size, writer)?;
     out.push(0x00);
     Ok(denominator_state)
-}
-
-/// Return true for denominator lines where MathType restores color before a big-op template.
-fn expr_starts_with_big_op(expr: &Expr) -> bool {
-    match expr {
-        Expr::BigOp { .. } => true,
-        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_big_op),
-        _ => false,
-    }
 }
 
 /// Write a square-root template with a null nth-root index slot.
@@ -710,11 +717,14 @@ fn write_sqrt(
     if radicand_state.size != SizeState::Sub {
         write_size(SizeState::Sub, out);
     }
+    if radicand_state.color != ColorState::Black {
+        color_black(out);
+    }
     write_null_line(out);
     out.push(0x00);
     Ok(WriteState {
         size: SizeState::Sub,
-        color: ColorState::Default,
+        color: ColorState::Black,
     })
 }
 

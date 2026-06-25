@@ -208,3 +208,77 @@ def test_global_width_is_passed_to_resvg(tmp_path, monkeypatch) -> None:
     assert calls[0]["width"] == 1600
     metadata = json.loads(target.with_suffix(".png.meta.json").read_text(encoding="utf-8"))
     assert metadata["width"] == 1600
+
+
+def test_auto_width_from_percent() -> None:
+    """Derive a PNG width of 3000 * num% when width is a percentage."""
+    svg_filter = load_svg_filter()
+    assert svg_filter.image_auto_width(image("figure.svg", width="90%")) == 2700
+    assert svg_filter.image_auto_width(image("figure.svg", width="50%")) == 1500
+
+
+def test_auto_width_defaults_to_none_when_absent() -> None:
+    """Return None when no width= attribute is present (preserves scale/dpi sizing)."""
+    svg_filter = load_svg_filter()
+    assert svg_filter.image_auto_width(image("figure.svg")) is None
+
+
+def test_auto_width_from_pixels() -> None:
+    """Double an explicit pixel width."""
+    svg_filter = load_svg_filter()
+    assert svg_filter.image_auto_width(image("figure.svg", width="800px")) == 1600
+
+
+def test_auto_width_from_physical_units() -> None:
+    """Convert physical units at a fixed 500 dpi."""
+    svg_filter = load_svg_filter()
+    assert svg_filter.image_auto_width(image("figure.svg", width="1in")) == 500
+    assert svg_filter.image_auto_width(image("figure.svg", width="1inch")) == 500
+    # 2.54cm == 1in == 500px
+    assert svg_filter.image_auto_width(image("figure.svg", width="2.54cm")) == 500
+    # 25.4mm == 1in == 500px
+    assert svg_filter.image_auto_width(image("figure.svg", width="25.4mm")) == 500
+
+
+def test_auto_width_unparseable_returns_none() -> None:
+    """Fall back to None for unrecognized width syntax."""
+    svg_filter = load_svg_filter()
+    assert svg_filter.image_auto_width(image("figure.svg", width="auto")) is None
+
+
+def test_explicit_metadata_width_overrides_auto(monkeypatch) -> None:
+    """An explicit docxSvgToPngWidth wins over per-image auto-derivation."""
+    svg_filter = load_svg_filter()
+    widths: list[int | None] = []
+
+    class WidthDoc(DummyDoc):
+        pmt_svg_convert_all = True
+        pmt_svg_width = 1600
+
+    def fake_rewrite(elem: pf.Image, *args: object) -> pf.Image:
+        widths.append(args[4])
+        return elem
+
+    monkeypatch.setattr(svg_filter, "rewrite_image", fake_rewrite)
+
+    svg_filter.action(image("figure.svg", width="50%"), WidthDoc())
+    assert widths == [1600]
+
+
+def test_auto_width_used_when_metadata_absent(monkeypatch) -> None:
+    """Per-image auto width is used when docxSvgToPngWidth is not set."""
+    svg_filter = load_svg_filter()
+    widths: list[int | None] = []
+
+    class ConvertAllDoc(DummyDoc):
+        pmt_svg_convert_all = True
+
+    def fake_rewrite(elem: pf.Image, *args: object) -> pf.Image:
+        widths.append(args[4])
+        return elem
+
+    monkeypatch.setattr(svg_filter, "rewrite_image", fake_rewrite)
+
+    svg_filter.action(image("figure.svg", width="90%"), ConvertAllDoc())
+    assert widths == [2700]
+

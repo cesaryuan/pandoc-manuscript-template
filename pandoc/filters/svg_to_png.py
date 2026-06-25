@@ -12,6 +12,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +30,20 @@ TO_PNG_ATTRIBUTE_KEYS = ("to-png", "to_png", "toPng")
 TO_PNG_SCALE_ATTRIBUTE_KEYS = ("to-png-scale", "to_png_scale", "toPngScale")
 TRUE_VALUES = {"1", "true", "yes", "y", "on"}
 FALSE_VALUES = {"0", "false", "no", "n", "off", ""}
+
+# Auto-derive a rasterization pixel width from the Markdown image width= attribute
+# when docxSvgToPngWidth is not explicitly configured. A bare percentage (or a
+# missing width, treated as 100%) maps to a 3000px reference width, an explicit
+# pixel width is doubled, and physical units are converted at a fixed 500 dpi.
+AUTO_WIDTH_PERCENT_REFERENCE = 3000
+AUTO_WIDTH_PIXEL_SCALE = 2
+AUTO_WIDTH_PHYSICAL_DPI = 500
+INCHES_PER_UNIT = {
+    "in": 1.0,
+    "inch": 1.0,
+    "cm": 1.0 / 2.54,
+    "mm": 1.0 / 25.4,
+}
 CONVERTED: set[Path] = set()
 REUSED: set[Path] = set()
 SKIPPED: set[str] = set()
@@ -136,6 +151,36 @@ def image_scale_override(elem: pf.Image, default: float) -> tuple[float, bool]:
             return default, False
         return parsed, True
     return default, False
+
+
+def image_auto_width(elem: pf.Image) -> int | None:
+    """Derive a PNG pixel width from the image's width= attribute.
+
+    Rules (only used when docxSvgToPngWidth is not explicitly configured):
+    - width=num%               → round(3000 * num / 100)
+    - width=numpx              → round(num * 2)
+    - width=num{cm,mm,in,inch} → round(num * inches * 500 dpi)
+
+    A missing width attribute returns None so the caller falls back to
+    scale/dpi sizing (and any per-image to-png-scale still applies). An
+    unparseable width also returns None.
+    """
+    raw_value = elem.attributes.get("width")
+    if raw_value is None:
+        return None
+    raw = str(raw_value).strip()
+    m = re.fullmatch(r"([0-9]*\.?[0-9]+)\s*(%|px|cm|mm|in|inch)", raw, re.IGNORECASE)
+    if not m:
+        return None
+    num, unit = float(m.group(1)), m.group(2).lower()
+    if unit == "%":
+        return max(1, round(AUTO_WIDTH_PERCENT_REFERENCE * num / 100))
+    if unit == "px":
+        return max(1, round(num * AUTO_WIDTH_PIXEL_SCALE))
+    inches = INCHES_PER_UNIT.get(unit)
+    if inches is None:
+        return None
+    return max(1, round(num * inches * AUTO_WIDTH_PHYSICAL_DPI))
 
 
 def remove_to_png_attributes(elem: pf.Image) -> None:
@@ -478,7 +523,10 @@ def action(elem: pf.Element, doc: pf.Doc) -> pf.Element | None:
         return None
     requested_by_image = image_requests_png(elem)
     effective_scale, has_scale_override = image_scale_override(elem, doc.pmt_svg_scale)
-    if doc.pmt_svg_width is not None and has_scale_override:
+    # Determine effective width: explicit metadata value takes priority;
+    # otherwise derive per-image from the image's width= attribute.
+    effective_width = doc.pmt_svg_width if doc.pmt_svg_width is not None else image_auto_width(elem)
+    if effective_width is not None and has_scale_override:
         log_warning("[WARN] Ignoring to-png-scale because docxSvgToPngWidth is set")
         effective_scale = doc.pmt_svg_scale
         has_scale_override = False
@@ -499,7 +547,7 @@ def action(elem: pf.Element, doc: pf.Doc) -> pf.Element | None:
         doc.pmt_svg_output_root,
         doc.pmt_svg_dpi,
         effective_scale,
-        doc.pmt_svg_width,
+        effective_width,
         doc.pmt_svg_pmt_version,
         cache_suffix,
     )

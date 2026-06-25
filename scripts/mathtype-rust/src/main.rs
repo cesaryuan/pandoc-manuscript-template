@@ -4,6 +4,7 @@ mod generated;
 mod mtef;
 mod ole;
 mod parser;
+mod typeface;
 
 #[cfg(test)]
 mod tests;

@@ -3,6 +3,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[path = "../typeface.rs"]
+mod typeface;
+use typeface::*;
+
 const SECTOR_SIZE: usize = 512;
 const FREE_SECTOR: u32 = 0xffff_ffff;
 const END_OF_CHAIN: u32 = 0xffff_fffe;
@@ -148,7 +152,7 @@ fn build_targets() -> Result<Vec<Target>, String> {
             formula: leaked,
             selector: Selector::FontPos {
                 ch,
-                typeface: 0x7f,
+                typeface: EXPLICIT_FONT_NEG_1,
                 font_pos: ch as u8,
             },
         });
@@ -162,7 +166,7 @@ fn build_targets() -> Result<Vec<Target>, String> {
             formula: leaked,
             selector: Selector::FontPos {
                 ch,
-                typeface: 0x7f,
+                typeface: EXPLICIT_FONT_NEG_1,
                 font_pos: ch as u8,
             },
         });
@@ -189,7 +193,7 @@ fn build_targets() -> Result<Vec<Target>, String> {
             formula: leaked,
             selector: Selector::FontPos {
                 ch,
-                typeface: 0x86,
+                typeface: FN_SYMBOL,
                 font_pos: ch as u8,
             },
         });
@@ -200,7 +204,7 @@ fn build_targets() -> Result<Vec<Target>, String> {
         formula: "$x*y$",
         selector: Selector::PlainChar {
             ch: '*',
-            typeface: 0x82,
+            typeface: FN_FUNCTION,
             mtcode: 0x002a,
         },
     });
@@ -224,26 +228,44 @@ fn build_targets() -> Result<Vec<Target>, String> {
 /// Return TeX command probes for parser-supported non-ASCII symbols.
 fn special_targets() -> &'static [(char, &'static str, u8, u8, &'static str)] {
     &[
-        ('\u{03b1}', r"$\alpha$", 0x84, b'a', "special_alpha"),
-        ('\u{03b2}', r"$\beta$", 0x84, b'b', "special_beta"),
-        ('\u{03b3}', r"$\gamma$", 0x84, b'g', "special_gamma"),
-        ('\u{03b4}', r"$\delta$", 0x84, b'd', "special_delta"),
-        ('\u{03bb}', r"$\lambda$", 0x84, b'l', "special_lambda"),
-        ('\u{03c0}', r"$\pi$", 0x84, b'p', "special_pi"),
-        ('\u{03c1}', r"$\rho$", 0x84, b'r', "special_rho"),
-        ('\u{03c7}', r"$\chi$", 0x84, b'c', "special_chi"),
-        ('\u{03c9}', r"$\omega$", 0x84, b'w', "special_omega"),
-        ('\u{0394}', r"$\Delta$", 0x85, b'D', "special_Delta"),
-        ('\u{03a8}', r"$\Psi$", 0x85, b'Y', "special_Psi"),
-        ('\u{03f5}', r"$\epsilon$", 0x7f, 0xf2, "special_epsilon"),
-        ('\u{00d7}', r"$\times$", 0x86, 0xb4, "special_times"),
-        ('\u{22c5}', r"$\cdot$", 0x86, 0xd7, "special_cdot"),
-        ('\u{2208}', r"$\in$", 0x86, 0xce, "special_in"),
-        ('\u{221e}', r"$\infty$", 0x86, 0xa5, "special_infty"),
-        ('\u{2190}', r"$\leftarrow$", 0x86, 0xac, "special_leftarrow"),
-        ('\u{2026}', r"$\ldots$", 0x86, 0xbc, "special_ldots"),
-        ('\u{2260}', r"$\ne$", 0x86, 0xb9, "special_ne"),
-        ('\u{2265}', r"$\ge$", 0x86, 0xb3, "special_ge"),
+        ('\u{03b1}', r"$\alpha$", FN_LC_GREEK, b'a', "special_alpha"),
+        ('\u{03b2}', r"$\beta$", FN_LC_GREEK, b'b', "special_beta"),
+        ('\u{03b3}', r"$\gamma$", FN_LC_GREEK, b'g', "special_gamma"),
+        ('\u{03b4}', r"$\delta$", FN_LC_GREEK, b'd', "special_delta"),
+        (
+            '\u{03bb}',
+            r"$\lambda$",
+            FN_LC_GREEK,
+            b'l',
+            "special_lambda",
+        ),
+        ('\u{03c0}', r"$\pi$", FN_LC_GREEK, b'p', "special_pi"),
+        ('\u{03c1}', r"$\rho$", FN_LC_GREEK, b'r', "special_rho"),
+        ('\u{03c7}', r"$\chi$", FN_LC_GREEK, b'c', "special_chi"),
+        ('\u{03c9}', r"$\omega$", FN_LC_GREEK, b'w', "special_omega"),
+        ('\u{0394}', r"$\Delta$", FN_UC_GREEK, b'D', "special_Delta"),
+        ('\u{03a8}', r"$\Psi$", FN_UC_GREEK, b'Y', "special_Psi"),
+        (
+            '\u{03f5}',
+            r"$\epsilon$",
+            EXPLICIT_FONT_NEG_1,
+            0xf2,
+            "special_epsilon",
+        ),
+        ('\u{00d7}', r"$\times$", FN_SYMBOL, 0xb4, "special_times"),
+        ('\u{22c5}', r"$\cdot$", FN_SYMBOL, 0xd7, "special_cdot"),
+        ('\u{2208}', r"$\in$", FN_SYMBOL, 0xce, "special_in"),
+        ('\u{221e}', r"$\infty$", FN_SYMBOL, 0xa5, "special_infty"),
+        (
+            '\u{2190}',
+            r"$\leftarrow$",
+            FN_SYMBOL,
+            0xac,
+            "special_leftarrow",
+        ),
+        ('\u{2026}', r"$\ldots$", FN_SYMBOL, 0xbc, "special_ldots"),
+        ('\u{2260}', r"$\ne$", FN_SYMBOL, 0xb9, "special_ne"),
+        ('\u{2265}', r"$\ge$", FN_SYMBOL, 0xb3, "special_ge"),
     ]
 }
 
@@ -305,7 +327,16 @@ fn extract_target_record(ole_path: &Path, target: Target) -> Result<CharRecord, 
                 .iter()
                 .rev()
                 .copied()
-                .find(|record| matches!(record.typeface, 0x7e | 0x7f | 0x83 | 0x88 | 0x8b))
+                .find(|record| {
+                    matches!(
+                        record.typeface,
+                        EXPLICIT_FONT_NEG_2
+                            | EXPLICIT_FONT_NEG_1
+                            | FN_VARIABLE
+                            | FN_NUMBER
+                            | FN_MT_EXTRA
+                    )
+                })
                 .ok_or_else(|| {
                     format!(
                         "no math-font CHAR record matched {}; records={records:?}",
@@ -349,10 +380,7 @@ fn collect_char_records(mtef: &[u8]) -> Vec<CharRecord> {
         }
         let options = mtef[index + 1];
         let typeface = mtef[index + 2];
-        if !matches!(
-            typeface,
-            0x7e | 0x7f | 0x82 | 0x83 | 0x84 | 0x85 | 0x86 | 0x88 | 0x8b
-        ) {
+        if !is_supported_typeface(typeface) {
             continue;
         }
         let font_pos = if (options & 0x04) != 0 {
@@ -373,6 +401,12 @@ fn collect_char_records(mtef: &[u8]) -> Vec<CharRecord> {
 fn render_tables(rows: &[(Target, CharRecord)]) -> String {
     let mut output = String::from(
         "// @generated by `cargo run --bin generate_mtef_tables`; do not edit by hand.\n\
+         #[allow(unused_imports)]\n\
+         use crate::typeface::{\n\
+         \x20   EXPLICIT_FONT_NEG_1, EXPLICIT_FONT_NEG_2, FN_FUNCTION, FN_LC_GREEK,\n\
+         \x20   FN_MT_EXTRA, FN_SYMBOL, FN_UC_GREEK,\n\
+         };\n\
+         \n\
          #[derive(Clone, Copy, Debug, Eq, PartialEq)]\n\
          pub(crate) struct EncodedChar {\n\
          \x20   pub(crate) ch: char,\n\
@@ -421,9 +455,9 @@ fn render_encoded_table(
     {
         if let Some(ch) = selector_char(target.selector) {
             output.push_str(&format!(
-                "    EncodedChar {{ ch: {}, typeface: 0x{:02x}, mtcode: 0x{:04x}, font_pos: {} }},\n",
+                "    EncodedChar {{ ch: {}, typeface: {}, mtcode: 0x{:04x}, font_pos: {} }},\n",
                 char_literal(ch),
-                record.typeface,
+                typeface_literal(record.typeface),
                 record.mtcode,
                 option_byte_literal(record.font_pos)
             ));
@@ -448,9 +482,9 @@ fn render_styled_table(
     {
         if let Some(ch) = selector_char(target.selector) {
             output.push_str(&format!(
-                "    StyledChar {{ ch: {}, typeface: 0x{:02x}, mtcode: 0x{:04x}, font_pos: {} }},\n",
+                "    StyledChar {{ ch: {}, typeface: {}, mtcode: 0x{:04x}, font_pos: {} }},\n",
                 char_literal(ch),
-                record.typeface,
+                typeface_literal(record.typeface),
                 record.mtcode,
                 option_byte_literal(record.font_pos)
             ));
@@ -482,6 +516,38 @@ fn selector_char(selector: Selector) -> Option<char> {
     match selector {
         Selector::FontPos { ch, .. } | Selector::PlainChar { ch, .. } => Some(ch),
         Selector::BigOperator { .. } => None,
+    }
+}
+
+/// Return true for typefaces emitted by the current probe set.
+fn is_supported_typeface(typeface: u8) -> bool {
+    matches!(
+        typeface,
+        EXPLICIT_FONT_NEG_2
+            | EXPLICIT_FONT_NEG_1
+            | FN_FUNCTION
+            | FN_VARIABLE
+            | FN_LC_GREEK
+            | FN_UC_GREEK
+            | FN_SYMBOL
+            | FN_NUMBER
+            | FN_MT_EXTRA
+    )
+}
+
+/// Render a typeface byte using the MTEF documentation name when known.
+fn typeface_literal(typeface: u8) -> String {
+    match typeface {
+        EXPLICIT_FONT_NEG_2 => "EXPLICIT_FONT_NEG_2".to_string(),
+        EXPLICIT_FONT_NEG_1 => "EXPLICIT_FONT_NEG_1".to_string(),
+        FN_FUNCTION => "FN_FUNCTION".to_string(),
+        FN_VARIABLE => "FN_VARIABLE".to_string(),
+        FN_LC_GREEK => "FN_LC_GREEK".to_string(),
+        FN_UC_GREEK => "FN_UC_GREEK".to_string(),
+        FN_SYMBOL => "FN_SYMBOL".to_string(),
+        FN_NUMBER => "FN_NUMBER".to_string(),
+        FN_MT_EXTRA => "FN_MT_EXTRA".to_string(),
+        other => format!("0x{other:02x}"),
     }
 }
 

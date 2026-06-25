@@ -3,6 +3,10 @@ use crate::generated::char_tables::{
     EncodedChar, StyledChar, BIG_OPERATOR_GLYPHS, MATHBB_CHARS, MATHCAL_CHARS, OPERATOR_CHARS,
     SPECIAL_CHARS,
 };
+use crate::typeface::{
+    EXPLICIT_FONT_NEG_1, EXPLICIT_FONT_NEG_2, FN_EXPAND, FN_FUNCTION, FN_MT_EXTRA, FN_NUMBER,
+    FN_SPACE, FN_SYMBOL, FN_VARIABLE, FN_VECTOR,
+};
 
 const MTEF_FIXED_DEFS: &[u8] = &[
     0x13, b'W', b'i', b'n', b'A', b'l', b'l', b'B', b'a', b's', b'i', b'c', b'C', b'o', b'd', b'e',
@@ -227,7 +231,7 @@ fn expr_is_only_spaces(expr: &Expr) -> bool {
 /// Write a pure spacing formula without color records, matching MathType output.
 fn write_only_spaces(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
     match expr {
-        Expr::Space(width) => out.extend_from_slice(&[0x02, 0x00, 0x98, *width, 0xef]),
+        Expr::Space(width) => out.extend_from_slice(&[0x02, 0x00, FN_SPACE, *width, 0xef]),
         Expr::Sequence(items) => {
             for item in items {
                 write_only_spaces(item, out)?;
@@ -346,12 +350,16 @@ fn write_char(ch: char, out: &mut Vec<u8>, writer: &mut MtefWriter) -> Result<()
     } else if is_function_char(ch) {
         out.push(0x02);
         out.push(0x00);
-        out.push(0x82);
+        out.push(FN_FUNCTION);
         write_u16(code as u16, out);
     } else {
         out.push(0x02);
         out.push(0x00);
-        out.push(if ch.is_ascii_digit() { 0x88 } else { 0x83 });
+        out.push(if ch.is_ascii_digit() {
+            FN_NUMBER
+        } else {
+            FN_VARIABLE
+        });
         write_u16(code as u16, out);
     }
     Ok(())
@@ -385,7 +393,7 @@ fn write_table_char(typeface: u8, mtcode: u16, font_pos: Option<u8>, out: &mut V
 /// Write MathType's fnSPACE character used for spacing commands.
 fn write_space(width: u8, out: &mut Vec<u8>) {
     color_default(out);
-    out.extend_from_slice(&[0x02, 0x00, 0x98, width, 0xef]);
+    out.extend_from_slice(&[0x02, 0x00, FN_SPACE, width, 0xef]);
 }
 
 /// Write a function-name sequence, marking the first character as function start.
@@ -397,7 +405,7 @@ fn write_function_name(name: &str, out: &mut Vec<u8>) -> Result<(), String> {
         }
         out.push(0x02);
         out.push(if index == 0 { 0x02 } else { 0x00 });
-        out.push(0x82);
+        out.push(FN_FUNCTION);
         write_u16(code as u16, out);
     }
     Ok(())
@@ -456,7 +464,7 @@ fn write_font_char(
         FontKind::Bold => {
             out.push(0x02);
             out.push(0x00);
-            out.push(0x87);
+            out.push(FN_VECTOR);
             write_u16(code as u16, out);
         }
         FontKind::MathCal => {
@@ -464,9 +472,9 @@ fn write_font_char(
             if entry.font_pos.is_some() {
                 let typeface = if writer.euclid_math_two_defined && !writer.euclid_math_one_defined
                 {
-                    0x7e
+                    EXPLICIT_FONT_NEG_2
                 } else {
-                    0x7f
+                    EXPLICIT_FONT_NEG_1
                 };
                 writer.ensure_euclid_math_one(out);
                 write_table_char(typeface, entry.mtcode, entry.font_pos, out);
@@ -481,22 +489,23 @@ fn write_font_char(
             color_black(out);
             out.push(0x02);
             out.push(0x00);
-            out.push(0x7f);
+            out.push(EXPLICIT_FONT_NEG_1);
             write_u16(code as u16, out);
         }
         FontKind::MathBb => {
             let entry = math_font_char(MATHBB_CHARS, ch, "mathbb")?;
-            if entry.font_pos.is_some() && entry.typeface == 0x7f {
+            if entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1 {
                 let typeface = if writer.euclid_math_one_defined {
-                    0x7e
+                    EXPLICIT_FONT_NEG_2
                 } else {
-                    0x7f
+                    EXPLICIT_FONT_NEG_1
                 };
                 writer.ensure_euclid_math_two(out);
                 write_table_char(typeface, entry.mtcode, entry.font_pos, out);
             } else {
-                // MathType stores C/N/Q/R/Z blackboard letters through a built-in
-                // typeface instead of the Euclid Math Two font definition.
+                // MathType stores C/N/Q/R/Z blackboard letters through fnMTEXTRA
+                // instead of the Euclid Math Two explicit font definition.
+                debug_assert_eq!(entry.typeface, FN_MT_EXTRA);
                 write_table_char(entry.typeface, entry.mtcode, entry.font_pos, out);
             }
         }
@@ -584,7 +593,7 @@ fn write_hat_template_for_bold_char(ch: char, out: &mut Vec<u8>) -> Result<(), S
         },
     )?;
     out.push(0x00);
-    out.extend_from_slice(&[0x02, 0x00, 0x96, 0x02, 0x03, 0x00]);
+    out.extend_from_slice(&[0x02, 0x00, FN_EXPAND, 0x02, 0x03, 0x00]);
     Ok(())
 }
 
@@ -596,7 +605,11 @@ fn write_embellished_char(ch: char, kinds: &[AccentKind], out: &mut Vec<u8>) -> 
     }
     out.push(0x02);
     out.push(0x01);
-    out.push(if ch.is_ascii_digit() { 0x88 } else { 0x83 });
+    out.push(if ch.is_ascii_digit() {
+        FN_NUMBER
+    } else {
+        FN_VARIABLE
+    });
     write_u16(code as u16, out);
     for kind in kinds {
         out.extend_from_slice(&[
@@ -748,7 +761,7 @@ fn write_big_op_glyph(kind: BigOpKind, out: &mut Vec<u8>) -> Result<(), String> 
         .ok_or_else(|| format!("missing generated big-operator glyph: {name}"))?;
     out.push(0x02);
     out.push(0x04);
-    out.push(0x86);
+    out.push(FN_SYMBOL);
     write_u16(glyph.mtcode, out);
     out.push(glyph.font_pos);
     Ok(())
@@ -908,7 +921,7 @@ fn write_delimiter_glyph(ch: char, out: &mut Vec<u8>) -> Result<(), String> {
     }
     out.push(0x02);
     out.push(0x00);
-    out.push(0x96);
+    out.push(FN_EXPAND);
     write_u16(code as u16, out);
     Ok(())
 }

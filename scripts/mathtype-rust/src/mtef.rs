@@ -343,10 +343,6 @@ fn write_char(ch: char, out: &mut Vec<u8>, writer: &mut MtefWriter) -> Result<()
 
     if let Some(operator) = encoded_char(OPERATOR_CHARS, ch) {
         write_table_char(operator.typeface, operator.mtcode, operator.font_pos, out);
-    } else if ch == '*' {
-        // MathType's TeX input does not produce a probe CHAR for literal '*';
-        // keep the legacy Symbol-font mapping for existing parser behavior.
-        write_table_char(0x86, code as u16, Some(code as u8), out);
     } else if is_function_char(ch) {
         out.push(0x02);
         out.push(0x00);
@@ -490,7 +486,7 @@ fn write_font_char(
         }
         FontKind::MathBb => {
             let entry = math_font_char(MATHBB_CHARS, ch, "mathbb")?;
-            if entry.font_pos.is_some() {
+            if entry.font_pos.is_some() && entry.typeface == 0x7f {
                 let typeface = if writer.euclid_math_one_defined {
                     0x7e
                 } else {
@@ -499,6 +495,8 @@ fn write_font_char(
                 writer.ensure_euclid_math_two(out);
                 write_table_char(typeface, entry.mtcode, entry.font_pos, out);
             } else {
+                // MathType stores C/N/Q/R/Z blackboard letters through a built-in
+                // typeface instead of the Euclid Math Two font definition.
                 write_table_char(entry.typeface, entry.mtcode, entry.font_pos, out);
             }
         }

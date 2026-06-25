@@ -8,7 +8,7 @@ on:
 jobs:
   publish:
     name: Build and publish
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     environment:
       name: pypi
     permissions:
@@ -27,15 +27,24 @@ jobs:
       - name: Install Python
         run: uv python install 3.11
 
+      - name: Check Rust toolchain
+        run: |
+          rustup show active-toolchain
+          cargo --version
+
       - name: Build distributions
         run: uv build
 
       # Smoke-test both artifacts so packaged resources are checked before upload.
       - name: Smoke test wheel
-        run: uv run --isolated --no-project --with dist/*.whl pmt --help
+        run: |
+          $wheel = (Get-ChildItem dist\*.whl | Select-Object -First 1).FullName
+          uv run --isolated --no-project --with $wheel pmt --help
 
       - name: Smoke test source distribution
-        run: uv run --isolated --no-project --with dist/*.tar.gz pmt --help
+        run: |
+          $sdist = (Get-ChildItem dist\*.tar.gz | Select-Object -First 1).FullName
+          uv run --isolated --no-project --with $sdist pmt --help
 
       - name: Publish to PyPI
         run: uv publish

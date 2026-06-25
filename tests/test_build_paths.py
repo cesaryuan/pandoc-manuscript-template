@@ -163,6 +163,13 @@ def test_mathtype_helper_paths_live_under_mathtype_package() -> None:
     assert "mathtype" in ole_parts.HELPER_EXE.parts
 
 
+def test_mathtype_rust_package_exe_lives_under_mathtype_package() -> None:
+    """Target packaged wheels at the bundled Rust MTEF fallback executable."""
+    assert ole_parts.MATHTYPE_RUST_PACKAGE_EXE.name == "mathtype-rust.exe"
+    assert "mathtype" in ole_parts.MATHTYPE_RUST_PACKAGE_EXE.parts
+    assert "bin" in ole_parts.MATHTYPE_RUST_PACKAGE_EXE.parts
+
+
 def test_build_target_excludes_clean_commands() -> None:
     """Keep clean and distclean outside the manuscript build target union."""
     assert set(get_args(build.BuildTarget)) == {"docx", "latex", "json"}

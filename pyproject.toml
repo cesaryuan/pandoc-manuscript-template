@@ -85,6 +85,8 @@ exclude = [
   "scripts/mathtype-rust/target",
 ]
 
+[tool.hatch.build.hooks.custom]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/pandoc_manuscript"]
 

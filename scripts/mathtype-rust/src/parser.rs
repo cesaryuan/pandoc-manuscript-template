@@ -1,15 +1,19 @@
 use crate::ast::*;
 
-/// Strip display or inline math delimiters so the parser sees the formula body.
+/// Strip math delimiters and keep multiline source records stable for MathType.
 pub(crate) fn normalize_latex(input: &str) -> String {
     let text = input.trim().trim_start_matches('\u{feff}').trim();
-    if text.starts_with("$$") && text.ends_with("$$") && text.len() >= 4 {
-        return text[2..text.len() - 2].trim().to_string();
-    }
-    if text.starts_with('$') && text.ends_with('$') && text.len() >= 2 {
-        return text[1..text.len() - 1].trim().to_string();
-    }
-    text.to_string()
+    let body = if text.starts_with("$$") && text.ends_with("$$") && text.len() >= 4 {
+        text[2..text.len() - 2].trim()
+    } else if text.starts_with('$') && text.ends_with('$') && text.len() >= 2 {
+        text[1..text.len() - 1].trim()
+    } else {
+        text
+    };
+    // MathType stores pasted multiline TeX with CRLF in the MTEF source record.
+    body.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .replace('\n', "\r\n")
 }
 
 pub(crate) struct Parser {

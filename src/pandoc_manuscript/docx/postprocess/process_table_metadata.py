@@ -516,7 +516,7 @@ Examples:
   uv run process_table_metadata.py manuscript.docx
   uv run process_table_metadata.py output/docx/manuscript.docx
 
-Supported metadata keys:
+Supported metadata attributes:
   cell_margin=0.1cm        - Set all cell margins
   cell_margin_top=0.1cm    - Set top cell margin
   cell_margin_bottom=0.1cm - Set bottom cell margin

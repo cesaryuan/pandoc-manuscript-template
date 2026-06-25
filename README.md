@@ -1,236 +1,177 @@
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 # Pandoc Manuscript Template
 
-A professional, reusable template for academic manuscripts focused on DOCX output, with optional LaTeX source generation using [Pandoc](https://pandoc.org/).
+Write in Markdown. Submit in Word.
 
-## Features
+PMT is a DOCX-first academic writing workflow built for the AI era. AI tools are already great at drafting, revising, and restructuring Markdown. The problem is that many journals, editors, and collaborators still expect `.docx`. PMT bridges that gap: you keep the clarity and version-control friendliness of Markdown, while generating submission-ready Word documents when it is time to deliver.
 
-- **DOCX-focused output**: Generate Word-ready manuscripts for journal submission
-- **Automatic formatting**: Consistent styling using reference documents and templates
-- **Cross-references**: Automatic numbering and linking for figures, tables, equations, and sections
-- **Flexible citations**: Support for 9000+ citation styles via CSL
-- **Journal-ready DOCX workflow**: Reference-document styling and post-processing for submission files
-- **Installable CLI**: Use `pmt` directly after package installation or through `uvx`
-- **Reproducible**: Version-controlled workflow with CLI, Python
+<!--
+Hero image idea for the README:
+- Use a wide 3-panel workflow graphic instead of a logo-only banner.
+- Left panel: a clean Markdown manuscript in an editor, with citations, cross-references, and a short AI chat prompt visible.
+- Middle panel: a terminal running `pmt build docx` and `pmt build-reply`.
+- Right panel: a polished Word manuscript page plus a reviewer-reply DOCX page.
+- Add 3 short callouts on top of the image: "AI writes Markdown well", "PMT turns it into DOCX", "Journal-ready output".
+- The most eye-catching version will show the same content flowing from raw Markdown to polished Word, not abstract icons.
+-->
+
+## Why This Exists
+
+Markdown has become a very natural writing format for research teams, especially when AI is part of the drafting loop. It is easier to generate, review, diff, and refine than LaTeX for many authors. LaTeX is still powerful, but it is not always the most approachable tool for collaborators who mainly need to write and revise. Typst is promising, but it is not yet the default format most journals ask for.
+
+DOCX, however, is still the format a lot of publishers, editors, and co-authors want.
+
+PMT is built around that reality:
+
+- Write the manuscript in Markdown.
+- Keep sources easy for humans and AI to edit.
+- Generate Word-first output for submission.
+- Preserve the pieces academic writing actually needs: citations, equations, tables, figures, cross-references, and reviewer replies.
+
+## Why PMT
+
+PMT is not just a generic Pandoc wrapper. It is a manuscript workflow with opinionated support for the annoying parts of real submission work.
+
+- **DOCX-first workflow**: the primary target is a polished Word manuscript, not DOCX as an afterthought.
+- **AI-friendly authoring**: Markdown is easier for LLMs to generate and easier for humans to review in Git.
+- **One-command project bootstrap**: `pmt init` creates a reusable paper workspace with manuscript files, style metadata, references, and agent guidance.
+- **Submission-oriented post-processing**: PMT applies DOCX-specific cleanup and formatting after Pandoc runs.
+- **Reviewer reply support**: build response letters as DOCX or TXT, while resolving manuscript references and citations.
+- **Managed Pandoc tools**: if `pandoc` or `pandoc-crossref` are missing, PMT can install project-local copies under `.pmt/tools`.
+- **Optional LaTeX and JSON output**: keep a Markdown-centered workflow without giving up other export targets.
+
+## What You Get
+
+- Manuscript scaffolding with `pmt init`
+- Environment checks with `pmt doctor`
+- Project-local tool setup with `pmt setup`
+- DOCX, LaTeX, and JSON builds with `pmt build`
+- Reviewer reply builds with `pmt build-reply`
+- Cross-references for figures, tables, equations, and sections
+- CSL-based citations
+- Reference DOCX support for Word styling
+- DOCX post-processing for author blocks, table behavior, styles, and line-number-related workflows
+- SVG handling and DOCX fallbacks for figures that Word does not handle well
+- MathType-aware DOCX workflow when needed
 
 ## Quick Start
 
 ### Prerequisites
 
-Install the following tools:
+Install these tools first:
 
-1. **Pandoc** (>= 3.0): [Download](https://pandoc.org/installing.html). If `pmt`
-   cannot find `pandoc` on `PATH`, it downloads a project-local copy under
-   `.pmt/tools/` automatically.
-2. **pandoc-crossref**: Required for figure, table, equation, and section
-   references. If `pmt` cannot find `pandoc-crossref` on `PATH`, it downloads a
-   project-local copy under `.pmt/tools/` automatically.
-3. **UV**: Recommended for running the `pmt` CLI and Python filters
-4. **MathType** (Optional): Required for DOCX output with mathtype enabled
-5. **soffice** (Optional): Required for line number extraction on non-Windows systems
-6. **Microsoft Word** (Optional): Required for line number extraction on Windows systems
+1. `uv` for running the CLI and Python environment
+2. `pandoc` 3.0+ and `pandoc-crossref`
+3. Optional: Microsoft Word or `soffice` for line-number source workflows
+4. Optional: MathType if you need MathType-based DOCX equations
 
-### Generate Your First Document
+If `pandoc` or `pandoc-crossref` are not on `PATH`, PMT can download managed project-local copies into `.pmt/tools`.
 
-1. **Create a manuscript project with `pmt`**:
-   ```bash
-   uvx --from git+https://github.com/yourname/pandoc-manuscript-template pmt init my-paper
-   cd my-paper
-   ```
-
-   `pmt init` also writes an `AGENTS.md` file into the new project. If the
-   target already has one, `pmt` leaves it in place and warns so you can merge
-   the template notes manually. Use `pmt init my-paper --merge` to append the
-   packaged `AGENTS.md` guidance and copy missing files from the packaged
-   `.agents/` directory automatically without replacing existing files.
-   Use `pmt init my-paper --setup` to initialize the project and download
-   project-local Pandoc tools in one step.
-
-   When the package is installed as a tool, use:
-   ```bash
-   uv tool install pandoc-manuscript-template
-   pmt init my-paper
-   ```
-
-2. **Check your environment**:
-   ```bash
-   pmt setup
-   pmt doctor
-   ```
-
-3. **Generate DOCX**:
-   ```bash
-   pmt build docx
-   # Output: output/docx/manuscript.docx
-   ```
-
-   To build a different markdown file without editing the Pandoc defaults:
-   ```bash
-   pmt build docx paper.md
-   # Output: output/docx/paper.docx
-   ```
-
-4. **View available commands**:
-   ```bash
-   pmt --help
-   ```
-
-## Usage Guide
-
-### Writing Your Manuscript
-
-Edit `manuscript.md` to replace the template content with your research. Use
-`style.yml` for style-related defaults such as citation style, cross-reference
-wording, subfigure behavior, and DOCX paragraph formatting.
-
-For supported manuscript syntax, metadata fields, citations, cross-references,
-pseudocode, and DOCX table controls, see
-[`template/manuscript-syntax.md`](template/manuscript-syntax.md). The same
-document has a peer `Style Metadata` section for style-related defaults and
-`style.yml` fields.
-
-## Build System
-
-### Using pmt (Recommended)
-
-The package CLI is the preferred entry point for new projects. It can initialize
-a manuscript directory, check external tools, and run the existing Pandoc build
-pipeline.
+### Create Your First Project
 
 ```bash
-pmt init my-paper     # Create a manuscript project
-pmt init my-paper --setup  # Create a project and download .pmt/tools immediately
-pmt setup             # Download project-local Pandoc tools into .pmt/tools
-pmt doctor            # Check/install Pandoc, pandoc-crossref, Python dependencies, and project files
-pmt build docx        # Generate output/docx/manuscript.docx
-pmt build latex       # Generate output/latex/manuscript.tex
-pmt build json        # Generate output/json/manuscript.json
-pmt clean             # Remove generated files
+uvx --from git+https://github.com/cesaryuan/pandoc-manuscript-template pmt init my-paper
+cd my-paper
+pmt doctor
+pmt build docx
 ```
 
-`pmt setup` prepares project-local tools under `.pmt/tools` even when Pandoc is
-already available on your system `PATH`. Use `pmt setup --force` to redownload
-and reinstall the managed copies. `pmt build`, `pmt build-reply`, and `pmt
-doctor` still prefer tools already available on `PATH`. When either Pandoc tool
-is missing, `pmt` downloads the matching GitHub release asset into
-`.pmt/cache/tools/downloads/`, extracts it under `.pmt/work/tool-extract/`, and
-installs the executable into `.pmt/tools/bin/` for the current project. The
-managed tools are only added to the child process environment; `pmt` does not
-modify your system `PATH`.
+That produces:
 
-Use `pmt build` for non-default inputs:
+```text
+output/docx/manuscript.docx
+```
+
+If you prefer installing the tool once:
 
 ```bash
+uv tool install pandoc-manuscript-template
+pmt init my-paper
+```
+
+## Typical Workflow
+
+```bash
+# Create a new manuscript project
+pmt init my-paper --setup
+
+# Check dependencies and project files
+pmt doctor
+
+# Build the main manuscript
+pmt build docx
+
+# Build another Markdown file explicitly
 pmt build docx paper.md -o build/paper.docx
-pmt build latex paper.md -o build/paper.tex
+
+# Build a reviewer reply
+pmt build-reply reply.md --reply-manuscript manuscript.md -o output/docx/reply.docx
 ```
 
-When a DOCX build actually starts MathType conversion, `pmt` warns about
-MathType-sensitive formulas such as `\hat{\mathbf{C}}`. Rewrite these as
-`\mathbf{\hat{C}}` because MathType-exported PDFs may drop the hat otherwise.
+## Standout Features
 
-For DOCX output, pass `--reference-doc custom-reference.docx` to override the
-bundled Word reference document. The option is supported by `pmt build docx`
-and `pmt build-reply`.
+### 1. Markdown that stays pleasant to edit
 
-Reviewer replies can be built as DOCX or TXT. The `build-reply` command
-resolves manuscript cross-references and citations against the manuscript before
-writing the reply letter:
+PMT leans into plain-text authoring instead of fighting it. Your manuscript remains easy to diff, refactor, prompt into AI tools, and review collaboratively.
+
+### 2. DOCX output that is actually the point
+
+Many academic writing pipelines treat DOCX as a secondary export. PMT treats it as the main delivery format, with Word-oriented defaults and post-processing built into the workflow.
+
+### 3. Better fit for real submission tasks
+
+PMT goes beyond "convert Markdown to Word" by helping with the parts that tend to break late in the process:
+
+- reviewer replies
+- figure and table references
+- equation numbering
+- citation formatting
+- Word reference documents
+- DOCX figure edge cases such as SVG conversion or embedding
+
+### 4. Friendly to automation without hiding the files
+
+The output is scripted, reproducible, and version-controlled, but the source project still looks like a normal manuscript folder that a researcher can understand quickly.
+
+## Documentation Map
+
+- [`template/manuscript-syntax.md`](template/manuscript-syntax.md): manuscript syntax, citations, cross-references, pseudocode, revision markup, and style metadata
+- [`template/manuscript.md`](template/manuscript.md): example manuscript content
+- [`AGENTS.md`](AGENTS.md): repository-specific guidance for coding agents
+
+## When PMT Is a Good Fit
+
+PMT is especially useful if:
+
+- you draft heavily with AI and want a format AI handles naturally
+- you want Git-friendly manuscript sources instead of editing Word binaries directly
+- your target journal still expects DOCX
+- you need a repeatable manuscript and reviewer-reply workflow
+- you want Pandoc power without forcing every collaborator into a LaTeX-first workflow
+
+## Commands at a Glance
 
 ```bash
-pmt build-reply reply.md \
-  --reply-manuscript manuscript.md \
-  -o output/docx/reply.docx
-
-pmt build-reply reply.md \
-  --reply-manuscript manuscript.md \
-  -o output/txt/reply.txt
+pmt init my-paper
+pmt setup
+pmt doctor
+pmt build docx
+pmt build latex
+pmt build json
+pmt build-reply reply.md -o output/docx/reply.docx
+pmt clean
+pmt distclean
 ```
 
-The reply build reads its reply-specific defaults from the `reply:` section in
-`style.yml`, while `--manuscript-line-source` defaults to `manuscript.md`. The
-line source is only read when the reply uses ``(Line `regex`)`` placeholders.
-Labeled display equations such as `$$ ... $$ {#eq:label}` in the reply are also
-numbered from the matching manuscript equation and rendered with the same
-tab-stop layout used for DOCX equations. TXT output is selected by an `.txt`
-output path. It preserves Markdown syntax for bold, emphasis, tables, and
-formulas, replaces images with `[Image: ...]` placeholders, resolves line
-placeholders and manuscript cross-references, and removes trailing
-`{#eq:...}`, `{#fig:...}`, and `{#tbl:...}` label attributes from formulas,
-images, and tables. It also removes reply-only
-`::: {custom-style="Reply to Reviewers"}` wrappers and `<br>` tags, collapses
-the resulting extra blank lines to at most one blank line, and restores escaped
-ordered-list markers such as `1\.` to `1.`.
-Markdown line sources are first built to a temporary DOCX; DOCX sources are then
-exported to PDF through Word COM on Windows or `soffice --headless --convert-to
-pdf` on Linux and other non-Windows systems. Line placeholders are resolved
-against the generated PDF text layer. PDFs converted from DOCX line sources are
-cached under `.pmt/cache/reply/line-source`, so `pmt clean` keeps them and `pmt
-distclean` removes them. The reply markdown path itself is required.
-
-### Command Options
-
-The `pmt build` command can build a markdown file specified on the command
-line. When a markdown file is supplied, the output file name is derived from
-that file's stem.
-
-```bash
-pmt build docx              # Generate output/docx/manuscript.docx
-pmt build latex             # Generate output/latex/manuscript.tex
-pmt build json              # Generate output/json/manuscript.json
-pmt build docx paper.md     # Generate output/docx/paper.docx
-pmt build latex paper.md    # Generate output/latex/paper.tex
-pmt build json paper.md     # Generate output/json/paper.json
-```
-
-You can also pass the markdown path with `--manuscript` or `-m`:
-
-```bash
-pmt build docx --manuscript paper.md
-pmt build latex -m paper.md
-```
-
-Use `--output-file` or `-o` to choose the exact DOCX, LaTeX, or JSON output path. The build uses the file parent as its output workspace:
-
-```bash
-pmt build docx paper.md -o build/paper-final.docx            # Generate build/paper-final.docx
-pmt build json paper.md --output-file build/paper.ast.json    # Generate build/paper.ast.json
-pmt build latex paper.md -o build/paper.tex                 # Generate build/paper.tex
-pmt clean --output-dir build                                  # Remove build/
-```
-
-The DOCX post-processing step reads YAML metadata from the same markdown file.
-For DOCX, LaTeX, JSON, and reviewer-reply builds, `--output-file` controls the complete output path. The parent directory is also used as the build output workspace. `pmt clean` still accepts `--output-dir` because it removes a generated directory rather than producing one file.
-
-### Direct Pandoc Commands
-
-```bash
-# Generate DOCX
-pandoc --metadata-file style.yml --defaults pandoc/pandoc-docx.yml
-
-# Generate LaTeX
-pandoc --metadata-file style.yml --defaults pandoc/pandoc-latex.yml
-```
-
-## Examples
-
-See `template/manuscript.md` for a complete example demonstrating:
-- Multi-author affiliations with corresponding author
-- Abstract and keywords
-- Section organization (Introduction, Methods, Results, Discussion, Conclusion)
-- Figure and table cross-references
-- Mathematical equations with numbering
-- Citations in various formats
-- Acknowledgments and supplementary sections
-
-For a real-world example of a complete research paper, see `template/examples/references/paper-specific-example.bib`.
+Use `pmt --help` to see the full CLI.
 
 ## Acknowledgments
 
-- [Pandoc](https://pandoc.org/) - Universal document converter
-- [pandoc-crossref](https://github.com/lierdakil/pandoc-crossref) - Cross-reference filter
+- [Pandoc](https://pandoc.org/)
+- [pandoc-crossref](https://github.com/lierdakil/pandoc-crossref)
 
 ## Support
 
-For issues and questions:
-- Review [Pandoc documentation](https://pandoc.org/MANUAL.html)
-- Create an issue with minimal reproducible example
+- Review the syntax guide in [`template/manuscript-syntax.md`](template/manuscript-syntax.md)
+- Open an issue with a minimal reproducible example

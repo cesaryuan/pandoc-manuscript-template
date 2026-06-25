@@ -1,5 +1,4 @@
-use crate::ast::Expr;
-use crate::mtef::{known_environment_body_hex, write_mtef};
+use crate::mtef::write_mtef;
 use crate::ole::{END_OF_CHAIN, FAT_SECTOR, FREE_SECTOR, SECTOR_SIZE};
 use crate::parser::{normalize_latex, Parser};
 
@@ -112,12 +111,8 @@ fn compare_sample(tex_path: &Path, mt_path: &Path) -> Result<(), String> {
 
 /// Render MTEF through the same parser/writer path as the CLI.
 fn render_mtef_for_test(latex: &str) -> Result<Vec<u8>, String> {
-    if known_environment_body_hex(latex).is_some() {
-        write_mtef(latex, &Expr::Sequence(Vec::new()))
-    } else {
-        let expr = Parser::new(latex).parse()?;
-        write_mtef(latex, &expr)
-    }
+    let expr = Parser::new(latex).parse()?;
+    write_mtef(latex, &expr)
 }
 
 /// Read a regular CFB stream from MathType's reference OLE file.

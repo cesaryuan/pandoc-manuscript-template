@@ -42,6 +42,13 @@ enum Selector {
         typeface: u8,
         mtcode: u16,
     },
+    AnyMtCode {
+        ch: char,
+    },
+    NamedMtCode {
+        ch: char,
+        name: &'static str,
+    },
     BigOperator {
         name: &'static str,
     },
@@ -184,6 +191,14 @@ fn build_targets() -> Result<Vec<Target>, String> {
             },
         });
     }
+    for &(logical, tex, name) in generated_special_targets() {
+        targets.push(Target {
+            name,
+            category: Category::Special,
+            formula: tex,
+            selector: Selector::AnyMtCode { ch: logical },
+        });
+    }
 
     for ch in ['+', '-', '=', '<', '>'] {
         let leaked = Box::leak(format!("$x{ch}y$").into_boxed_str());
@@ -221,8 +236,49 @@ fn build_targets() -> Result<Vec<Target>, String> {
         formula: r"$\prod_{i=1}^{N}x_i$",
         selector: Selector::BigOperator { name: "product" },
     });
+    targets.push(Target {
+        name: "bigop_integral",
+        category: Category::BigOperator,
+        formula: r"$\int_{x}y$",
+        selector: Selector::BigOperator { name: "integral" },
+    });
+    targets.push(Target {
+        name: "bigop_contour_loop",
+        category: Category::BigOperator,
+        formula: r"$\oint_{x}y$",
+        selector: Selector::NamedMtCode {
+            ch: '\u{ee11}',
+            name: "contour_loop",
+        },
+    });
 
     Ok(targets)
+}
+
+/// Return symbol probes whose typeface/font-position should be learned from MathType.
+fn generated_special_targets() -> &'static [(char, &'static str, &'static str)] {
+    &[
+        ('\u{03be}', r"$\xi$", "special_xi"),
+        ('\u{03bc}', r"$\mu$", "special_mu"),
+        ('\u{03d5}', r"$\phi$", "special_phi"),
+        ('\u{03a9}', r"$\Omega$", "special_Omega"),
+        ('\u{039b}', r"$\Lambda$", "special_Lambda"),
+        ('\u{0393}', r"$\Gamma$", "special_Gamma"),
+        ('\u{2261}', r"$\equiv$", "special_equiv"),
+        ('\u{2192}', r"$\to$", "special_to"),
+        ('\u{2207}', r"$\nabla$", "special_nabla"),
+        ('\u{2200}', r"$\forall$", "special_forall"),
+        ('\u{2295}', r"$\oplus$", "special_oplus"),
+        ('\u{2297}', r"$\otimes$", "special_otimes"),
+        ('\u{221d}', r"$\propto$", "special_propto"),
+        ('\u{2248}', r"$\approx$", "special_approx"),
+        ('\u{2202}', r"$\partial$", "special_partial"),
+        ('\u{2264}', r"$\le$", "special_le"),
+        ('\u{00b1}', r"$\pm$", "special_pm"),
+        ('\u{00b0}', r"$\circ$", "special_circ"),
+        ('\u{222a}', r"$\cup$", "special_cup"),
+        ('\u{2026}', r"$\dots$", "special_dots"),
+    ]
 }
 
 /// Return TeX command probes for parser-supported non-ASCII symbols.
@@ -360,6 +416,12 @@ fn extract_target_record(ole_path: &Path, target: Target) -> Result<CharRecord, 
                 record.typeface == typeface && record.mtcode == mtcode && record.font_pos.is_none()
             })
             .ok_or_else(|| format!("no plain CHAR record matched {}", target.name)),
+        Selector::AnyMtCode { ch } | Selector::NamedMtCode { ch, .. } => records
+            .iter()
+            .rev()
+            .copied()
+            .find(|record| record.mtcode == ch as u16)
+            .ok_or_else(|| format!("no MTCode CHAR record matched {}", target.name)),
         Selector::BigOperator { .. } => records
             .iter()
             .rev()
@@ -500,7 +562,11 @@ fn render_big_operator_table(output: &mut String, rows: &[(Target, CharRecord)])
         .iter()
         .filter(|(target, _)| target.category == Category::BigOperator)
     {
-        if let Selector::BigOperator { name } = target.selector {
+        let name = match target.selector {
+            Selector::BigOperator { name } | Selector::NamedMtCode { name, .. } => Some(name),
+            _ => None,
+        };
+        if let Some(name) = name {
             output.push_str(&format!(
                 "    BigOperatorGlyph {{ name: \"{name}\", mtcode: 0x{:04x}, font_pos: 0x{:02x} }},\n",
                 record.mtcode,
@@ -514,8 +580,10 @@ fn render_big_operator_table(output: &mut String, rows: &[(Target, CharRecord)])
 /// Return the logical character represented by a CHAR selector.
 fn selector_char(selector: Selector) -> Option<char> {
     match selector {
-        Selector::FontPos { ch, .. } | Selector::PlainChar { ch, .. } => Some(ch),
-        Selector::BigOperator { .. } => None,
+        Selector::FontPos { ch, .. }
+        | Selector::PlainChar { ch, .. }
+        | Selector::AnyMtCode { ch } => Some(ch),
+        Selector::NamedMtCode { .. } | Selector::BigOperator { .. } => None,
     }
 }
 

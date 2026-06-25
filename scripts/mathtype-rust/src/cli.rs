@@ -2,8 +2,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::ast::Expr;
-use crate::mtef::{known_environment_body_hex, write_equation_native, write_mtef};
+use crate::mtef::{write_equation_native, write_mtef};
 use crate::ole::write_compound_file;
 use crate::parser::{normalize_latex, Parser};
 
@@ -25,12 +24,8 @@ pub(crate) fn run() -> Result<(), String> {
         _ => return Err("pass exactly one of --latex or --input".to_string()),
     };
     let latex = normalize_latex(&raw_latex);
-    let mtef = if known_environment_body_hex(&latex).is_some() {
-        write_mtef(&latex, &Expr::Sequence(Vec::new()))?
-    } else {
-        let expr = Parser::new(&latex).parse()?;
-        write_mtef(&latex, &expr)?
-    };
+    let expr = Parser::new(&latex).parse()?;
+    let mtef = write_mtef(&latex, &expr)?;
     let native = write_equation_native(&mtef)?;
     let ole_bin = write_compound_file(&native)?;
 

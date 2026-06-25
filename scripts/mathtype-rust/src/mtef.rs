@@ -5,7 +5,7 @@ use crate::generated::char_tables::{
 };
 use crate::typeface::{
     EXPLICIT_FONT_NEG_1, EXPLICIT_FONT_NEG_2, FN_EXPAND, FN_FUNCTION, FN_MT_EXTRA, FN_NUMBER,
-    FN_SPACE, FN_SYMBOL, FN_VARIABLE, FN_VECTOR,
+    FN_SPACE, FN_SYMBOL, FN_TEXT, FN_VARIABLE, FN_VECTOR,
 };
 
 const MTEF_FIXED_DEFS: &[u8] = &[
@@ -70,16 +70,29 @@ struct WriteState {
 struct MtefWriter {
     euclid_math_one_defined: bool,
     euclid_math_two_defined: bool,
+    euclid_math_one_typeface: u8,
+    euclid_math_two_typeface: u8,
+    black_color_defined: bool,
 }
 
 impl MtefWriter {
+    /// Emit the reusable black color definition once before selecting it.
+    fn ensure_black_color_def(&mut self, out: &mut Vec<u8>) {
+        if !self.black_color_defined {
+            out.extend_from_slice(&[0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+            self.black_color_defined = true;
+        }
+    }
+
     /// Emit Euclid Math One once, at the position where MathType first needs it.
     fn ensure_euclid_math_one(&mut self, out: &mut Vec<u8>) {
         if !self.euclid_math_one_defined {
             if self.euclid_math_two_defined {
                 out.extend_from_slice(EUCLID_MATH_ONE_AFTER_TWO_DEFS);
+                self.euclid_math_one_typeface = EXPLICIT_FONT_NEG_2;
             } else {
                 out.extend_from_slice(EUCLID_MATH_ONE_DEFS);
+                self.euclid_math_one_typeface = EXPLICIT_FONT_NEG_1;
             }
             self.euclid_math_one_defined = true;
         }
@@ -90,8 +103,10 @@ impl MtefWriter {
         if !self.euclid_math_two_defined {
             if self.euclid_math_one_defined {
                 out.extend_from_slice(EUCLID_MATH_TWO_AFTER_ONE_DEFS);
+                self.euclid_math_two_typeface = EXPLICIT_FONT_NEG_2;
             } else {
                 out.extend_from_slice(EUCLID_MATH_TWO_DEFS);
+                self.euclid_math_two_typeface = EXPLICIT_FONT_NEG_1;
             }
             self.euclid_math_two_defined = true;
         }
@@ -112,43 +127,8 @@ pub(crate) fn write_mtef(source_latex: &str, expr: &Expr) -> Result<Vec<u8>, Str
     out.extend_from_slice(&source);
 
     out.extend_from_slice(MTEF_FIXED_DEFS);
-    if let Some(body_hex) = known_environment_body_hex(source_latex) {
-        out.extend_from_slice(&decode_hex(body_hex)?);
-    } else {
-        write_equation_body(expr, &mut out)?;
-    }
+    write_equation_body(expr, &mut out)?;
     Ok(out)
-}
-
-const CASES_BODY_HEX: &str = "0a010010000000000000000f0102008368000f0003001b00000b01000f01020484b40364000f000101000a0f010200822800020083650002008229000204863d003d03000201000f00010005000100010202000001000f0103000b00000f0001000f010200883100000f0001000f010200883200000002008365000f0003001c00000b010101000f01020088320000000a0200822f00020484b403640200822c00000f0001000f010200827c0002008365000200827c000204863c003c020484b403640200822c00000f0001000f010200827c0002008365000200827c0002048612222d03000b00000f0001000f010200883100000f0001000f0102008832000000020484b403640200822c00000f0001000f010200827c0002008365000200827c000204866522b3020484b403640000000200967b00000000";
-
-const ALIGNED_BODY_HEX: &str = "0a01000280815c0002808162000280816500028081670002808169000280816e0010000000000000000f0102008361000200836c00020083690002008367000200836e0002008365000200836400134575636c69644d617468310011074575636c6964204d617468204f6e650008060002047f12214c0f0003001b00000b01000f010200836e000200836f0002008364000200836500000f000101000a0280816e000280816e0002808126000f010204863d003d02048612222d03000b00000f0001000f010200883100000f0001000f010200834e00000003001070000f0001000f0103000303000f0001000f0102008377000f0003001c00000b010101000f010204862b002b00000a02008370000f0003001d00000b01000f010200836900000f0001000f0102008370000200837200020083650000000a0202826c000200826f00020082670003000103000f0001000f010201837000060009000f0003001d00000b01000f010200836900000f0001000f0102008370000200837200020083650000000a0204862b002b02047ff503f20002009628000200962900000204862b002b03000103000f0001000f01020088310002048612222d02008370000f0003001d00000b01000f010200836900000f0001000f010200837000020083720002008365000000000a02009628000200962900000202826c000200826f00020082670003000103000f0001000f01020088310002048612222d0201837000060009000f0003001d00000b01000f010200836900000f0001000f0102008370000200837200020083650000000a0204862b002b02047ff503f2000200962800020096290000000200965b000200965d0000000b0f0001000f0102008369000204863d003d0200883100000f0001000f010200834e00000d0204861122e5000a0f000280816e000280816e00028081260002009805ef0f010204862b002b03000b00000f0001000f010200883100000f0001000f010200834e00000003001070000f0001000f0102008368000f0003001b00000b01000f01020484b40364000f000101000001000f0102008369000204863d003d0200883100000f0001000f010200834e00000d0204861122e5000a03000103000f0001000f010201837000060009000f0003001d00000b01000f010200836900000f0001000f0102008370000200837200020083650000000a02048612222d02008370000f0003001d00000b01000f010200836900000f0001000f010200837000020083720002008365000000000a02009628000200962900000f000280816e000280816e000280815c0002808165000280816e0002808164000f0102008361000200836c00020083690002008367000200836e00020083650002008364000000";
-
-/// Return fixed environment bodies for TeX constructs MathType handles idiosyncratically.
-pub(crate) fn known_environment_body_hex(source_latex: &str) -> Option<&'static str> {
-    if source_latex.contains("\\begin{cases}") {
-        Some(CASES_BODY_HEX)
-    } else if source_latex.contains("\\begin{aligned}") {
-        Some(ALIGNED_BODY_HEX)
-    } else {
-        None
-    }
-}
-
-/// Decode compact hex fixtures used for the two manuscript environment formulas.
-fn decode_hex(hex: &str) -> Result<Vec<u8>, String> {
-    if hex.len() % 2 != 0 {
-        return Err("hex fixture has an odd number of digits".to_string());
-    }
-    let mut bytes = Vec::with_capacity(hex.len() / 2);
-    let mut index = 0;
-    while index < hex.len() {
-        let byte = u8::from_str_radix(&hex[index..index + 2], 16)
-            .map_err(|err| format!("invalid hex fixture byte at {index}: {err}"))?;
-        bytes.push(byte);
-        index += 2;
-    }
-    Ok(bytes)
 }
 
 /// Write the outer Equation Native stream and keep its embedded MTEF length valid.
@@ -169,6 +149,9 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
     let mut writer = MtefWriter {
         euclid_math_one_defined: false,
         euclid_math_two_defined: false,
+        euclid_math_one_typeface: EXPLICIT_FONT_NEG_1,
+        euclid_math_two_typeface: EXPLICIT_FONT_NEG_1,
+        black_color_defined: false,
     };
     if expr_is_only_spaces(expr) {
         write_only_spaces(expr, out)?;
@@ -178,12 +161,26 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
         if expr_starts_with_euclid_math_one(expr) {
             writer.ensure_euclid_math_one(out);
         }
-        out.extend_from_slice(&[0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        color_black(out);
+        if !expr_starts_with_top_matrix(expr) {
+            writer.ensure_black_color_def(out);
+            color_black(out);
+        }
     }
     write_expr(expr, out, SizeState::Full, &mut writer)?;
     out.extend_from_slice(&[0x00, 0x00]);
     Ok(())
+}
+
+/// Return true when MathType starts the equation body with a MATRIX record.
+fn expr_starts_with_top_matrix(expr: &Expr) -> bool {
+    match expr {
+        Expr::Environment {
+            kind: EnvironmentKind::Align,
+            ..
+        } => true,
+        Expr::Sequence(items) if items.len() == 1 => expr_starts_with_top_matrix(&items[0]),
+        _ => false,
+    }
 }
 
 /// Return true when MathType emits Euclid Math One before the first line def.
@@ -260,7 +257,7 @@ fn write_expr(
                     write_size(current_size, out);
                     state.size = current_size;
                 }
-                if state.color != ColorState::Black {
+                if state.color != ColorState::Black && !expr_sets_own_color(item) {
                     color_black(out);
                     state.color = ColorState::Black;
                 }
@@ -289,6 +286,16 @@ fn write_expr(
                 color: ColorState::Black,
             }
         }
+        Expr::Text(text) => {
+            write_text(text, out)?;
+            WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            }
+        }
+        Expr::Color { name, content } => {
+            write_color_expr(name, content, out, current_size, writer)?
+        }
         Expr::Font { kind, content } => write_font_expr(*kind, content, out, current_size, writer)?,
         Expr::Accent { kind, content } => {
             write_accent_expr(*kind, content, out, current_size, writer)?
@@ -297,6 +304,9 @@ fn write_expr(
             write_fraction(numerator, denominator, out, current_size, writer)?
         }
         Expr::Sqrt(radicand) => write_sqrt(radicand, out, current_size, writer)?,
+        Expr::NthRoot { index, radicand } => {
+            write_nth_root(index, radicand, out, current_size, writer)?
+        }
         Expr::BigOp {
             kind,
             lower,
@@ -311,6 +321,56 @@ fn write_expr(
             current_size,
             writer,
         )?,
+        Expr::Limit { name, lower, upper } => write_limit(
+            name,
+            lower.as_deref(),
+            upper.as_deref(),
+            out,
+            current_size,
+            writer,
+        )?,
+        Expr::Integral { kind } => {
+            write_integral(*kind, out);
+            WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            }
+        }
+        Expr::IntegralOp {
+            kind,
+            lower,
+            upper,
+            body,
+        } => write_integral_op(
+            *kind,
+            body.as_deref(),
+            lower.as_deref(),
+            upper.as_deref(),
+            out,
+            current_size,
+            writer,
+        )?,
+        Expr::Binomial(upper, lower) => {
+            write_binomial(upper, lower, out, current_size, writer)?;
+            WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            }
+        }
+        Expr::Matrix { kind, rows } => {
+            write_matrix(*kind, rows, out, current_size, writer)?;
+            WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            }
+        }
+        Expr::Environment { kind, rows } => {
+            write_environment(*kind, rows, out, current_size, writer)?;
+            WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            }
+        }
         Expr::Delimited {
             left,
             right,
@@ -326,6 +386,33 @@ fn write_expr(
         )?,
     };
     Ok(next_state)
+}
+
+/// Write the color record shape MathType emits for supported \color commands.
+fn write_color_expr(
+    name: &str,
+    expr: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    match name {
+        "blue" => {
+            out.extend_from_slice(&[0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0xe8, 0x03]);
+            out.extend_from_slice(&[0x0f, 0x02]);
+            let state = write_expr(expr, out, current_size, writer)?;
+            Ok(WriteState {
+                size: state.size,
+                color: ColorState::Default,
+            })
+        }
+        _ => write_expr(expr, out, current_size, writer),
+    }
+}
+
+/// Return true for nodes that begin by selecting their own color.
+fn expr_sets_own_color(expr: &Expr) -> bool {
+    matches!(expr, Expr::Color { .. })
 }
 
 /// Write one MTEF CHAR record using MathType's simple font/style choices.
@@ -411,6 +498,361 @@ fn write_function_name(name: &str, out: &mut Vec<u8>) -> Result<(), String> {
     Ok(())
 }
 
+/// Write plain text characters with MathType's text style.
+fn write_text(text: &str, out: &mut Vec<u8>) -> Result<(), String> {
+    for ch in text.chars() {
+        let code = ch as u32;
+        if code > u16::MAX as u32 {
+            return Err(format!("text character is outside BMP: {ch}"));
+        }
+        out.push(0x02);
+        out.push(0x00);
+        out.push(FN_TEXT);
+        write_u16(code as u16, out);
+    }
+    Ok(())
+}
+
+/// Write MathType's limit template for \lim and \sup with lower/upper slots.
+fn write_limit(
+    name: &str,
+    lower: Option<&Expr>,
+    upper: Option<&Expr>,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    let lower = lower.ok_or_else(|| format!("\\{name} requires a lower limit in this subset"))?;
+    color_default(out);
+    out.extend_from_slice(&[0x03, 0x00, 0x17, 0x10, 0x00]);
+    let main = Expr::FunctionName(name.to_string());
+    let main_state = write_line(&main, out, current_size, writer)?;
+    let limit_size = match current_size {
+        SizeState::Full => SizeState::Sub,
+        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
+    };
+    if main_state.size != limit_size {
+        write_size(limit_size, out);
+    }
+    color_default(out);
+    let lower_state = write_line(lower, out, limit_size, writer)?;
+    if lower_state.size != limit_size {
+        write_size(limit_size, out);
+    }
+    color_default(out);
+    if let Some(upper) = upper {
+        write_line(upper, out, limit_size, writer)?;
+    } else {
+        write_null_line(out);
+    }
+    out.push(0x00);
+    if current_size != limit_size {
+        write_size(current_size, out);
+    }
+    color_black(out);
+    Ok(WriteState {
+        size: current_size,
+        color: ColorState::Black,
+    })
+}
+
+/// Write MathType's nth-root template with index and radicand slots.
+fn write_nth_root(
+    index: &Expr,
+    radicand: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    out.extend_from_slice(&[0x03, 0x00, 0x0a, 0x01, 0x00]);
+    color_default(out);
+    let radicand_state = write_line(radicand, out, current_size, writer)?;
+    let index_size = match current_size {
+        SizeState::Full => SizeState::Sub,
+        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
+    };
+    if radicand_state.size != index_size {
+        write_size(index_size, out);
+    }
+    color_default(out);
+    let index_state = write_line(index, out, index_size, writer)?;
+    out.push(0x00);
+    Ok(index_state)
+}
+
+/// Write MathType's integral template with body, limit slots, and integral glyph.
+fn write_integral_op(
+    kind: IntegralKind,
+    body: Option<&Expr>,
+    lower: Option<&Expr>,
+    upper: Option<&Expr>,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    let body = body.ok_or_else(|| "integrals require an operand in this subset".to_string())?;
+    let lower =
+        lower.ok_or_else(|| "integrals require a lower limit in this subset".to_string())?;
+    let variation = match kind {
+        IntegralKind::Single => 0x11,
+        IntegralKind::Double => 0x12,
+        IntegralKind::Contour => 0x15,
+    };
+    out.extend_from_slice(&[0x03, 0x00, 0x0f, variation, 0x00]);
+    color_default(out);
+    let body_state = write_line(body, out, current_size, writer)?;
+    let limit_size = match current_size {
+        SizeState::Full => SizeState::Sub,
+        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
+    };
+    if body_state.size != limit_size {
+        write_size(limit_size, out);
+    }
+    if body_state.color != ColorState::Default {
+        color_default(out);
+    }
+    let lower_state = write_line(lower, out, limit_size, writer)?;
+    if lower_state.size != limit_size {
+        write_size(limit_size, out);
+    }
+    if lower_state.color != ColorState::Black {
+        color_black(out);
+    }
+    if let Some(upper) = upper {
+        write_line(upper, out, limit_size, writer)?;
+    } else {
+        write_null_line(out);
+    }
+    out.push(0x0d);
+    if kind == IntegralKind::Contour {
+        write_named_big_operator_glyph("contour_loop", out)?;
+    }
+    write_integral_glyph(out)?;
+    out.push(0x00);
+    Ok(WriteState {
+        size: limit_size,
+        color: ColorState::Black,
+    })
+}
+
+/// Write the integral glyph MathType appends at the end of integral templates.
+fn write_integral_glyph(out: &mut Vec<u8>) -> Result<(), String> {
+    write_named_big_operator_glyph("integral", out)
+}
+
+/// Write a generated glyph used by MathType's big-operator templates.
+fn write_named_big_operator_glyph(name: &str, out: &mut Vec<u8>) -> Result<(), String> {
+    let glyph = BIG_OPERATOR_GLYPHS
+        .iter()
+        .find(|glyph| glyph.name == name)
+        .ok_or_else(|| format!("missing generated big-operator glyph: {name}"))?;
+    out.push(0x02);
+    out.push(0x04);
+    out.push(if name == "contour_loop" {
+        FN_MT_EXTRA
+    } else {
+        FN_SYMBOL
+    });
+    write_u16(glyph.mtcode, out);
+    out.push(glyph.font_pos);
+    Ok(())
+}
+
+/// Write a supported integral glyph as a CHAR record.
+fn write_integral(kind: IntegralKind, out: &mut Vec<u8>) {
+    let ch = match kind {
+        IntegralKind::Single => '∫',
+        IntegralKind::Double => '∬',
+        IntegralKind::Contour => '∮',
+    };
+    out.push(0x02);
+    out.push(0x00);
+    out.push(FN_SYMBOL);
+    write_u16(ch as u16, out);
+}
+
+/// Write a binomial as a parenthesized stacked fraction-like form.
+fn write_binomial(
+    upper: &Expr,
+    lower: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    write_char('(', out, writer)?;
+    write_fraction(upper, lower, out, current_size, writer)?;
+    write_char(')', out, writer)?;
+    Ok(())
+}
+
+/// Write a matrix environment as a real MTEF MATRIX wrapped in its fence template.
+fn write_matrix(
+    kind: MatrixKind,
+    rows: &[Vec<Expr>],
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    let (left, right, selector) = match kind {
+        MatrixKind::Parenthesized => ('(', ')', 0x01),
+        MatrixKind::Bracketed => ('[', ']', 0x03),
+    };
+    write_fenced_matrix(selector, left, right, rows, out, current_size, writer)?;
+    Ok(())
+}
+
+/// Write alignment-like environments using MTEF layout records, not fixture bytes.
+fn write_environment(
+    kind: EnvironmentKind,
+    rows: &[Vec<Expr>],
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    match kind {
+        EnvironmentKind::Align => write_align_matrix_record(rows, out, current_size, writer),
+        EnvironmentKind::Aligned => write_matrix_record(rows, out, current_size, writer),
+        EnvironmentKind::Cases => write_left_fenced_matrix(rows, out, current_size, writer),
+    }
+}
+
+/// Write align rows, padding omitted leading alignment cells on continuation rows.
+fn write_align_matrix_record(
+    rows: &[Vec<Expr>],
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    let col_count = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let padded = rows
+        .iter()
+        .map(|row| {
+            if row.len() + 1 == col_count {
+                let mut padded_row = Vec::with_capacity(col_count);
+                padded_row.push(Expr::Sequence(Vec::new()));
+                padded_row.extend(row.iter().cloned());
+                padded_row
+            } else {
+                row.clone()
+            }
+        })
+        .collect::<Vec<_>>();
+    write_matrix_record(&padded, out, current_size, writer)
+}
+
+/// Write a two-sided fence template whose main slot is a MATRIX record.
+fn write_fenced_matrix(
+    selector: u8,
+    left: char,
+    right: char,
+    rows: &[Vec<Expr>],
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    out.extend_from_slice(&[0x03, 0x00, selector, 0x03, 0x00]);
+    color_default(out);
+    write_matrix_slot_line(rows, out, current_size, writer)?;
+    write_delimiter_glyph(left, out)?;
+    write_delimiter_glyph(right, out)?;
+    out.push(0x00);
+    Ok(())
+}
+
+/// Write \begin{cases} as MathType's left-brace fence around a MATRIX.
+fn write_left_fenced_matrix(
+    rows: &[Vec<Expr>],
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    out.extend_from_slice(&[0x03, 0x00, 0x02, 0x01, 0x00]);
+    color_default(out);
+    write_matrix_slot_line(rows, out, current_size, writer)?;
+    write_delimiter_glyph('{', out)?;
+    out.push(0x00);
+    Ok(())
+}
+
+/// Write a template slot line that contains only one MATRIX object.
+fn write_matrix_slot_line(
+    rows: &[Vec<Expr>],
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    out.extend_from_slice(&[0x01, 0x00]);
+    write_matrix_record(rows, out, current_size, writer)?;
+    out.push(0x00);
+    Ok(())
+}
+
+/// Write MathType's MATRIX record and one LINE object for each cell.
+fn write_matrix_record(
+    rows: &[Vec<Expr>],
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    let row_count = u8::try_from(rows.len()).map_err(|_| "matrix has too many rows".to_string())?;
+    let col_count = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let col_count =
+        u8::try_from(col_count).map_err(|_| "matrix has too many columns".to_string())?;
+
+    out.extend_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, row_count, col_count]);
+    out.extend(std::iter::repeat(0x00).take(partition_byte_count(row_count)));
+    out.extend(std::iter::repeat(0x00).take(partition_byte_count(col_count)));
+    let mut cell_ordinal = 0usize;
+    let mut previous_cell_was_empty = false;
+    for row in rows {
+        for col_index in 0..col_count as usize {
+            if cell_ordinal > 0 && !previous_cell_was_empty {
+                color_default(out);
+            }
+            if let Some(cell) = row.get(col_index) {
+                previous_cell_was_empty = expr_is_empty_sequence(cell);
+                write_matrix_cell_line(cell, out, current_size, writer)?;
+            } else {
+                previous_cell_was_empty = true;
+                write_empty_matrix_cell_line(out);
+            }
+            cell_ordinal += 1;
+        }
+    }
+    out.push(0x00);
+    Ok(())
+}
+
+/// Return the packed two-bit partition-byte count for MATRIX dividers.
+fn partition_byte_count(count: u8) -> usize {
+    (count as usize + 4) / 4
+}
+
+/// Write one MATRIX cell line, preserving MathType's empty-cell form.
+fn write_matrix_cell_line(
+    expr: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    if expr_is_empty_sequence(expr) {
+        write_empty_matrix_cell_line(out);
+        return Ok(());
+    }
+    write_line(expr, out, current_size, writer)?;
+    Ok(())
+}
+
+/// Write the non-null but object-empty LINE MathType uses for empty cells.
+fn write_empty_matrix_cell_line(out: &mut Vec<u8>) {
+    out.extend_from_slice(&[0x01, 0x00, 0x00]);
+}
+
+/// Return true for parser-produced empty cells in alignment environments.
+fn expr_is_empty_sequence(expr: &Expr) -> bool {
+    matches!(expr, Expr::Sequence(items) if items.is_empty())
+}
+
 /// Write a font-scoped expression for the MathType font commands used here.
 fn write_font_expr(
     kind: FontKind,
@@ -470,17 +912,26 @@ fn write_font_char(
         FontKind::MathCal => {
             let entry = math_font_char(MATHCAL_CHARS, ch, "mathcal")?;
             if entry.font_pos.is_some() {
-                let typeface = if writer.euclid_math_two_defined && !writer.euclid_math_one_defined
-                {
-                    EXPLICIT_FONT_NEG_2
-                } else {
-                    EXPLICIT_FONT_NEG_1
-                };
                 writer.ensure_euclid_math_one(out);
-                write_table_char(typeface, entry.mtcode, entry.font_pos, out);
+                write_table_char(
+                    writer.euclid_math_one_typeface,
+                    entry.mtcode,
+                    entry.font_pos,
+                    out,
+                );
             } else {
                 write_table_char(entry.typeface, entry.mtcode, entry.font_pos, out);
             }
+        }
+        FontKind::MathScr => {
+            let entry = math_font_char(MATHCAL_CHARS, ch, "mathscr")?;
+            writer.ensure_euclid_math_one(out);
+            write_table_char(
+                writer.euclid_math_one_typeface,
+                entry.mtcode,
+                entry.font_pos,
+                out,
+            );
         }
         FontKind::MathSf => {
             out.extend_from_slice(&[
@@ -495,13 +946,13 @@ fn write_font_char(
         FontKind::MathBb => {
             let entry = math_font_char(MATHBB_CHARS, ch, "mathbb")?;
             if entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1 {
-                let typeface = if writer.euclid_math_one_defined {
-                    EXPLICIT_FONT_NEG_2
-                } else {
-                    EXPLICIT_FONT_NEG_1
-                };
                 writer.ensure_euclid_math_two(out);
-                write_table_char(typeface, entry.mtcode, entry.font_pos, out);
+                write_table_char(
+                    writer.euclid_math_two_typeface,
+                    entry.mtcode,
+                    entry.font_pos,
+                    out,
+                );
             } else {
                 // MathType stores C/N/Q/R/Z blackboard letters through fnMTEXTRA
                 // instead of the Euclid Math Two explicit font definition.
@@ -526,6 +977,9 @@ fn write_accent_expr(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    if kind == AccentKind::Vec {
+        return write_vector_template(expr, out, current_size, writer);
+    }
     if let Some((font_kind, ch)) = single_font_char(expr) {
         match (kind, font_kind) {
             (AccentKind::Bar | AccentKind::Hat, None) => {
@@ -553,6 +1007,30 @@ fn write_accent_expr(
         });
     }
     write_expr(expr, out, current_size, writer)
+}
+
+/// Write MathType's vector-arrow template for \vec{...}.
+fn write_vector_template(
+    expr: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    out.extend_from_slice(&[0x03, 0x00, 0x1f, 0x02, 0x00]);
+    color_default(out);
+    let line_state = write_line(expr, out, current_size, writer)?;
+    if line_state.size != current_size {
+        write_size(current_size, out);
+    }
+    if line_state.color != ColorState::Black {
+        color_black(out);
+    }
+    write_delimiter_glyph('\u{20d7}', out)?;
+    out.push(0x00);
+    Ok(WriteState {
+        size: current_size,
+        color: ColorState::Black,
+    })
 }
 
 /// Extract a single character, preserving simple font wrapper information.
@@ -590,6 +1068,9 @@ fn write_hat_template_for_bold_char(ch: char, out: &mut Vec<u8>) -> Result<(), S
         &mut MtefWriter {
             euclid_math_one_defined: true,
             euclid_math_two_defined: true,
+            euclid_math_one_typeface: EXPLICIT_FONT_NEG_1,
+            euclid_math_two_typeface: EXPLICIT_FONT_NEG_2,
+            black_color_defined: true,
         },
     )?;
     out.push(0x00);
@@ -618,6 +1099,7 @@ fn write_embellished_char(ch: char, kinds: &[AccentKind], out: &mut Vec<u8>) -> 
             match kind {
                 AccentKind::Hat | AccentKind::WideHat => 0x09,
                 AccentKind::Bar => 0x11,
+                AccentKind::Vec => 0x09,
             },
         ]);
     }
@@ -850,18 +1332,52 @@ fn write_line(
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
     out.extend_from_slice(&[0x01, 0x00]);
+    if let Some((width, rest)) = leading_space_rest(expr) {
+        write_space_without_color(width, out);
+        if !rest.is_empty() {
+            color_black(out);
+            let rest_expr = Expr::Sequence(rest.to_vec());
+            let final_state = write_expr(&rest_expr, out, current_size, writer)?;
+            out.push(0x00);
+            return Ok(final_state);
+        }
+        out.push(0x00);
+        return Ok(WriteState {
+            size: current_size,
+            color: ColorState::Default,
+        });
+    }
     if expr_starts_with_euclid_math_one(expr) {
         writer.ensure_euclid_math_one(out);
+        writer.ensure_black_color_def(out);
         color_black(out);
     } else if expr_starts_with_euclid_math_two(expr) {
         writer.ensure_euclid_math_two(out);
+        writer.ensure_black_color_def(out);
         color_black(out);
     } else if !expr_starts_with_line_font_def(expr) {
+        writer.ensure_black_color_def(out);
         color_black(out);
     }
     let final_state = write_expr(expr, out, current_size, writer)?;
     out.push(0x00);
     Ok(final_state)
+}
+
+/// Split off a leading spacing command that MathType writes before line color.
+fn leading_space_rest(expr: &Expr) -> Option<(u8, &[Expr])> {
+    match expr {
+        Expr::Sequence(items) => match items.as_slice() {
+            [Expr::Space(width), rest @ ..] => Some((*width, rest)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Write a spacing CHAR without changing color, used only at the start of a LINE.
+fn write_space_without_color(width: u8, out: &mut Vec<u8>) {
+    out.extend_from_slice(&[0x02, 0x00, FN_SPACE, width, 0xef]);
 }
 
 /// Return true when MathType emits a font definition before the line color.
@@ -885,6 +1401,9 @@ fn write_delimited(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    if left == '|' && right == '〉' {
+        return write_ket_delimited(content, out, current_size, writer);
+    }
     let selector = delimiter_selector(left, right)?;
     out.extend_from_slice(&[0x03, 0x00, selector, 0x03, 0x00]);
     color_default(out);
@@ -904,18 +1423,52 @@ fn write_delimited(
     })
 }
 
+/// Write \left|...\right\rangle as MathType's Dirac ket template.
+fn write_ket_delimited(
+    content: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    out.extend_from_slice(&[0x03, 0x00, 0x1e, 0x02]);
+    color_default(out);
+    let line_state = write_line(content, out, current_size, writer)?;
+    if line_state.size != current_size {
+        write_size(current_size, out);
+    }
+    if line_state.color != ColorState::Black {
+        color_black(out);
+    }
+    write_delimiter_glyph('|', out)?;
+    write_delimiter_glyph('〉', out)?;
+    out.push(0x00);
+    Ok(WriteState {
+        size: current_size,
+        color: ColorState::Black,
+    })
+}
+
 /// Return the bracket template selector observed in MathType's MTEF output.
 fn delimiter_selector(left: char, right: char) -> Result<u8, String> {
     match (left, right) {
         ('(', ')') => Ok(0x01),
         ('[', ']') => Ok(0x03),
+        ('{', '}') => Ok(0x02),
+        ('|', '|') => Ok(0x04),
+        ('⌊', '⌋') => Ok(0x06),
+        ('⌈', '⌉') => Ok(0x07),
+        ('〈', '〉') => Ok(0x00),
         _ => Err(format!("unsupported dynamic delimiter pair: {left}{right}")),
     }
 }
 
 /// Write the explicit delimiter glyph records MathType appends to fence templates.
 fn write_delimiter_glyph(ch: char, out: &mut Vec<u8>) -> Result<(), String> {
-    let code = ch as u32;
+    let code = match ch {
+        '⌊' => 0xf8f0,
+        '⌋' => 0xf8fb,
+        _ => ch as u32,
+    };
     if code > u16::MAX as u32 {
         return Err(format!("delimiter is outside BMP: {ch}"));
     }

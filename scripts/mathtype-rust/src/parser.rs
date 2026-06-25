@@ -3,17 +3,23 @@ use crate::ast::*;
 /// Strip math delimiters and keep multiline source records stable for MathType.
 pub(crate) fn normalize_latex(input: &str) -> String {
     let text = input.trim().trim_start_matches('\u{feff}').trim();
-    let body = if text.starts_with("$$") && text.ends_with("$$") && text.len() >= 4 {
-        text[2..text.len() - 2].trim()
-    } else if text.starts_with('$') && text.ends_with('$') && text.len() >= 2 {
-        text[1..text.len() - 1].trim()
+    let (body, stripped_delimiters) =
+        if text.starts_with("$$") && text.ends_with("$$") && text.len() >= 4 {
+            (text[2..text.len() - 2].trim(), true)
+        } else if text.starts_with('$') && text.ends_with('$') && text.len() >= 2 {
+            (text[1..text.len() - 1].trim(), true)
+        } else {
+            (text, false)
+        };
+    if stripped_delimiters {
+        // Existing MathType references were regenerated from stripped snippets with CRLF.
+        body.replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .replace('\n', "\r\n")
     } else {
-        text
-    };
-    // MathType stores pasted multiline TeX with CRLF in the MTEF source record.
-    body.replace("\r\n", "\n")
-        .replace('\r', "\n")
-        .replace('\n', "\r\n")
+        // File-based helper input without outer math delimiters preserves source line endings.
+        body.to_string()
+    }
 }
 
 pub(crate) struct Parser {
@@ -99,9 +105,22 @@ impl Parser {
                 let denominator = self.parse_required_group("fraction denominator")?;
                 Ok(Expr::Fraction(Box::new(numerator), Box::new(denominator)))
             }
+            "cfrac" => {
+                let numerator = self.parse_required_group("continued fraction numerator")?;
+                let denominator = self.parse_required_group("continued fraction denominator")?;
+                Ok(Expr::Fraction(Box::new(numerator), Box::new(denominator)))
+            }
             "sqrt" => {
+                let index = self.parse_optional_bracket_group()?;
                 let radicand = self.parse_required_group("square-root radicand")?;
-                Ok(Expr::Sqrt(Box::new(radicand)))
+                Ok(if let Some(index) = index {
+                    Expr::NthRoot {
+                        index: Box::new(index),
+                        radicand: Box::new(radicand),
+                    }
+                } else {
+                    Expr::Sqrt(Box::new(radicand))
+                })
             }
             "sum" => Ok(Expr::BigOp {
                 kind: BigOpKind::Sum,
@@ -115,6 +134,24 @@ impl Parser {
                 upper: None,
                 body: None,
             }),
+            "int" => Ok(Expr::Integral {
+                kind: IntegralKind::Single,
+            }),
+            "iint" => Ok(Expr::Integral {
+                kind: IntegralKind::Double,
+            }),
+            "oint" => Ok(Expr::Integral {
+                kind: IntegralKind::Contour,
+            }),
+            "binom" => {
+                let upper = self.parse_required_group("binomial upper")?;
+                let lower = self.parse_required_group("binomial lower")?;
+                Ok(Expr::Binomial(Box::new(upper), Box::new(lower)))
+            }
+            "begin" => {
+                let name = self.parse_raw_group("environment name")?;
+                self.parse_environment(&name)
+            }
             "left" => {
                 let left = self.parse_delimiter_char("left delimiter")?;
                 let content = self.parse_sequence_until_right()?;
@@ -127,8 +164,20 @@ impl Parser {
             }
             "quad" => Ok(Expr::Space(0x05)),
             "qquad" => Ok(Expr::Space(0x06)),
+            "!" => Ok(Expr::Space(0x02)),
+            "," => Ok(Expr::Space(0x08)),
+            "text" => Ok(Expr::Text(self.parse_raw_group("text content")?)),
+            "color" => {
+                let name = self.parse_raw_group("color name")?;
+                Ok(Expr::Color {
+                    name,
+                    content: Box::new(self.parse_required_group("colored content")?),
+                })
+            }
             "operatorname" => Ok(Expr::FunctionName(self.parse_raw_group("operator name")?)),
-            "arg" | "exp" | "ln" | "log" | "max" | "min" | "Pr" => Ok(Expr::FunctionName(command)),
+            "arg" | "exp" | "ln" | "log" | "max" | "min" | "lim" | "sup" | "Pr" => {
+                Ok(Expr::FunctionName(command))
+            }
             "mathbf" => Ok(Expr::Font {
                 kind: FontKind::Bold,
                 content: Box::new(self.parse_required_group("mathbf content")?),
@@ -145,6 +194,10 @@ impl Parser {
                 kind: FontKind::MathBb,
                 content: Box::new(self.parse_required_group("mathbb content")?),
             }),
+            "mathscr" => Ok(Expr::Font {
+                kind: FontKind::MathScr,
+                content: Box::new(self.parse_required_group("mathscr content")?),
+            }),
             "bar" => Ok(Expr::Accent {
                 kind: AccentKind::Bar,
                 content: Box::new(self.parse_required_group("bar content")?),
@@ -157,6 +210,24 @@ impl Parser {
                 kind: AccentKind::WideHat,
                 content: Box::new(self.parse_required_group("widehat content")?),
             }),
+            "vec" => Ok(Expr::Accent {
+                kind: AccentKind::Vec,
+                content: Box::new(self.parse_required_group("vec content")?),
+            }),
+            "overbrace" | "underbrace" => self.parse_required_group("brace content"),
+            "stackrel" => {
+                let upper = self.parse_required_group("stackrel upper")?;
+                let lower = self.parse_required_group("stackrel lower")?;
+                Ok(Expr::Script {
+                    base: Box::new(lower),
+                    sub: None,
+                    sup: Some(Box::new(upper)),
+                })
+            }
+            "xrightarrow" => {
+                let label = self.parse_required_group("arrow label")?;
+                Ok(Expr::Sequence(vec![Expr::Char('→'), label]))
+            }
             _ if command_to_char(&command).is_some() => {
                 Ok(Expr::Char(command_to_char(&command).unwrap()))
             }
@@ -164,6 +235,12 @@ impl Parser {
                 let ch = self
                     .next()
                     .ok_or_else(|| "dangling backslash".to_string())?;
+                if ch == '!' {
+                    return Ok(Expr::Space(0x02));
+                }
+                if ch == ',' {
+                    return Ok(Expr::Space(0x08));
+                }
                 Ok(Expr::Char(ch))
             }
             _ => Err(format!("unsupported LaTeX command: \\{command}")),
@@ -176,6 +253,14 @@ impl Parser {
         if matches!(atom, Expr::BigOp { body: None, .. }) {
             let body = self.parse_big_op_operand()?;
             if let Expr::BigOp {
+                body: body_slot, ..
+            } = &mut atom
+            {
+                *body_slot = Some(Box::new(body));
+            }
+        } else if matches!(atom, Expr::IntegralOp { body: None, .. }) {
+            let body = self.parse_big_op_operand()?;
+            if let Expr::IntegralOp {
                 body: body_slot, ..
             } = &mut atom
             {
@@ -240,6 +325,116 @@ impl Parser {
         Ok(Expr::Sequence(items))
     }
 
+    /// Parse rows and columns for the supported \begin...\end environments.
+    fn parse_environment(&mut self, name: &str) -> Result<Expr, String> {
+        let kind = match name {
+            "align" => EnvironmentKind::Align,
+            "aligned" => EnvironmentKind::Aligned,
+            "cases" => EnvironmentKind::Cases,
+            "pmatrix" => {
+                return Ok(Expr::Matrix {
+                    kind: MatrixKind::Parenthesized,
+                    rows: self.parse_environment_rows(name)?,
+                })
+            }
+            "bmatrix" => {
+                return Ok(Expr::Matrix {
+                    kind: MatrixKind::Bracketed,
+                    rows: self.parse_environment_rows(name)?,
+                })
+            }
+            other => return Err(format!("unsupported LaTeX environment: {other}")),
+        };
+        Ok(Expr::Environment {
+            kind,
+            rows: self.parse_environment_rows(name)?,
+        })
+    }
+
+    /// Parse an environment into rows split by & and \\ separators.
+    fn parse_environment_rows(&mut self, name: &str) -> Result<Vec<Vec<Expr>>, String> {
+        let mut rows = Vec::new();
+        loop {
+            if self.starts_command("end") {
+                self.consume_end_environment(name)?;
+                break;
+            }
+            let mut cells = Vec::new();
+            loop {
+                let cell = self.parse_sequence_until_environment_stop(name)?;
+                cells.push(cell);
+                self.skip_ws();
+                if self.peek() == Some('&') {
+                    self.pos += 1;
+                    continue;
+                }
+                if self.consume_row_separator() {
+                    break;
+                }
+                if self.starts_command("end") {
+                    self.consume_end_environment(name)?;
+                    return Ok(rows_with_row(rows, cells));
+                }
+                return Err(format!("expected &, \\\\, or \\end{{{name}}}"));
+            }
+            rows.push(cells);
+        }
+        Ok(rows)
+    }
+
+    /// Parse a cell until an environment separator appears at the current nesting level.
+    fn parse_sequence_until_environment_stop(&mut self, name: &str) -> Result<Expr, String> {
+        let mut items = Vec::new();
+        loop {
+            self.skip_ws();
+            if self.pos >= self.chars.len()
+                || self.peek() == Some('&')
+                || self.starts_command("end")
+                || self.starts_row_separator()
+            {
+                break;
+            }
+            let _ = name;
+            items.push(self.parse_complete_atom()?);
+        }
+        Ok(Expr::Sequence(items))
+    }
+
+    /// Return true when the input is at a row separator command.
+    fn starts_row_separator(&self) -> bool {
+        self.peek() == Some('\\') && self.chars.get(self.pos + 1) == Some(&'\\')
+    }
+
+    /// Consume a row separator command if present.
+    fn consume_row_separator(&mut self) -> bool {
+        if self.starts_row_separator() {
+            self.pos += 2;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Consume \end{name} for the currently parsed environment.
+    fn consume_end_environment(&mut self, expected: &str) -> Result<(), String> {
+        self.expect('\\')?;
+        let start = self.pos;
+        while self.peek().is_some_and(|ch| ch.is_ascii_alphabetic()) {
+            self.pos += 1;
+        }
+        let command: String = self.chars[start..self.pos].iter().collect();
+        if command != "end" {
+            return Err(format!("expected \\end{{{expected}}}, found \\{command}"));
+        }
+        let actual = self.parse_raw_group("environment end name")?;
+        if actual != expected {
+            return Err(format!(
+                "expected \\end{{{expected}}}, found \\end{{{actual}}}"
+            ));
+        }
+        Ok(())
+    }
+
     /// Consume the \right command and return its visible delimiter.
     fn parse_right_delimiter(&mut self) -> Result<char, String> {
         self.expect('\\')?;
@@ -259,9 +454,28 @@ impl Parser {
         self.skip_ws();
         if self.peek() == Some('\\') {
             self.pos += 1;
+            let start = self.pos;
+            while self.peek().is_some_and(|ch| ch.is_ascii_alphabetic()) {
+                self.pos += 1;
+            }
+            if start != self.pos {
+                let command: String = self.chars[start..self.pos].iter().collect();
+                return delimiter_command_char(&command)
+                    .ok_or_else(|| format!("unsupported {label}: \\{command}"));
+            }
             return self.next().ok_or_else(|| format!("expected {label}"));
         }
         self.next().ok_or_else(|| format!("expected {label}"))
+    }
+
+    /// Parse an optional bracketed group such as the index in \sqrt[n]{...}.
+    fn parse_optional_bracket_group(&mut self) -> Result<Option<Expr>, String> {
+        self.skip_ws();
+        if self.peek() != Some('[') {
+            return Ok(None);
+        }
+        self.pos += 1;
+        Ok(Some(self.parse_sequence(Some(']'))?))
     }
 
     /// Return true when the remaining input starts with a specific control word.
@@ -359,6 +573,33 @@ fn merge_script(base: Expr, sub: Option<Expr>, sup: Option<Expr>) -> Expr {
             upper: sup.map(Box::new).or(upper),
             body,
         },
+        Expr::Integral { kind } => Expr::IntegralOp {
+            kind,
+            lower: sub.map(Box::new),
+            upper: sup.map(Box::new),
+            body: None,
+        },
+        Expr::IntegralOp {
+            kind,
+            lower,
+            upper,
+            body,
+        } => Expr::IntegralOp {
+            kind,
+            lower: sub.map(Box::new).or(lower),
+            upper: sup.map(Box::new).or(upper),
+            body,
+        },
+        Expr::FunctionName(name) if matches!(name.as_str(), "lim" | "sup") => Expr::Limit {
+            name,
+            lower: sub.map(Box::new),
+            upper: sup.map(Box::new),
+        },
+        Expr::Limit { name, lower, upper } => Expr::Limit {
+            name,
+            lower: sub.map(Box::new).or(lower),
+            upper: sup.map(Box::new).or(upper),
+        },
         Expr::Script {
             base,
             sub: old_sub,
@@ -376,6 +617,28 @@ fn merge_script(base: Expr, sub: Option<Expr>, sup: Option<Expr>) -> Expr {
     }
 }
 
+/// Append a final environment row while keeping ownership straightforward.
+fn rows_with_row(mut rows: Vec<Vec<Expr>>, row: Vec<Expr>) -> Vec<Vec<Expr>> {
+    rows.push(row);
+    rows
+}
+
+/// Map delimiter commands used after \left and \right to visible fence characters.
+fn delimiter_command_char(command: &str) -> Option<char> {
+    match command {
+        "{" => Some('{'),
+        "}" => Some('}'),
+        "|" => Some('|'),
+        "langle" => Some('〈'),
+        "rangle" => Some('〉'),
+        "lfloor" => Some('⌊'),
+        "rfloor" => Some('⌋'),
+        "lceil" => Some('⌈'),
+        "rceil" => Some('⌉'),
+        _ => None,
+    }
+}
+
 /// Map no-argument LaTeX commands to the Unicode symbol MathType stores.
 fn command_to_char(command: &str) -> Option<char> {
     match command {
@@ -389,12 +652,32 @@ fn command_to_char(command: &str) -> Option<char> {
         "rho" => Some('ρ'),
         "chi" => Some('χ'),
         "omega" => Some('ω'),
+        "xi" => Some('ξ'),
+        "mu" => Some('μ'),
+        "phi" => Some('ϕ'),
         "Delta" => Some('Δ'),
         "Psi" => Some('Ψ'),
+        "Omega" => Some('Ω'),
+        "Lambda" => Some('Λ'),
+        "Gamma" => Some('Γ'),
         "times" => Some('×'),
         "cdot" => Some('⋅'),
         "in" => Some('∈'),
         "infty" => Some('∞'),
+        "equiv" => Some('≡'),
+        "to" => Some('→'),
+        "nabla" => Some('∇'),
+        "forall" => Some('∀'),
+        "oplus" => Some('⊕'),
+        "otimes" => Some('⊗'),
+        "propto" => Some('∝'),
+        "approx" => Some('≈'),
+        "partial" => Some('∂'),
+        "le" | "leq" => Some('≤'),
+        "pm" => Some('±'),
+        "circ" => Some('°'),
+        "cup" => Some('∪'),
+        "dots" => Some('…'),
         "leftarrow" => Some('←'),
         "ldots" => Some('…'),
         "ne" | "neq" => Some('≠'),

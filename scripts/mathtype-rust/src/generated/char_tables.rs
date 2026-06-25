@@ -107,6 +107,26 @@ pub(crate) const SPECIAL_CHARS: &[StyledChar] = &[
     StyledChar { ch: '\u{2026}', typeface: FN_SYMBOL, mtcode: 0x2026, font_pos: Some(0xbc) },
     StyledChar { ch: '\u{2260}', typeface: FN_SYMBOL, mtcode: 0x2260, font_pos: Some(0xb9) },
     StyledChar { ch: '\u{2265}', typeface: FN_SYMBOL, mtcode: 0x2265, font_pos: Some(0xb3) },
+    StyledChar { ch: '\u{03be}', typeface: FN_LC_GREEK, mtcode: 0x03be, font_pos: Some(0x78) },
+    StyledChar { ch: '\u{03bc}', typeface: FN_LC_GREEK, mtcode: 0x03bc, font_pos: Some(0x6d) },
+    StyledChar { ch: '\u{03d5}', typeface: FN_LC_GREEK, mtcode: 0x03d5, font_pos: Some(0x66) },
+    StyledChar { ch: '\u{03a9}', typeface: FN_UC_GREEK, mtcode: 0x03a9, font_pos: Some(0x57) },
+    StyledChar { ch: '\u{039b}', typeface: FN_UC_GREEK, mtcode: 0x039b, font_pos: Some(0x4c) },
+    StyledChar { ch: '\u{0393}', typeface: FN_UC_GREEK, mtcode: 0x0393, font_pos: Some(0x47) },
+    StyledChar { ch: '\u{2261}', typeface: FN_SYMBOL, mtcode: 0x2261, font_pos: Some(0xba) },
+    StyledChar { ch: '\u{2192}', typeface: FN_SYMBOL, mtcode: 0x2192, font_pos: Some(0xae) },
+    StyledChar { ch: '\u{2207}', typeface: FN_SYMBOL, mtcode: 0x2207, font_pos: Some(0xd1) },
+    StyledChar { ch: '\u{2200}', typeface: FN_SYMBOL, mtcode: 0x2200, font_pos: Some(0x22) },
+    StyledChar { ch: '\u{2295}', typeface: FN_SYMBOL, mtcode: 0x2295, font_pos: Some(0xc5) },
+    StyledChar { ch: '\u{2297}', typeface: FN_SYMBOL, mtcode: 0x2297, font_pos: Some(0xc4) },
+    StyledChar { ch: '\u{221d}', typeface: FN_SYMBOL, mtcode: 0x221d, font_pos: Some(0xb5) },
+    StyledChar { ch: '\u{2248}', typeface: FN_SYMBOL, mtcode: 0x2248, font_pos: Some(0xbb) },
+    StyledChar { ch: '\u{2202}', typeface: FN_SYMBOL, mtcode: 0x2202, font_pos: Some(0xb6) },
+    StyledChar { ch: '\u{2264}', typeface: FN_SYMBOL, mtcode: 0x2264, font_pos: Some(0xa3) },
+    StyledChar { ch: '\u{00b1}', typeface: FN_SYMBOL, mtcode: 0x00b1, font_pos: Some(0xb1) },
+    StyledChar { ch: '\u{00b0}', typeface: FN_SYMBOL, mtcode: 0x00b0, font_pos: Some(0xb0) },
+    StyledChar { ch: '\u{222a}', typeface: FN_SYMBOL, mtcode: 0x222a, font_pos: Some(0xc8) },
+    StyledChar { ch: '\u{2026}', typeface: FN_SYMBOL, mtcode: 0x2026, font_pos: Some(0xbc) },
 ];
 
 pub(crate) const OPERATOR_CHARS: &[EncodedChar] = &[
@@ -121,4 +141,6 @@ pub(crate) const OPERATOR_CHARS: &[EncodedChar] = &[
 pub(crate) const BIG_OPERATOR_GLYPHS: &[BigOperatorGlyph] = &[
     BigOperatorGlyph { name: "sum", mtcode: 0x2211, font_pos: 0xe5 },
     BigOperatorGlyph { name: "product", mtcode: 0x220f, font_pos: 0xd5 },
+    BigOperatorGlyph { name: "integral", mtcode: 0x222b, font_pos: 0xf2 },
+    BigOperatorGlyph { name: "contour_loop", mtcode: 0xee11, font_pos: 0xd1 },
 ];

@@ -395,7 +395,10 @@ internal static class Program
         MtCheck(MTAPIConnect(0, 30), "MTAPIConnect(mtef-preview)");
         try
         {
-            var preview = WriteSdkTransformWmf(MathTypeSDK.Instance, mtef, options.PreviewOutputPath);
+            var transformPrefs = options.PrefsFilePath is null
+                ? null
+                : ReadMathTypePrefsFromFile(options.PrefsFilePath);
+            var preview = WriteSdkTransformWmf(MathTypeSDK.Instance, mtef, options.PreviewOutputPath, transformPrefs);
             if (options.MetadataOutputPath is not null)
             {
                 WriteMetadata(options.MetadataOutputPath, preview);
@@ -410,9 +413,9 @@ internal static class Program
     /// <summary>
     /// Render SDK-generated MTEF to a placeable WMF preview.
     /// </summary>
-    private static PreviewMetadata WriteSdkTransformWmf(MathTypeSDK sdk, byte[] mtef, string outputPath)
+    private static PreviewMetadata WriteSdkTransformWmf(MathTypeSDK sdk, byte[] mtef, string outputPath, string? transformPrefs)
     {
-        var filePreview = TryWriteSdkTransformWmfFile(sdk, mtef, outputPath);
+        var filePreview = TryWriteSdkTransformWmfFile(sdk, mtef, outputPath, transformPrefs);
         if (filePreview is not null)
         {
             return filePreview;
@@ -430,6 +433,7 @@ internal static class Program
             var bounds = new MTSDKDN.RECT(0, 0, 0, 0);
             var dims = new MTAPI_DIMS(0, ref bounds);
             MtCheck(sdk.MTXFormResetMgn(), "MTXFormReset(pict)");
+            ApplySdkTransformPrefs(sdk, transformPrefs);
             var status = sdk.MTXFormEqnMgn(
                 MTXFormEqn.mtxfmLOCAL,
                 MTXFormEqn.mtxfmMTEF,
@@ -498,13 +502,14 @@ internal static class Program
     /// <summary>
     /// Ask MTXFormEqn to write a PICT/WMF preview file directly when memory output is unsupported.
     /// </summary>
-    private static PreviewMetadata? TryWriteSdkTransformWmfFile(MathTypeSDK sdk, byte[] mtef, string outputPath)
+    private static PreviewMetadata? TryWriteSdkTransformWmfFile(MathTypeSDK sdk, byte[] mtef, string outputPath, string? transformPrefs)
     {
         try
         {
             var fullOutputPath = Path.GetFullPath(outputPath);
             Directory.CreateDirectory(Path.GetDirectoryName(fullOutputPath)!);
             MtCheck(sdk.MTXFormResetMgn(), "MTXFormReset(pict-file)");
+            ApplySdkTransformPrefs(sdk, transformPrefs);
             var bounds = new MTSDKDN.RECT(0, 0, 0, 0);
             var dims = new MTAPI_DIMS(0, ref bounds);
             var status = sdk.MTXFormEqnMgn(
@@ -619,20 +624,50 @@ internal static class Program
         MtCheck(MTAPIConnect(MTINIT_LAUNCH_NOW, 30), "MTAPIConnect(prefs)");
         try
         {
-            var prefLength = MTGetPrefsFromFile(fullPrefsPath, null, 0);
-            if (prefLength <= 0)
-            {
-                throw new InvalidOperationException($"MTGetPrefsFromFile returned invalid length {prefLength} for {fullPrefsPath}");
-            }
-
-            var prefs = new StringBuilder(prefLength);
-            MtCheck(MTGetPrefsFromFile(fullPrefsPath, prefs, checked((short)prefLength)), "MTGetPrefsFromFile");
-            MtCheck(MTSetMTPrefs(MTPRF_MODE_NEXT_EQN, prefs.ToString(), -1), "MTSetMTPrefs");
+            MtCheck(MTSetMTPrefs(MTPRF_MODE_NEXT_EQN, ReadMathTypePrefsFromFile(fullPrefsPath), -1), "MTSetMTPrefs");
         }
         finally
         {
             MTAPIDisconnect();
         }
+    }
+
+    /// <summary>
+    /// Load MathType preference bytes as the SDK's internal preference string.
+    /// </summary>
+    private static string ReadMathTypePrefsFromFile(string prefsFilePath)
+    {
+        var fullPrefsPath = Path.GetFullPath(prefsFilePath);
+        if (!File.Exists(fullPrefsPath))
+        {
+            throw new FileNotFoundException($"MathType preferences file was not found: {fullPrefsPath}", fullPrefsPath);
+        }
+
+        var prefLength = MTGetPrefsFromFile(fullPrefsPath, null, 0);
+        if (prefLength <= 0)
+        {
+            throw new InvalidOperationException($"MTGetPrefsFromFile returned invalid length {prefLength} for {fullPrefsPath}");
+        }
+
+        var prefs = new StringBuilder(prefLength);
+        MtCheck(MTGetPrefsFromFile(fullPrefsPath, prefs, checked((short)prefLength)), "MTGetPrefsFromFile");
+        return prefs.ToString();
+    }
+
+    /// <summary>
+    /// Apply EQP prefs to the next SDK transform; MTXFormReset clears prior xform state.
+    /// </summary>
+    private static void ApplySdkTransformPrefs(MathTypeSDK sdk, string? transformPrefs)
+    {
+        if (transformPrefs is null)
+        {
+            return;
+        }
+
+        Log("MTXFormSetPrefs(user)");
+        MtCheck(
+            sdk.MTXFormSetPrefsMgn(MTXTranslatorPreference.mtxfmPREF_USER, transformPrefs),
+            "MTXFormSetPrefs");
     }
 
     private static void SetEquationData(object created, Options options)

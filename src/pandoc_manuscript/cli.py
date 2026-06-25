@@ -13,7 +13,7 @@ from .commands.clean import CleanSettings, DistcleanSettings
 from .commands.common import log
 from .commands.doctor import DoctorSettings
 from .commands.init import InitSettings
-from .commands.reply_build import BuildReplySettings
+from .commands.build_reply import BuildReplySettings
 from .commands.setup import SetupSettings
 
 

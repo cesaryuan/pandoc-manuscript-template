@@ -8,9 +8,9 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, CliPositionalArg, SettingsConfigDict
 
-from ..project.resources import iter_project_template_entries, project_template_root
+from ..runtime.resources import iter_project_template_entries, project_template_root
 from ..runtime.paths import PMT_DIR
-from ..tooling.pandoc_tools import setup_pandoc_tools
+from .setup import setup_pandoc_tools
 from .common import log, project_directory
 
 

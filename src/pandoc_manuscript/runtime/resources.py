@@ -22,7 +22,7 @@ def package_resource_path(relative_path: str | Path) -> Path:
 
 def source_tree_root() -> Path | None:
     """Return the pmt repository root when running from this source checkout."""
-    # project/resources.py lives one level deeper than the package root after
+    # runtime/resources.py lives one level deeper than the package root after
     # the support-module layout refactor, so the source checkout root is +1 up.
     root = Path(__file__).resolve().parents[3]
     # Detect the tool repository itself, not a generated manuscript project.

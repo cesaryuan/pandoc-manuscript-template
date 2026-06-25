@@ -2,14 +2,67 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import ClassVar, Literal
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .build import DEFAULT_OUTPUT_DIR, run_build_command
+from ..runtime.logging import log_error, log_info, log_success, log_warning
+from ..runtime.paths import PMT_DIR, PMT_WORK_DIR
+from .build import DEFAULT_OUTPUT_DIR
 from .common import project_directory
+
+
+def is_relative_to(path: Path, parent: Path) -> bool:
+    """Return True when path is inside parent on Python versions without Path.is_relative_to needs."""
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def ensure_safe_clean_dir(output_dir: Path) -> None:
+    """Reject unsafe recursive clean targets caused by a custom output directory."""
+    project_dir = Path.cwd().resolve()
+    resolved_output = output_dir.resolve()
+
+    # Custom output dirs are useful, but deleting the project root or parent
+    # directory is too destructive for a convenience clean command.
+    if resolved_output == project_dir or not is_relative_to(resolved_output, project_dir):
+        raise ValueError(f"Refusing to clean unsafe output directory: {output_dir}")
+
+
+def clean(output_dir: str | Path = DEFAULT_OUTPUT_DIR) -> None:
+    """Remove generated outputs and transient work files, keeping reusable caches."""
+    log_info("\n[Clean] Cleaning generated files...\n")
+
+    output_path = Path(output_dir)
+    if output_path.exists():
+        ensure_safe_clean_dir(output_path)
+        shutil.rmtree(output_path)
+        log_info(f"Removed: {output_path}")
+
+    if PMT_WORK_DIR.exists():
+        shutil.rmtree(PMT_WORK_DIR)
+        log_info(f"Removed: {PMT_WORK_DIR}")
+
+    log_success("\n[OK] Clean complete.")
+
+
+def distclean(output_dir: str | Path = DEFAULT_OUTPUT_DIR) -> None:
+    """Deep clean generated outputs, transient work files, and reusable caches."""
+    log_info("\n[Clean] Deep cleaning...\n")
+    clean(output_dir)
+
+    for cache_dir in (PMT_DIR, Path(".pandoc-cache")):
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
+            log_info(f"Removed: {cache_dir}")
+
+    log_success("\n[OK] Deep clean complete.")
 
 
 class CleanSettings(BaseSettings):
@@ -21,6 +74,7 @@ class CleanSettings(BaseSettings):
         cli_hide_none_type=True,
         cli_parse_none_str="auto",
         cli_shortcuts={"output_dir": ["-o", "--output-dir"]},
+        populate_by_name=True,
     )
     target: ClassVar[Literal["clean", "distclean"]] = "clean"
 
@@ -37,13 +91,19 @@ class CleanSettings(BaseSettings):
         if not project_dir.exists():
             raise FileNotFoundError(f"Project directory not found: {project_dir}")
 
-        with project_directory(project_dir):
-            return int(
-                run_build_command(
-                    target=self.target,
-                    output_dir=self.output_dir,
-                )
-            )
+        try:
+            with project_directory(project_dir):
+                if self.target == "distclean":
+                    distclean(self.output_dir)
+                else:
+                    clean(self.output_dir)
+            return 0
+        except KeyboardInterrupt:
+            log_warning("\n\n[WARN] Clean interrupted by user.")
+            return 1
+        except Exception as exc:
+            log_error(f"\n[ERROR] {exc}")
+            return 1
 
 
 class DistcleanSettings(CleanSettings):

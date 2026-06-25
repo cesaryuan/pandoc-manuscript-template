@@ -16,8 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..runtime.logging import log_info, should_log
-from ..runtime.paths import PMT_TOOLS_BIN_DIR, PMT_TOOLS_DOWNLOAD_DIR, PMT_TOOLS_EXTRACT_DIR
+from ...runtime.logging import log_info, should_log
+from ...runtime.paths import PMT_TOOLS_BIN_DIR, PMT_TOOLS_DOWNLOAD_DIR, PMT_TOOLS_EXTRACT_DIR
 
 
 GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"

@@ -10,7 +10,7 @@ from typing import Any
 
 from .. import runtime_cache_version
 from ..runtime.paths import PMT_FILTER_WORK_DIR, PMT_SVG_EMBED_CACHE_DIR, PMT_SVG_PNG_CACHE_DIR
-from ..project.resources import template_root
+from ..runtime.resources import template_root
 
 SVG_TO_PNG_DPI_KEYS = ("docxSvgToPngDpi", "docx-svg-to-png-dpi")
 SVG_TO_PNG_SCALE_KEYS = ("docxSvgToPngScale", "docx-svg-to-png-scale")

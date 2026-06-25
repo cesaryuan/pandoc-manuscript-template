@@ -7,8 +7,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from pandoc_manuscript.commands import reply_build
-from pandoc_manuscript.commands.reply_build import extract_citation_clusters, replace_citations
+from pandoc_manuscript.commands import build_reply as reply_build
+from pandoc_manuscript.commands.build_reply import extract_citation_clusters, replace_citations
+from pandoc_manuscript.commands.build_reply import command as reply_command
+from pandoc_manuscript.commands.build_reply import line_source as reply_line_source
+from pandoc_manuscript.commands.build_reply import output as reply_output
+from pandoc_manuscript.commands.build_reply import resolve as reply_resolve
 
 
 def test_extract_labeled_equation_labels() -> None:
@@ -182,10 +186,10 @@ def test_prepare_line_source_pdf_uses_soffice_on_non_windows(tmp_path, monkeypat
         (outdir / "manuscript.pdf").write_bytes(b"%PDF")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    monkeypatch.setattr(reply_build.sys, "platform", "linux")
-    monkeypatch.setattr(reply_build, "LINE_SOURCE_PDF_DIR", pdf_dir)
-    monkeypatch.setattr(reply_build, "LINE_SOURCE_CACHE_DIR", cache_dir)
-    monkeypatch.setattr(reply_build.subprocess, "run", fake_run)
+    monkeypatch.setattr(reply_line_source.sys, "platform", "linux")
+    monkeypatch.setattr(reply_line_source, "LINE_SOURCE_PDF_DIR", pdf_dir)
+    monkeypatch.setattr(reply_line_source, "LINE_SOURCE_CACHE_DIR", cache_dir)
+    monkeypatch.setattr(reply_line_source.subprocess, "run", fake_run)
 
     result = reply_build.prepare_line_source_pdf(source_docx)
     cached_result = reply_build.prepare_line_source_pdf(source_docx)
@@ -242,12 +246,12 @@ def test_prepare_line_source_pdf_builds_markdown_before_pdf(tmp_path, monkeypatc
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b"%PDF")
 
-    monkeypatch.setattr(reply_build, "LINE_SOURCE_DOCX_DIR", docx_dir)
-    monkeypatch.setattr(reply_build, "LINE_SOURCE_PDF_DIR", pdf_dir)
-    monkeypatch.setattr(reply_build, "LINE_SOURCE_CACHE_DIR", cache_dir)
-    monkeypatch.setattr(reply_build.sys, "platform", "win32")
-    monkeypatch.setattr(reply_build, "build_markdown_line_source_docx", fake_build_markdown_line_source_docx)
-    monkeypatch.setattr(reply_build, "export_docx_to_pdf_with_word", fake_export_docx_to_pdf_with_word)
+    monkeypatch.setattr(reply_line_source, "LINE_SOURCE_DOCX_DIR", docx_dir)
+    monkeypatch.setattr(reply_line_source, "LINE_SOURCE_PDF_DIR", pdf_dir)
+    monkeypatch.setattr(reply_line_source, "LINE_SOURCE_CACHE_DIR", cache_dir)
+    monkeypatch.setattr(reply_line_source.sys, "platform", "win32")
+    monkeypatch.setattr(reply_line_source, "build_markdown_line_source_docx", fake_build_markdown_line_source_docx)
+    monkeypatch.setattr(reply_line_source, "export_docx_to_pdf_with_word", fake_export_docx_to_pdf_with_word)
 
     result = reply_build.prepare_line_source_pdf(source_markdown)
     cached_result = reply_build.prepare_line_source_pdf(source_markdown)
@@ -280,27 +284,27 @@ def test_build_reply_docx_uses_svg_filters(tmp_path, monkeypatch) -> None:
     resolved_reply = tmp_path / "reply.resolved.md"
     calls: list[tuple[list[str], dict[str, str]]] = []
 
-    monkeypatch.setattr(reply_build, "write_reply_style_metadata_file", lambda _: style)
+    monkeypatch.setattr(reply_resolve, "write_reply_style_metadata_file", lambda _: style)
     monkeypatch.setattr(
-        reply_build,
+        reply_resolve,
         "load_reply_metadata",
         lambda *_: {"docxEmbedSvgImages": True, "docxConvertSvgToPng": False},
     )
-    monkeypatch.setattr(reply_build, "resolve_mathtype_enabled", lambda requested: False)
-    monkeypatch.setattr(reply_build, "resolve_reference_map", lambda *args: {})
-    monkeypatch.setattr(reply_build, "resolve_citation_map", lambda *args: {})
-    monkeypatch.setattr(reply_build, "resolve_citation_cluster_map", lambda *args: {})
-    monkeypatch.setattr(reply_build, "resolve_line_regexes", lambda text, source: text)
-    monkeypatch.setattr(reply_build, "replace_references", lambda text, refs: text)
-    monkeypatch.setattr(reply_build, "replace_citations", lambda text, refs, clusters=None: text)
-    monkeypatch.setattr(reply_build, "resolved_reply_path", lambda _: resolved_reply)
-    monkeypatch.setattr(reply_build, "pandoc_command", lambda: "pandoc")
-    monkeypatch.setattr(reply_build, "docx_metadata_filter_args", lambda: ["--lua-filter", "docx-metadata.lua"])
-    monkeypatch.setattr(reply_build, "svg_embed_images_filter_args", lambda: ["--filter", "embed.py"])
-    monkeypatch.setattr(reply_build, "svg_to_png_filter_args", lambda: ["--filter", "png.py"])
-    monkeypatch.setattr(reply_build, "pandoc_tools_env", lambda env=None: env or {})
-    monkeypatch.setattr(reply_build, "postprocess_docx", lambda *args, **kwargs: True)
-    monkeypatch.setattr(reply_build, "validate_final_docx_syntax", lambda path: [])
+    monkeypatch.setattr(reply_output, "resolve_mathtype_enabled", lambda requested: False)
+    monkeypatch.setattr(reply_resolve, "resolve_reference_map", lambda *args: {})
+    monkeypatch.setattr(reply_resolve, "resolve_citation_map", lambda *args: {})
+    monkeypatch.setattr(reply_resolve, "resolve_citation_cluster_map", lambda *args: {})
+    monkeypatch.setattr(reply_line_source, "resolve_line_regexes", lambda text, source: text)
+    monkeypatch.setattr(reply_resolve, "replace_references", lambda text, refs: text)
+    monkeypatch.setattr(reply_resolve, "replace_citations", lambda text, refs, clusters=None: text)
+    monkeypatch.setattr(reply_output, "resolved_reply_path", lambda _: resolved_reply)
+    monkeypatch.setattr(reply_output, "pandoc_command", lambda: "pandoc")
+    monkeypatch.setattr(reply_output, "docx_metadata_filter_args", lambda: ["--lua-filter", "docx-metadata.lua"])
+    monkeypatch.setattr(reply_output, "svg_embed_images_filter_args", lambda: ["--filter", "embed.py"])
+    monkeypatch.setattr(reply_output, "svg_to_png_filter_args", lambda: ["--filter", "png.py"])
+    monkeypatch.setattr(reply_output, "pandoc_tools_env", lambda env=None: env or {})
+    monkeypatch.setattr(reply_output, "postprocess_docx", lambda *args, **kwargs: True)
+    monkeypatch.setattr(reply_output, "validate_final_docx_syntax", lambda path: [])
 
     def fake_run_command(cmd, env=None):
         """Capture the Pandoc command without running external tools."""
@@ -308,7 +312,7 @@ def test_build_reply_docx_uses_svg_filters(tmp_path, monkeypatch) -> None:
         output.write_bytes(b"docx")
         return subprocess.CompletedProcess(cmd, 0)
 
-    monkeypatch.setattr(reply_build, "run_command", fake_run_command)
+    monkeypatch.setattr(reply_resolve, "run_command", fake_run_command)
 
     reply_build.build_reply_docx(
         reply=reply,
@@ -400,11 +404,11 @@ $$ x+y $$ {#eq:sum}
     output = tmp_path / "reply.txt"
     flattened_style = tmp_path / "style.reply.flat.yml"
 
-    monkeypatch.setattr(reply_build, "write_reply_style_metadata_file", lambda _: flattened_style)
-    monkeypatch.setattr(reply_build, "resolve_reference_map", lambda *args: {"fig:layout": "Figure 3"})
-    monkeypatch.setattr(reply_build, "resolve_citation_map", lambda *args: {"a": "[1]", "b": "[2]"})
-    monkeypatch.setattr(reply_build, "resolve_citation_cluster_map", lambda *args: {"[@a; @b]": "[1, 2]"})
-    monkeypatch.setattr(reply_build, "resolve_line_regexes", lambda text, source: text.replace("(Line `stable prose`)", "(Line 42)"))
+    monkeypatch.setattr(reply_resolve, "write_reply_style_metadata_file", lambda _: flattened_style)
+    monkeypatch.setattr(reply_resolve, "resolve_reference_map", lambda *args: {"fig:layout": "Figure 3"})
+    monkeypatch.setattr(reply_resolve, "resolve_citation_map", lambda *args: {"a": "[1]", "b": "[2]"})
+    monkeypatch.setattr(reply_resolve, "resolve_citation_cluster_map", lambda *args: {"[@a; @b]": "[1, 2]"})
+    monkeypatch.setattr(reply_line_source, "resolve_line_regexes", lambda text, source: text.replace("(Line `stable prose`)", "(Line 42)"))
 
     reply_build.build_reply_txt(
         reply=reply,
@@ -434,8 +438,8 @@ def test_run_build_reply_command_routes_txt_output(tmp_path, monkeypatch) -> Non
         """Capture TXT builder arguments without touching external tools."""
         calls.append(kwargs)
 
-    monkeypatch.setattr(reply_build, "build_reply_txt", fake_build_reply_txt)
-    monkeypatch.setattr(reply_build, "build_reply_docx", lambda **kwargs: pytest.fail("DOCX builder should not run"))
+    monkeypatch.setattr(reply_command, "build_reply_txt", fake_build_reply_txt)
+    monkeypatch.setattr(reply_command, "build_reply_docx", lambda **kwargs: pytest.fail("DOCX builder should not run"))
 
     result = reply_build.run_build_reply_command(markdown=str(reply), output_file=str(tmp_path / "reply.txt"))
 
@@ -626,7 +630,7 @@ def test_resolve_line_regexes_with_generated_template_manuscript_pdf(monkeypatch
     line_source = template_manuscript_pdf_path()
     if not line_source.exists():
         pytest.skip(f"Build template/manuscript.md PDF first: {line_source}")
-    monkeypatch.setattr(reply_build, "prepare_line_source_pdf", lambda path: path)
+    monkeypatch.setattr(reply_line_source, "prepare_line_source_pdf", lambda path: path)
 
     markdown = "\n".join(
         [

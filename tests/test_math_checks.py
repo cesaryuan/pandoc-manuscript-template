@@ -3,8 +3,9 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from pandoc_manuscript.commands import build, reply_build
-from pandoc_manuscript.checks.math import find_hat_macro_order_issues
+from pandoc_manuscript.commands import build, build_reply as reply_build
+from pandoc_manuscript.commands.build_reply import command as reply_command
+from pandoc_manuscript.mathtype.preflight import find_hat_macro_order_issues
 
 
 def test_find_hat_macro_order_issues_reports_locations_and_rewrites() -> None:
@@ -60,8 +61,7 @@ def test_run_build_reply_command_txt_skips_hat_preflight(tmp_path, monkeypatch) 
     manuscript.write_text("$\\hat{\\mathbf{D}}$\n", encoding="utf-8")
     calls: list[Path] = []
 
-    monkeypatch.setattr(reply_build, "warn_mathtype_hat_style_order", lambda path: calls.append(path))
-    monkeypatch.setattr(reply_build, "build_reply_txt", lambda **kwargs: None)
+    monkeypatch.setattr(reply_command, "build_reply_txt", lambda **kwargs: None)
 
     result = reply_build.run_build_reply_command(
         markdown=str(reply),

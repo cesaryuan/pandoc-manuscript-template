@@ -4,7 +4,6 @@ Build normal manuscript targets for the Pandoc manuscript template.
 
 import errno
 import os
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Literal, Tuple
@@ -13,8 +12,8 @@ from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, CliPositionalArg, CliSuppress, SettingsConfigDict
 
 from ..runtime.logging import log_error, log_info, log_success, log_warning
-from ..checks.math import warn_mathtype_hat_style_order
-from ..project.metadata import (
+from ..mathtype.preflight import warn_mathtype_hat_style_order
+from ..runtime.metadata import (
     MissingYamlFrontMatterError,
     load_merged_metadata_with_status,
     parse_yaml_file,
@@ -23,21 +22,19 @@ from ..project.metadata import (
 from ..mathtype.convert_marked_docx import convert_marked_docx
 from ..mathtype.ole_parts import build_helper, check_mathtype_availability
 from ..runtime.paths import (
-    PMT_DIR,
     PMT_MATHTYPE_WORK_DIR,
-    PMT_WORK_DIR,
     pmt_path,
 )
 from ..docx.postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from ..docx.postprocess import postprocess_docx as run_docx_postprocess
-from ..project.resources import package_resource_path, template_root
+from ..runtime.resources import package_resource_path, template_root
 from ..docx.svg_filters import (
     python_filter_wrapper,
     should_convert_docx_svg_to_png,
     should_embed_docx_svg_images,
 )
 from ..docx import svg_filters as svg_filter_helpers
-from ..tooling.pandoc_tools import ensure_pandoc_tools, pandoc_command, pandoc_tools_env
+from .setup import ensure_pandoc_tools, pandoc_command, pandoc_tools_env
 from .common import project_directory
 
 # ============================================================================
@@ -46,7 +43,7 @@ from .common import project_directory
 
 
 DEFAULT_OUTPUT_DIR = "output"
-BuildTarget = Literal["docx", "latex", "json", "clean", "distclean"]
+BuildTarget = Literal["docx", "latex", "json"]
 BUILD_CLI_CONFIG = SettingsConfigDict(
     cli_kebab_case=True,
     cli_implicit_flags=True,
@@ -189,18 +186,9 @@ def resource_path(path: str | Path) -> Path:
     path = Path(path)
     if path.is_absolute():
         return path
-    if path.parts and path.parts[0] in {"mathtype", "mathtype_ole_helper"}:
+    if path.parts and path.parts[0] == "mathtype":
         return package_resource_path(path)
     return template_root() / path
-
-
-def is_relative_to(path: Path, parent: Path) -> bool:
-    """Return True when path is inside parent on Python versions without Path.is_relative_to needs."""
-    try:
-        path.relative_to(parent)
-        return True
-    except ValueError:
-        return False
 
 
 def configure_manuscript(markdown_path: str | Path, derive_project_name: bool = False) -> None:
@@ -579,68 +567,21 @@ def build_json():
     log_success(f"\n[OK] JSON created: {json_file}")
 
 
-def clean():
-    """Remove generated outputs and transient work files, keeping reusable caches."""
-    log_info("\n[Clean] Cleaning generated files...\n")
-
-    output_dir = Path(SETTINGS.output_dir)
-    if output_dir.exists():
-        ensure_safe_clean_dir(output_dir)
-        shutil.rmtree(output_dir)
-        log_info(f"Removed: {output_dir}")
-
-    if PMT_WORK_DIR.exists():
-        shutil.rmtree(PMT_WORK_DIR)
-        log_info(f"Removed: {PMT_WORK_DIR}")
-
-    log_success("\n[OK] Clean complete.")
-
-
-def ensure_safe_clean_dir(output_dir: Path) -> None:
-    """Reject unsafe recursive clean targets caused by a custom output directory."""
-    project_dir = Path.cwd().resolve()
-    resolved_output = output_dir.resolve()
-
-    # Custom output directories make clean more flexible, but deleting the
-    # project root or a directory outside the project would be too easy to do by
-    # accident with options such as --output-dir . or --output-dir ..
-    if resolved_output == project_dir or not is_relative_to(resolved_output, project_dir):
-        raise ValueError(f"Refusing to clean unsafe output directory: {output_dir}")
-
-
-def distclean():
-    """Deep clean generated outputs, transient work files, and reusable caches."""
-    log_info("\n[Clean] Deep cleaning...\n")
-
-    # Regular clean
-    clean()
-
-    for cache_dir in (PMT_DIR, Path(".pandoc-cache")):
-        if cache_dir.exists():
-            shutil.rmtree(cache_dir)
-            log_info(f"Removed: {cache_dir}")
-
-    log_success("\n[OK] Deep clean complete.")
-
-
 def run_build_command(
     *,
     target: str = "docx",
     markdown: str | None = None,
     manuscript_option: str | None = None,
-    output_dir: str | None = None,
     output_file: str | None = None,
     reference_doc: str | None = None,
     warn_hat_order: bool = True,
 ) -> int:
     """Run the selected manuscript build target with direct settings values."""
     configure_output_file(None)
-    if output_dir and target in {"docx", "latex", "json"}:
-        raise ValueError(f"--output-dir is not supported by the {target} target; use --output-file instead.")
+    if target not in {"docx", "latex", "json"}:
+        raise ValueError(f"Unsupported build target: {target}")
     if output_file and target not in {"docx", "latex", "json"}:
         raise ValueError("--output-file is only supported by the docx, latex, and json targets.")
-    if output_dir:
-        configure_output_dir(output_dir)
     if output_file:
         configure_output_file(output_file)
 
@@ -648,21 +589,16 @@ def run_build_command(
         raise ValueError("Specify the markdown file either positionally or with --manuscript, not both.")
 
     manuscript_arg = manuscript_option or markdown
-    if manuscript_arg and target not in {"docx", "latex", "json"}:
-        raise ValueError("A markdown file can only be specified for docx, latex, or json targets.")
     if reference_doc and target != "docx":
         raise ValueError("--reference-doc is only supported by the docx target.")
     configure_reference_doc(reference_doc)
 
-    if target in {"docx", "latex", "json"}:
-        configure_manuscript(manuscript_arg or SETTINGS.manuscript_file, derive_project_name=bool(manuscript_arg))
+    configure_manuscript(manuscript_arg or SETTINGS.manuscript_file, derive_project_name=bool(manuscript_arg))
 
     targets = {
         "docx": lambda: build_docx(warn_hat_order=warn_hat_order),
         "latex": build_latex,
         "json": build_json,
-        "clean": clean,
-        "distclean": distclean,
     }
 
     try:

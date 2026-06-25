@@ -1,12 +1,14 @@
 from pathlib import Path
 import sys
+from typing import get_args
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from pandoc_manuscript.commands import build, reply_build
+from pandoc_manuscript.commands import build, build_reply as reply_build
 from pandoc_manuscript.mathtype import ole_parts
+from pandoc_manuscript.runtime import resources
 from pandoc_manuscript.runtime.paths import (
     PMT_CACHE_DIR,
     PMT_DIR,
@@ -131,3 +133,25 @@ def test_reply_line_source_cache_uses_pmt_cache() -> None:
     """Keep reusable reply line-source artifacts under the shared pmt cache."""
     assert reply_build.LINE_SOURCE_CACHE_DIR == PMT_REPLY_LINE_SOURCE_CACHE_DIR
     assert reply_build.LINE_SOURCE_CACHE_DIR.parts[: len(PMT_CACHE_DIR.parts)] == PMT_CACHE_DIR.parts
+
+
+def test_runtime_resources_resolve_source_checkout_roots() -> None:
+    """Find repo, template, and Pandoc runtime roots after moving project helpers."""
+    repo_root = Path(__file__).resolve().parents[1]
+
+    assert resources.source_tree_root() == repo_root
+    assert resources.template_root() == repo_root
+    assert resources.project_template_root() == repo_root / "template"
+
+
+def test_mathtype_helper_paths_live_under_mathtype_package() -> None:
+    """Resolve the MathType OLE helper from its new private mathtype location."""
+    assert "mathtype_ole_helper" not in str(ole_parts.HELPER_PROJECT)
+    assert ole_parts.HELPER_PROJECT.name == "MathTypeOleHelper.csproj"
+    assert ole_parts.HELPER_PROJECT.exists()
+    assert "mathtype" in ole_parts.HELPER_EXE.parts
+
+
+def test_build_target_excludes_clean_commands() -> None:
+    """Keep clean and distclean outside the manuscript build target union."""
+    assert set(get_args(build.BuildTarget)) == {"docx", "latex", "json"}

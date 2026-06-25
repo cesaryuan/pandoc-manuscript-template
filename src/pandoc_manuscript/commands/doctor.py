@@ -7,8 +7,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from ..project.resources import template_root
-from ..tooling.pandoc_tools import ensure_pandoc_tools, pandoc_tools_env, resolve_tool
+from ..runtime.resources import template_root
+from .setup import ensure_pandoc_tools, pandoc_tools_env, resolve_tool
 from .common import log
 
 

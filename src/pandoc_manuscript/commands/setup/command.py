@@ -7,8 +7,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from ..tooling.pandoc_tools import setup_pandoc_tools
-from .common import log, project_directory
+from ..common import log, project_directory
+from .pandoc_tools import setup_pandoc_tools
 
 
 class SetupSettings(BaseSettings):

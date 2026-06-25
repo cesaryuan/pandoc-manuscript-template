@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ..runtime.logging import log_debug, log_info, log_warning
 from ..runtime.paths import PMT_MATHTYPE_CACHE_DIR
-from ..project.resources import package_resource_path
+from ..runtime.resources import package_resource_path
 
 from .compound_file import CompoundFile
 
@@ -25,8 +25,8 @@ def resource_path(path: str | Path) -> Path:
     return package_resource_path(path)
 
 
-HELPER_PROJECT = resource_path("mathtype_ole_helper/MathTypeOleHelper.csproj")
-HELPER_EXE = resource_path("mathtype_ole_helper/bin/Release/net48/MathTypeOleHelper.exe")
+HELPER_PROJECT = resource_path("mathtype/ole_helper/MathTypeOleHelper.csproj")
+HELPER_EXE = resource_path("mathtype/ole_helper/bin/Release/net48/MathTypeOleHelper.exe")
 MATHTYPE_PROG_ID = "Equation.DSMT4"
 MATHTYPE_MT6_RELATIVE_PATHS = (
     Path("System/64/MT6.dll"),

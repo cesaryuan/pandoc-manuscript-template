@@ -268,3 +268,6 @@ nul
 tmp/
 output/docx/
 mathtype.docx
+src/pandoc_manuscript/mathtype/ole_helper/obj/
+src/pandoc_manuscript/mathtype/ole_helper/bin/Release/net48/MathTypeOleHelper.exe.config
+src/pandoc_manuscript/mathtype/ole_helper/bin/Release/net48/MathTypeOleHelper.pdb

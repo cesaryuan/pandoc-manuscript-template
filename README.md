@@ -68,6 +68,16 @@ Install these tools first:
 
 If `pandoc` or `pandoc-crossref` are not on `PATH`, PMT can download managed project-local copies into `.pmt/tools`.
 
+### Rough Python Compatibility Check
+
+If you just want a quick syntax-level check against the project's minimum Python target, use Ruff:
+
+```bash
+uvx ruff check .
+```
+
+This is only a rough version-compatibility check. It can catch syntax that does not fit the configured Python target, but it does not prove runtime compatibility.
+
 ### Create Your First Project
 
 ```bash

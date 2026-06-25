@@ -5,6 +5,20 @@ description = "Pandoc Markdown manuscript template with DOCX-focused post-proces
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
+authors = [
+  { name = "cesaryuan" },
+]
+keywords = ["pandoc", "docx", "manuscript", "markdown", "academic-writing"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Text Processing :: Markup :: Markdown",
+]
 dependencies = [
   "python-docx>=1.1.0",
   "pyyaml>=6.0",
@@ -17,9 +31,20 @@ dependencies = [
   "resvg-py>=0.3.3",
 ]
 
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E9"]
+
 [project.scripts]
 pmt = "pandoc_manuscript.cli:main"
 pandoc-manuscript = "pandoc_manuscript.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/cesaryuan/pandoc-manuscript-template"
+Repository = "https://github.com/cesaryuan/pandoc-manuscript-template"
+Issues = "https://github.com/cesaryuan/pandoc-manuscript-template/issues"
 
 [build-system]
 requires = ["hatchling"]

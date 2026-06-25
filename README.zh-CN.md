@@ -68,6 +68,16 @@ PMT 不只是一个通用的 Pandoc 封装器。它是一个面向真实投稿�
 
 如果 `pandoc` 或 `pandoc-crossref` 不在 `PATH` 中，PMT 可以把受管工具下载到项目内的 `.pmt/tools`。
 
+### Python 版本粗检
+
+如果你只是想快速做一次面向语法的 Python 版本检查，可以直接用 Ruff：
+
+```bash
+uvx ruff check .
+```
+
+这只是粗略检查，能发现不符合当前 Python 目标版本的语法，但不能证明运行时一定兼容。
+
 ### 创建第一个项目
 
 ```bash

@@ -66,10 +66,10 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine("[ole-helper] " + ex.Message);
+            Console.Error.WriteLine("[ole-helper] " + SafeExceptionMessage(ex));
             if (VerboseLoggingEnabled())
             {
-                Console.Error.WriteLine(ex);
+                WriteExceptionDetails(ex);
             }
             CloseMathTypeProcessesOpenedByHelper(existingMathTypeProcessIds);
             return 1;
@@ -88,6 +88,93 @@ internal static class Program
         catch (Exception)
         {
             // Encoding is best-effort; Python also has a legacy-codepage fallback.
+        }
+    }
+
+    /// <summary>
+    /// Print exception fields individually so Exception.ToString failures do not hide the real error.
+    /// </summary>
+    private static void WriteExceptionDetails(Exception ex)
+    {
+        var current = ex;
+        var depth = 0;
+        while (current != null && depth < 8)
+        {
+            Console.Error.WriteLine($"[ole-helper] exception[{depth}].type: {SafeExceptionType(current)}");
+            Console.Error.WriteLine($"[ole-helper] exception[{depth}].hresult: 0x{current.HResult:X8}");
+            Console.Error.WriteLine($"[ole-helper] exception[{depth}].message: {SafeExceptionMessage(current)}");
+
+            var stackTrace = SafeStackTrace(current);
+            if (!string.IsNullOrWhiteSpace(stackTrace))
+            {
+                Console.Error.WriteLine($"[ole-helper] exception[{depth}].stack:");
+                Console.Error.WriteLine(stackTrace);
+            }
+
+            current = SafeInnerException(current);
+            depth++;
+        }
+    }
+
+    /// <summary>
+    /// Read an exception message defensively for unusual COM/runtime failures.
+    /// </summary>
+    private static string SafeExceptionMessage(Exception ex)
+    {
+        try
+        {
+            var message = ex.Message;
+            return string.IsNullOrWhiteSpace(message) ? SafeExceptionType(ex) : message;
+        }
+        catch (Exception messageError)
+        {
+            return $"failed to read {SafeExceptionType(ex)}.Message ({SafeExceptionType(messageError)})";
+        }
+    }
+
+    /// <summary>
+    /// Return the exception type name without touching Exception.ToString().
+    /// </summary>
+    private static string SafeExceptionType(Exception ex)
+    {
+        try
+        {
+            var type = ex.GetType();
+            return type.FullName ?? type.Name;
+        }
+        catch (Exception)
+        {
+            return "<unknown exception type>";
+        }
+    }
+
+    /// <summary>
+    /// Read stack trace text defensively because ToString() also depends on it.
+    /// </summary>
+    private static string? SafeStackTrace(Exception ex)
+    {
+        try
+        {
+            return ex.StackTrace;
+        }
+        catch (Exception stackError)
+        {
+            return $"<failed to read stack trace: {SafeExceptionType(stackError)}>";
+        }
+    }
+
+    /// <summary>
+    /// Read inner exceptions defensively to keep verbose logging best-effort.
+    /// </summary>
+    private static Exception? SafeInnerException(Exception ex)
+    {
+        try
+        {
+            return ex.InnerException;
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 

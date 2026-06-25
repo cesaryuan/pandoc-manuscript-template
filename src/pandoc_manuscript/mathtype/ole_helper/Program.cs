@@ -8,6 +8,7 @@ using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text;
+using MTSDKDN;
 
 internal static class Program
 {
@@ -37,10 +38,17 @@ internal static class Program
     private const int MTDIM_HORIZ_POS_TYPE = 4;
     private const int MTDIM_HORIZ_POS = 5;
     private const double MATH_TYPE_DIMENSION_UNITS_PER_POINT = 32.0;
+    private const double MATHTYPE_WMF_BASELINE_UNITS_PER_POINT = 16.0;
+    private const int PLACEABLE_WMF_HEADER_SIZE = 22;
+    private const int WMF_HEADER_SIZE = 18;
+    private const ushort META_ESCAPE_FUNCTION = 0x0626;
+    private const ushort MFCOMMENT_ESCAPE = 15;
+    private const ushort MATHTYPE_BASELINE_COMMENT_TYPE = 0;
     private const short MT_OK = 0;
     private const string MathTypeProgId = "Equation.DSMT4";
 
     private static readonly Guid IidIOleObject = new Guid("00000112-0000-0000-C000-000000000046");
+    private static readonly byte[] MathTypeBaselineSignature = Encoding.ASCII.GetBytes("MathType");
     private static bool mathTypeApiDllResolved;
     private static string? mathTypeApiDllPath;
 
@@ -253,6 +261,22 @@ internal static class Program
             ApplyMathTypePrefs(options.PrefsFilePath);
         }
 
+        if (options.Method.Equals("sdk-data-object", StringComparison.OrdinalIgnoreCase))
+        {
+            CreateOleBinFromSdkDataObject(options, clsid);
+            return;
+        }
+        if (options.Method.Equals("sdk-list-translators", StringComparison.OrdinalIgnoreCase))
+        {
+            ListSdkTranslators();
+            return;
+        }
+        if (options.Method.Equals("sdk-xform-ole", StringComparison.OrdinalIgnoreCase))
+        {
+            CreateOleBinFromSdkTransform(options);
+            return;
+        }
+
         Log("create storage");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(options.OutputPath))!);
         if (File.Exists(options.OutputPath))
@@ -276,7 +300,7 @@ internal static class Program
         {
             Log("OleCreateFromData");
             var payload = BuildPayload(options);
-            var dataObject = new SingleFormatDataObject(payload.FormatId, payload.Bytes);
+            var dataObject = new SingleFormatDataObject(clsid, payload.FormatId, payload.Bytes);
             OleCheck(
                 OleCreateFromData(
                     dataObject,
@@ -326,9 +350,11 @@ internal static class Program
             }
             else if (options.Method.Equals("init-from-data", StringComparison.OrdinalIgnoreCase))
             {
+                Log("OleRun");
+                OleCheck(OleRun(created), "OleRun");
                 Log("InitFromData");
                 var payload = BuildPayload(options);
-                var dataObject = new SingleFormatDataObject(payload.FormatId, payload.Bytes);
+                var dataObject = new SingleFormatDataObject(clsid, payload.FormatId, payload.Bytes);
                 oleObject.InitFromData(dataObject, true, 0);
             }
 
@@ -374,6 +400,543 @@ internal static class Program
         }
 
         Log($"wrote {options.OutputPath}, bytes={new FileInfo(options.OutputPath).Length}");
+    }
+
+    /// <summary>
+    /// Convert TeX through MathType's SDK IDataObject and save the returned OLE storage.
+    /// </summary>
+    private static void CreateOleBinFromSdkDataObject(Options options, Guid clsid)
+    {
+        if (options.BinaryInput)
+        {
+            throw new NotSupportedException("sdk-data-object only supports text input.");
+        }
+
+        Log("SDK IDataObject");
+        TryConfigureMathTypeApiDll(required: true);
+        MtCheck(MTAPIConnect(0, 30), "MTAPIConnect(sdk)");
+        try
+        {
+            var dataObject = MathTypeSDK.getIDataObject();
+            if (dataObject is null)
+            {
+                throw new InvalidOperationException("MathType SDK IDataObject could not be created.");
+            }
+            LogDataObjectFormats(dataObject, DATADIR.DATADIR_SET, "SDK set formats");
+            LogDataObjectFormats(dataObject, DATADIR.DATADIR_GET, "SDK get formats");
+
+            var payload = BuildPayload(options);
+            var inputFormat = new FORMATETC
+            {
+                cfFormat = unchecked((short)payload.FormatId),
+                dwAspect = (DVASPECT)DVASPECT_CONTENT,
+                lindex = -1,
+                ptd = IntPtr.Zero,
+                tymed = TYMED.TYMED_HGLOBAL,
+            };
+            var inputMedium = new STGMEDIUM
+            {
+                tymed = TYMED.TYMED_HGLOBAL,
+                unionmember = CopyToHGlobal(payload.Bytes),
+                pUnkForRelease = null,
+            };
+
+            try
+            {
+                Log($"SDK SetData({options.Format}, {payload.Bytes.Length} bytes)");
+                dataObject.SetData(ref inputFormat, ref inputMedium, false);
+            }
+            finally
+            {
+                if (inputMedium.unionmember != IntPtr.Zero)
+                {
+                    GlobalFree(inputMedium.unionmember);
+                }
+            }
+
+            var embedSourceFormatId = RegisterClipboardFormat("Embed Source");
+            if (embedSourceFormatId == 0)
+            {
+                throw new InvalidOperationException("RegisterClipboardFormat failed for Embed Source");
+            }
+
+            var outputFormat = new FORMATETC
+            {
+                cfFormat = unchecked((short)embedSourceFormatId),
+                dwAspect = (DVASPECT)DVASPECT_CONTENT,
+                lindex = -1,
+                ptd = IntPtr.Zero,
+                tymed = TYMED.TYMED_ISTORAGE,
+            };
+            Log("SDK GetData(Embed Source)");
+            dataObject.GetData(ref outputFormat, out var outputMedium);
+            try
+            {
+                WriteStorageMediumToFile(outputMedium, options.OutputPath, clsid);
+            }
+            finally
+            {
+                ReleaseStgMedium(ref outputMedium);
+                Marshal.ReleaseComObject(dataObject);
+            }
+        }
+        finally
+        {
+            MTAPIDisconnect();
+        }
+
+        Log($"wrote {options.OutputPath}, bytes={new FileInfo(options.OutputPath).Length}");
+    }
+
+    /// <summary>
+    /// Print MathType SDK translator names so TeX conversion can use the installed spelling.
+    /// </summary>
+    private static void ListSdkTranslators()
+    {
+        TryConfigureMathTypeApiDll(required: true);
+        MtCheck(MTAPIConnect(0, 30), "MTAPIConnect(translators)");
+        try
+        {
+            var sdk = MathTypeSDK.Instance;
+            var nameLength = checked((short)Math.Max(256, sdk.MTGetTranslatorsInfoMgn(MTTranslatorInfo.mttrnMAX_NAME) + 1));
+            var descLength = checked((short)Math.Max(256, sdk.MTGetTranslatorsInfoMgn(MTTranslatorInfo.mttrnMAX_DESC) + 1));
+            var fileLength = checked((short)Math.Max(256, sdk.MTGetTranslatorsInfoMgn(MTTranslatorInfo.mttrnMAX_FILE) + 1));
+            var index = (short)1;
+            while (index > 0)
+            {
+                var name = new StringBuilder(nameLength);
+                var desc = new StringBuilder(descLength);
+                var file = new StringBuilder(fileLength);
+                var next = sdk.MTEnumTranslatorsMgn(index, name, nameLength, desc, descLength, file, fileLength);
+                if (next < 0)
+                {
+                    throw new InvalidOperationException($"MTEnumTranslators returned {next}");
+                }
+                if (name.Length > 0 || desc.Length > 0 || file.Length > 0)
+                {
+                    Console.WriteLine(FormattableString.Invariant(
+                        $"{index}: name=\"{name}\" desc=\"{desc}\" file=\"{file}\""));
+                }
+                index = checked((short)next);
+            }
+        }
+        finally
+        {
+            MTAPIDisconnect();
+        }
+    }
+
+    /// <summary>
+    /// Convert TeX to MTEF with MTXFormEqn, then wrap it in MathType's OLE template.
+    /// </summary>
+    private static void CreateOleBinFromSdkTransform(Options options)
+    {
+        if (options.BinaryInput)
+        {
+            throw new NotSupportedException("sdk-xform-ole only supports text input.");
+        }
+
+        TryConfigureMathTypeApiDll(required: true);
+        MtCheck(MTAPIConnect(0, 30), "MTAPIConnect(xform)");
+        try
+        {
+            var sdk = MathTypeSDK.Instance;
+            MtCheck(sdk.MTXFormResetMgn(), "MTXFormReset");
+            MtCheck(
+                sdk.MTXFormSetTranslatorMgn((ushort)MTSDKDN.MTXFormSetTranslator.mtxfmTRANSL_INC_DATA, "AMS LaTeX.tdl"),
+                "MTXFormSetTranslator(AMS LaTeX.tdl)");
+
+            var latex = ReadTextInput(options);
+            var sourceBytes = Encoding.ASCII.GetBytes(latex + "\0");
+            var capacity = 1024 * 1024;
+            var output = Marshal.AllocHGlobal(capacity);
+            try
+            {
+                var bounds = new MTSDKDN.RECT(0, 0, 0, 0);
+                var dims = new MTAPI_DIMS(0, ref bounds);
+                var status = sdk.MTXFormEqnMgn(
+                    MTXFormEqn.mtxfmLOCAL,
+                    MTXFormEqn.mtxfmTEXT,
+                    sourceBytes,
+                    sourceBytes.Length,
+                    MTXFormEqn.mtxfmLOCAL,
+                    MTXFormEqn.mtxfmMTEF,
+                    output,
+                    capacity,
+                    "",
+                    ref dims);
+                if (status != MathTypeReturnValue.mtOK)
+                {
+                    var actualLength = sdk.MTXFormGetStatusMgn(MTXFormStatus.mtxfmSTAT_ACTUAL_LEN);
+                    throw new InvalidOperationException(
+                        $"MTXFormEqn returned {status}; actual length/status={actualLength}");
+                }
+
+                var length = sdk.MTXFormGetStatusMgn(MTXFormStatus.mtxfmSTAT_ACTUAL_LEN);
+                if (length <= 0 || length > capacity)
+                {
+                    throw new InvalidOperationException($"MTXFormEqn returned invalid MTEF length: {length}");
+                }
+
+                var mtef = new byte[length];
+                Marshal.Copy(output, mtef, 0, length);
+                var oleBytes = Convert.FromBase64String(MathTypeSDK.getOLEBase64(mtef));
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(options.OutputPath))!);
+                File.WriteAllBytes(options.OutputPath, oleBytes);
+                Log($"SDK xform wrote {options.OutputPath}, mtef={mtef.Length} bytes, ole={oleBytes.Length} bytes");
+
+                if (options.PreviewOutputPath is not null)
+                {
+                    var preview = TryWriteSdkTransformWmfFromLatex(sdk, sourceBytes, options.PreviewOutputPath)
+                        ?? WriteSdkTransformWmf(sdk, mtef, options.PreviewOutputPath);
+                    if (options.MetadataOutputPath is not null)
+                    {
+                        WriteMetadata(options.MetadataOutputPath, preview);
+                    }
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(output);
+            }
+        }
+        finally
+        {
+            MTAPIDisconnect();
+        }
+    }
+
+    /// <summary>
+    /// Ask the active TeX translator to write a PICT/WMF preview file directly.
+    /// </summary>
+    private static PreviewMetadata? TryWriteSdkTransformWmfFromLatex(MathTypeSDK sdk, byte[] sourceBytes, string outputPath)
+    {
+        try
+        {
+            var fullOutputPath = Path.GetFullPath(outputPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(fullOutputPath)!);
+            var bounds = new MTSDKDN.RECT(0, 0, 0, 0);
+            var dims = new MTAPI_DIMS(0, ref bounds);
+            var status = sdk.MTXFormEqnMgn(
+                MTXFormEqn.mtxfmLOCAL,
+                MTXFormEqn.mtxfmTEXT,
+                sourceBytes,
+                sourceBytes.Length,
+                MTXFormEqn.mtxfmFILE,
+                MTXFormEqn.mtxfmPICT,
+                IntPtr.Zero,
+                0,
+                fullOutputPath,
+                ref dims);
+            if (status != MathTypeReturnValue.mtOK)
+            {
+                Log($"MTXFormEqn(TeX->PICT file) returned {status}");
+                return null;
+            }
+            if (!File.Exists(fullOutputPath))
+            {
+                Log("MTXFormEqn(TeX->PICT file) succeeded but wrote no file");
+                return null;
+            }
+
+            var bytes = File.ReadAllBytes(fullOutputPath);
+            Log($"SDK xform wrote TeX preview file {fullOutputPath}, bytes={bytes.Length}");
+            return PreviewMetadataFromSdkOutput(dims, bytes);
+        }
+        catch (Exception ex)
+        {
+            Log($"MTXFormEqn(TeX->PICT file) failed: {SafeExceptionMessage(ex)}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Render SDK-generated MTEF to a placeable WMF preview.
+    /// </summary>
+    private static PreviewMetadata WriteSdkTransformWmf(MathTypeSDK sdk, byte[] mtef, string outputPath)
+    {
+        var filePreview = TryWriteSdkTransformWmfFile(sdk, mtef, outputPath);
+        if (filePreview is not null)
+        {
+            return filePreview;
+        }
+
+        var pictSize = 1024 * 1024;
+        var pictPointer = Marshal.AllocHGlobal(pictSize);
+        try
+        {
+            for (var offset = 0; offset < pictSize; offset++)
+            {
+                Marshal.WriteByte(pictPointer, offset, 0);
+            }
+
+            var bounds = new MTSDKDN.RECT(0, 0, 0, 0);
+            var dims = new MTAPI_DIMS(0, ref bounds);
+            MtCheck(sdk.MTXFormResetMgn(), "MTXFormReset(pict)");
+            var status = sdk.MTXFormEqnMgn(
+                MTXFormEqn.mtxfmLOCAL,
+                MTXFormEqn.mtxfmMTEF,
+                mtef,
+                mtef.Length,
+                MTXFormEqn.mtxfmLOCAL,
+                MTXFormEqn.mtxfmPICT,
+                pictPointer,
+                pictSize,
+                "",
+                ref dims);
+            if (status != MathTypeReturnValue.mtOK)
+            {
+                throw new InvalidOperationException(
+                    "MTXFormEqn(MTEF->PICT) returned "
+                    + $"{status}; actual={sdk.MTXFormGetStatusMgn(MTXFormStatus.mtxfmSTAT_ACTUAL_LEN)}, "
+                    + $"translator={sdk.MTXFormGetStatusMgn(MTXFormStatus.mtxfmSTAT_TRANSL)}, "
+                    + $"prefs={sdk.MTXFormGetStatusMgn(MTXFormStatus.mtxfmSTAT_PREF)}");
+            }
+
+            var pict = Marshal.PtrToStructure<SdkPictResult>(pictPointer);
+            Log(
+                $"SDK PICT result mapMode={pict.MapMode}, xExt={pict.XExt}, yExt={pict.YExt}, "
+                + $"hMetaFile=0x{pict.HMetaFile.ToInt64():X}, actual={sdk.MTXFormGetStatusMgn(MTXFormStatus.mtxfmSTAT_ACTUAL_LEN)}, "
+                + $"head={ReadHexPrefix(pictPointer, 32)}");
+            if (pict.HMetaFile == IntPtr.Zero)
+            {
+                throw new InvalidOperationException("MTXFormEqn(MTEF->PICT) returned an empty metafile handle");
+            }
+
+            try
+            {
+                var bytes = ReadMetaFileBits(pict.HMetaFile);
+                if (!HasPlaceableHeader(bytes))
+                {
+                    bytes = AddPlaceableHeader(bytes, pict.MapMode, pict.XExt, pict.YExt);
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
+                File.WriteAllBytes(outputPath, bytes);
+                Log($"SDK xform wrote preview {outputPath}, bytes={bytes.Length}");
+
+                var unitsPerInch = UnitsPerInchForMapMode(pict.MapMode);
+                var widthPt = Math.Abs(pict.XExt) * 72.0 / unitsPerInch;
+                var heightPt = Math.Abs(pict.YExt) * 72.0 / unitsPerInch;
+                return new PreviewMetadata(
+                    pict.MapMode,
+                    pict.XExt,
+                    pict.YExt,
+                    unitsPerInch,
+                    widthPt,
+                    heightPt,
+                    TryReadMathTypeBaselineFromWmf(bytes, widthPt, heightPt));
+            }
+            finally
+            {
+                DeleteMetaFile(pict.HMetaFile);
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(pictPointer);
+        }
+    }
+
+    /// <summary>
+    /// Ask MTXFormEqn to write a PICT/WMF preview file directly when memory output is unsupported.
+    /// </summary>
+    private static PreviewMetadata? TryWriteSdkTransformWmfFile(MathTypeSDK sdk, byte[] mtef, string outputPath)
+    {
+        try
+        {
+            var fullOutputPath = Path.GetFullPath(outputPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(fullOutputPath)!);
+            MtCheck(sdk.MTXFormResetMgn(), "MTXFormReset(pict-file)");
+            var bounds = new MTSDKDN.RECT(0, 0, 0, 0);
+            var dims = new MTAPI_DIMS(0, ref bounds);
+            var status = sdk.MTXFormEqnMgn(
+                MTXFormEqn.mtxfmLOCAL,
+                MTXFormEqn.mtxfmMTEF,
+                mtef,
+                mtef.Length,
+                MTXFormEqn.mtxfmFILE,
+                MTXFormEqn.mtxfmPICT,
+                IntPtr.Zero,
+                0,
+                fullOutputPath,
+                ref dims);
+            if (status != MathTypeReturnValue.mtOK)
+            {
+                Log($"MTXFormEqn(MTEF->PICT file) returned {status}");
+                return null;
+            }
+            if (!File.Exists(fullOutputPath))
+            {
+                Log("MTXFormEqn(MTEF->PICT file) succeeded but wrote no file");
+                return null;
+            }
+
+            var bytes = File.ReadAllBytes(fullOutputPath);
+            if (!HasPlaceableHeader(bytes))
+            {
+                Log("MTXFormEqn(MTEF->PICT file) wrote a non-placeable file; leaving bytes unchanged");
+            }
+
+            Log($"SDK xform wrote preview file {fullOutputPath}, bytes={bytes.Length}");
+            return PreviewMetadataFromSdkOutput(dims, bytes);
+        }
+        catch (Exception ex)
+        {
+            Log($"MTXFormEqn(MTEF->PICT file) failed: {SafeExceptionMessage(ex)}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Build preview metadata from MTXFormEqn bounds when SDK file output succeeds.
+    /// </summary>
+    private static PreviewMetadata PreviewMetadataFromSdkOutput(MTAPI_DIMS dims, byte[] bytes)
+    {
+        if (HasPlaceableHeader(bytes))
+        {
+            var left = BitConverter.ToInt16(bytes, 6);
+            var top = BitConverter.ToInt16(bytes, 8);
+            var right = BitConverter.ToInt16(bytes, 10);
+            var bottom = BitConverter.ToInt16(bytes, 12);
+            var unitsPerInch = BitConverter.ToUInt16(bytes, 14);
+            var xExt = right - left;
+            var yExt = bottom - top;
+            var widthPt = Math.Abs(xExt) * 72.0 / unitsPerInch;
+            var heightPt = Math.Abs(yExt) * 72.0 / unitsPerInch;
+            return new PreviewMetadata(
+                MM_ANISOTROPIC,
+                xExt,
+                yExt,
+                unitsPerInch,
+                widthPt,
+                heightPt,
+                TryReadMathTypeBaselineFromWmf(bytes, widthPt, heightPt));
+        }
+
+        try
+        {
+            var xExt = checked((int)(dims._bounds._right - dims._bounds._left));
+            var yExt = checked((int)(dims._bounds._bottom - dims._bounds._top));
+            var unitsPerInch = UnitsPerInchForMapMode(MM_HIMETRIC);
+            var widthPt = Math.Abs(xExt) * 72.0 / unitsPerInch;
+            var heightPt = Math.Abs(yExt) * 72.0 / unitsPerInch;
+            return new PreviewMetadata(
+                MM_HIMETRIC,
+                xExt,
+                yExt,
+                unitsPerInch,
+                widthPt,
+                heightPt,
+                TryReadMathTypeBaselineFromWmf(bytes, widthPt, heightPt));
+        }
+        catch (OverflowException)
+        {
+            Log("MTXFormEqn wrote a non-placeable file with invalid bounds; using byte-size fallback metadata");
+            return new PreviewMetadata(MM_HIMETRIC, bytes.Length, bytes.Length, 2540, 72.0, 72.0, null);
+        }
+    }
+
+    /// <summary>
+    /// Read a small unmanaged-memory prefix for SDK buffer diagnostics.
+    /// </summary>
+    private static string ReadHexPrefix(IntPtr pointer, int length)
+    {
+        var bytes = new byte[length];
+        Marshal.Copy(pointer, bytes, 0, length);
+        return BitConverter.ToString(bytes);
+    }
+
+    /// <summary>
+    /// Log IDataObject formats exposed by the SDK object when verbose diagnostics are enabled.
+    /// </summary>
+    private static void LogDataObjectFormats(
+        System.Runtime.InteropServices.ComTypes.IDataObject dataObject,
+        DATADIR direction,
+        string label)
+    {
+        if (!VerboseLoggingEnabled())
+        {
+            return;
+        }
+
+        try
+        {
+            var enumerator = dataObject.EnumFormatEtc(direction);
+            var formats = new FORMATETC[8];
+            var fetched = new int[1];
+            while (enumerator.Next(formats.Length, formats, fetched) == S_OK && fetched[0] > 0)
+            {
+                for (var index = 0; index < fetched[0]; index++)
+                {
+                    Log($"{label}: {FormatEtcSummary(formats[index])}, name={ClipboardFormatName(formats[index].cfFormat)}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"{label}: EnumFormatEtc failed: {SafeExceptionMessage(ex)}");
+        }
+    }
+
+    /// <summary>
+    /// Format FORMATETC for helper diagnostics.
+    /// </summary>
+    private static string FormatEtcSummary(FORMATETC format)
+    {
+        return $"cfFormat={format.cfFormat}, tymed={format.tymed}, dwAspect={format.dwAspect}, lindex={format.lindex}";
+    }
+
+    /// <summary>
+    /// Return a registered clipboard format name when Windows exposes one.
+    /// </summary>
+    private static string ClipboardFormatName(short formatId)
+    {
+        var unsignedFormatId = unchecked((uint)(ushort)formatId);
+        var builder = new StringBuilder(256);
+        var length = GetClipboardFormatName(unsignedFormatId, builder, builder.Capacity);
+        return length > 0 ? builder.ToString() : unsignedFormatId.ToString(CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Copy a TYMED_ISTORAGE result from the SDK data object into a compound file.
+    /// </summary>
+    private static void WriteStorageMediumToFile(STGMEDIUM medium, string outputPath, Guid clsid)
+    {
+        if (medium.tymed != TYMED.TYMED_ISTORAGE || medium.unionmember == IntPtr.Zero)
+        {
+            throw new InvalidOperationException($"Expected TYMED_ISTORAGE, got tymed={medium.tymed}");
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
+        if (File.Exists(outputPath))
+        {
+            File.Delete(outputPath);
+        }
+
+        var sourceStorage = (IStorage)Marshal.GetObjectForIUnknown(medium.unionmember);
+        IStorage? destinationStorage = null;
+        try
+        {
+            OleCheck(
+                StgCreateDocfile(
+                    outputPath,
+                    STGM_CREATE | STGM_READWRITE | STGM_SHARE_EXCLUSIVE,
+                    0,
+                    out destinationStorage),
+                "StgCreateDocfile(sdk)");
+            OleCheck(WriteClassStg(destinationStorage, ref clsid), "WriteClassStg(sdk)");
+            sourceStorage.CopyTo(0, IntPtr.Zero, IntPtr.Zero, destinationStorage);
+            destinationStorage.Commit(0);
+        }
+        finally
+        {
+            if (destinationStorage is not null)
+            {
+                Marshal.ReleaseComObject(destinationStorage);
+            }
+            Marshal.ReleaseComObject(sourceStorage);
+        }
     }
 
     private static void ApplyMathTypePrefs(string prefsFilePath)
@@ -593,6 +1156,141 @@ internal static class Program
             Log($"dimension read failed: {ex.Message}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Read MathType's WMF baseline comment and convert it to existing 1/32-point metadata units.
+    /// </summary>
+    private static MathTypeLastDimensions? TryReadMathTypeBaselineFromWmf(byte[] bytes, double widthPt, double heightPt)
+    {
+        var baselineDelta = TryReadMathTypeBaselineDeltaFromWmf(bytes);
+        if (baselineDelta is null)
+        {
+            return null;
+        }
+
+        var baselinePt = baselineDelta.Value / MATHTYPE_WMF_BASELINE_UNITS_PER_POINT;
+        var dimensions = new MathTypeLastDimensions(
+            PointsToMathTypeRaw(widthPt),
+            PointsToMathTypeRaw(heightPt),
+            PointsToMathTypeRaw(baselinePt),
+            0,
+            0);
+        Log($"WMF MathType baseline delta={baselineDelta.Value}, baseline={baselinePt:F4}pt");
+        return dimensions;
+    }
+
+    /// <summary>
+    /// Scan WMF META_ESCAPE/MFCOMMENT records for MathType's 12-byte baseline comment.
+    /// </summary>
+    private static ushort? TryReadMathTypeBaselineDeltaFromWmf(byte[] bytes)
+    {
+        try
+        {
+            var offset = HasPlaceableHeader(bytes) ? PLACEABLE_WMF_HEADER_SIZE : 0;
+            if (bytes.Length < offset + WMF_HEADER_SIZE)
+            {
+                return null;
+            }
+
+            offset += WMF_HEADER_SIZE;
+            while (offset + 6 <= bytes.Length)
+            {
+                var sizeWords = BitConverter.ToUInt32(bytes, offset);
+                var function = BitConverter.ToUInt16(bytes, offset + 4);
+                if (sizeWords < 3)
+                {
+                    return null;
+                }
+
+                var recordSizeBytes = checked((int)sizeWords * 2);
+                var nextOffset = checked(offset + recordSizeBytes);
+                if (nextOffset > bytes.Length)
+                {
+                    return null;
+                }
+
+                if (function == META_ESCAPE_FUNCTION)
+                {
+                    var baselineDelta = TryReadMathTypeBaselineDeltaFromEscape(bytes, offset + 6, nextOffset - offset - 6);
+                    if (baselineDelta is not null)
+                    {
+                        return baselineDelta;
+                    }
+                }
+
+                if (function == 0)
+                {
+                    return null;
+                }
+
+                offset = nextOffset;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"WMF baseline scan failed: {SafeExceptionMessage(ex)}");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Parse one META_ESCAPE payload and return MathType's baseline delta when present.
+    /// </summary>
+    private static ushort? TryReadMathTypeBaselineDeltaFromEscape(byte[] bytes, int offset, int length)
+    {
+        if (length < 4 || BitConverter.ToUInt16(bytes, offset) != MFCOMMENT_ESCAPE)
+        {
+            return null;
+        }
+
+        var byteCount = BitConverter.ToUInt16(bytes, offset + 2);
+        var commentOffset = offset + 4;
+        var commentLength = Math.Min(byteCount, length - 4);
+        for (var index = 0; index <= commentLength - 12; index++)
+        {
+            var candidateOffset = commentOffset + index;
+            if (!MatchesBytes(bytes, candidateOffset, MathTypeBaselineSignature))
+            {
+                continue;
+            }
+
+            var commentType = BitConverter.ToUInt16(bytes, candidateOffset + 8);
+            if (commentType == MATHTYPE_BASELINE_COMMENT_TYPE)
+            {
+                return BitConverter.ToUInt16(bytes, candidateOffset + 10);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Convert point units to MathType's 1/32-point dimension metadata.
+    /// </summary>
+    private static int PointsToMathTypeRaw(double points) =>
+        checked((int)Math.Round(Math.Max(0.0, points) * MATH_TYPE_DIMENSION_UNITS_PER_POINT, MidpointRounding.AwayFromZero));
+
+    /// <summary>
+    /// Return whether a byte slice starts with the expected ASCII signature.
+    /// </summary>
+    private static bool MatchesBytes(byte[] bytes, int offset, byte[] expected)
+    {
+        if (offset < 0 || offset + expected.Length > bytes.Length)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < expected.Length; index++)
+        {
+            if (bytes[offset + index] != expected[index])
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool TryConfigureMathTypeApiDll(bool required)
@@ -895,7 +1593,7 @@ internal static class Program
         }
     }
 
-    private static void Log(string message)
+    internal static void Log(string message)
     {
         // Keep normal conversion output quiet; enable this only when debugging
         // noisy OLE/COM transitions on a local MathType installation.
@@ -970,11 +1668,17 @@ internal static class Program
     [DllImport("gdi32.dll")]
     private static extern uint GetMetaFileBitsEx(IntPtr hmf, uint cbBuffer, IntPtr lpData);
 
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteMetaFile(IntPtr hmf);
+
     [DllImport("ole32.dll")]
     private static extern int WriteClassStg(IStorage pStg, ref Guid rclsid);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern ushort RegisterClipboardFormat(string lpszFormat);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClipboardFormatName(uint format, StringBuilder lpszFormatName, int cchMaxCount);
 
     [DllImport("MT6.dll", CharSet = CharSet.Ansi)]
     private static extern int MTAPIConnect(short options, short timeout);
@@ -1110,7 +1814,7 @@ internal static class Program
 
             if (format is null || input is null || output is null)
             {
-                throw new ArgumentException("Usage: MathTypeOleHelper --format <clipboard format> --input <file> --output <ole.bin> [--encoding utf8|utf16le] [--binary] [--no-verb] [--method create-from-data|init-from-data|set-data] [--pre-verb N] [--prefs-file <eqp>] [--preview-output <wmf>] [--metadata-output <json>]");
+                throw new ArgumentException("Usage: MathTypeOleHelper --format <clipboard format> --input <file-or-tex> --output <ole.bin> [--encoding utf8|utf16le] [--binary] [--no-verb] [--method create-from-data|init-from-data|set-data|sdk-data-object|sdk-list-translators|sdk-xform-ole] [--pre-verb N] [--prefs-file <eqp>] [--preview-output <wmf>] [--metadata-output <json>]");
             }
 
             return new Options(
@@ -1203,31 +1907,54 @@ internal static class Program
                 $"{{\"map_mode\":{MapMode},\"x_ext\":{XExt},\"y_ext\":{YExt},\"units_per_inch\":{UnitsPerInch},\"width_pt\":{WidthPt:F4},\"height_pt\":{HeightPt:F4},\"mathtype\":{mathTypeJson}}}");
         }
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SdkPictResult
+    {
+        public int MapMode;
+        public int XExt;
+        public int YExt;
+        public IntPtr HMetaFile;
+    }
 }
 
 [ComVisible(true)]
 internal sealed class SingleFormatDataObject : System.Runtime.InteropServices.ComTypes.IDataObject
 {
     private readonly short _formatId;
+    private readonly short _objectDescriptorFormatId;
     private readonly byte[] _bytes;
+    private readonly byte[] _objectDescriptorBytes;
 
-    public SingleFormatDataObject(ushort formatId, byte[] bytes)
+    public SingleFormatDataObject(Guid clsid, ushort formatId, byte[] bytes)
     {
         _formatId = unchecked((short)formatId);
+        _objectDescriptorFormatId = unchecked((short)RegisterClipboardFormat("Object Descriptor"));
+        if (_objectDescriptorFormatId == 0)
+        {
+            throw new InvalidOperationException("RegisterClipboardFormat failed for Object Descriptor");
+        }
         _bytes = bytes;
+        _objectDescriptorBytes = BuildObjectDescriptor(clsid);
     }
 
     public void GetData(ref FORMATETC format, out STGMEDIUM medium)
     {
-        if (!CanServe(format))
+        Program.Log($"IDataObject.GetData requested {FormatEtcSummary(format)}");
+        var bytes = BytesForFormat(format);
+        if (bytes is null)
         {
+            Program.Log(
+                $"IDataObject.GetData rejected {FormatEtcSummary(format)}; " +
+                $"available cfFormat={_formatId}, objectDescriptor={_objectDescriptorFormatId}, tymed={TYMED.TYMED_HGLOBAL}");
             Marshal.ThrowExceptionForHR(unchecked((int)0x80040064)); // DV_E_FORMATETC
         }
 
+        var servedBytes = bytes!;
         medium = new STGMEDIUM
         {
             tymed = TYMED.TYMED_HGLOBAL,
-            unionmember = CopyToHGlobal(_bytes),
+            unionmember = CopyToHGlobal(servedBytes),
             pUnkForRelease = null,
         };
     }
@@ -1239,7 +1966,8 @@ internal sealed class SingleFormatDataObject : System.Runtime.InteropServices.Co
 
     public int QueryGetData(ref FORMATETC format)
     {
-        return CanServe(format) ? 0 : unchecked((int)0x80040064);
+        Program.Log($"IDataObject.QueryGetData requested {FormatEtcSummary(format)}");
+        return BytesForFormat(format) is not null ? 0 : unchecked((int)0x80040064);
     }
 
     public int GetCanonicalFormatEtc(ref FORMATETC formatIn, out FORMATETC formatOut)
@@ -1255,7 +1983,27 @@ internal sealed class SingleFormatDataObject : System.Runtime.InteropServices.Co
 
     public IEnumFORMATETC EnumFormatEtc(DATADIR direction)
     {
-        throw new NotImplementedException();
+        Program.Log($"IDataObject.EnumFormatEtc({direction})");
+        if (direction != DATADIR.DATADIR_GET)
+        {
+            Marshal.ThrowExceptionForHR(Program.E_NOTIMPL_FOR_COM);
+        }
+
+        return new SingleFormatEnumerator(new FORMATETC
+        {
+            cfFormat = _objectDescriptorFormatId,
+            dwAspect = DVASPECT.DVASPECT_CONTENT,
+            lindex = -1,
+            ptd = IntPtr.Zero,
+            tymed = TYMED.TYMED_HGLOBAL,
+        }, new FORMATETC
+        {
+            cfFormat = _formatId,
+            dwAspect = DVASPECT.DVASPECT_CONTENT,
+            lindex = -1,
+            ptd = IntPtr.Zero,
+            tymed = TYMED.TYMED_HGLOBAL,
+        });
     }
 
     public int DAdvise(ref FORMATETC pFormatetc, ADVF advf, IAdviseSink adviseSink, out int connection)
@@ -1275,9 +2023,49 @@ internal sealed class SingleFormatDataObject : System.Runtime.InteropServices.Co
         return Program.E_NOTIMPL_FOR_COM;
     }
 
-    private bool CanServe(FORMATETC format)
+    private byte[]? BytesForFormat(FORMATETC format)
     {
-        return format.cfFormat == _formatId && (format.tymed & TYMED.TYMED_HGLOBAL) != 0;
+        if ((format.tymed & TYMED.TYMED_HGLOBAL) == 0)
+        {
+            return null;
+        }
+        if (format.cfFormat == _formatId)
+        {
+            return _bytes;
+        }
+        if (format.cfFormat == _objectDescriptorFormatId)
+        {
+            return _objectDescriptorBytes;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Format COM data requests without relying on debugger-only inspection.
+    /// </summary>
+    private static string FormatEtcSummary(FORMATETC format)
+    {
+        return $"cfFormat={format.cfFormat}, tymed={format.tymed}, dwAspect={format.dwAspect}, lindex={format.lindex}";
+    }
+
+    /// <summary>
+    /// Build the OLE Object Descriptor clipboard payload that advertises MathType's CLSID.
+    /// </summary>
+    private static byte[] BuildObjectDescriptor(Guid clsid)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        writer.Write(52); // sizeof(OBJECTDESCRIPTOR) without optional strings.
+        writer.Write(clsid.ToByteArray());
+        writer.Write((int)DVASPECT.DVASPECT_CONTENT);
+        writer.Write(0); // sizel.cx
+        writer.Write(0); // sizel.cy
+        writer.Write(0); // pointl.x
+        writer.Write(0); // pointl.y
+        writer.Write(0); // dwStatus
+        writer.Write(0); // dwFullUserTypeName
+        writer.Write(0); // dwSrcOfCopy
+        return stream.ToArray();
     }
 
     private static IntPtr CopyToHGlobal(byte[] bytes)
@@ -1317,6 +2105,80 @@ internal sealed class SingleFormatDataObject : System.Runtime.InteropServices.Co
 
     [DllImport("kernel32.dll")]
     private static extern IntPtr GlobalFree(IntPtr hMem);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern ushort RegisterClipboardFormat(string lpszFormat);
+}
+
+[ComVisible(true)]
+internal sealed class SingleFormatEnumerator : IEnumFORMATETC
+{
+    private const int S_OK = 0;
+    private const int S_FALSE = 1;
+
+    private readonly FORMATETC[] _formats;
+    private int _index;
+
+    public SingleFormatEnumerator(params FORMATETC[] formats)
+        : this(formats, 0)
+    {
+    }
+
+    private SingleFormatEnumerator(FORMATETC[] formats, int index)
+    {
+        _formats = formats;
+        _index = index;
+    }
+
+    public int Next(int celt, FORMATETC[] rgelt, int[] pceltFetched)
+    {
+        Program.Log($"IEnumFORMATETC.Next(celt={celt}, index={_index})");
+        var fetched = 0;
+        while (fetched < celt && _index < _formats.Length && fetched < rgelt.Length)
+        {
+            rgelt[fetched] = _formats[_index];
+            Program.Log($"IEnumFORMATETC.Next returned {FormatEtcSummary(rgelt[fetched])}");
+            fetched++;
+            _index++;
+        }
+
+        if (pceltFetched is { Length: > 0 })
+        {
+            pceltFetched[0] = fetched;
+        }
+
+        return fetched == celt ? S_OK : S_FALSE;
+    }
+
+    public int Skip(int celt)
+    {
+        Program.Log($"IEnumFORMATETC.Skip(celt={celt}, index={_index})");
+        var remaining = _formats.Length - _index;
+        var skipped = Math.Min(celt, remaining);
+        _index += skipped;
+        return skipped == celt ? S_OK : S_FALSE;
+    }
+
+    public int Reset()
+    {
+        Program.Log("IEnumFORMATETC.Reset()");
+        _index = 0;
+        return S_OK;
+    }
+
+    public void Clone(out IEnumFORMATETC newEnum)
+    {
+        Program.Log($"IEnumFORMATETC.Clone(index={_index})");
+        newEnum = new SingleFormatEnumerator(_formats, _index);
+    }
+
+    /// <summary>
+    /// Format enumerated COM data formats for verbose OleCreateFromData diagnostics.
+    /// </summary>
+    private static string FormatEtcSummary(FORMATETC format)
+    {
+        return $"cfFormat={format.cfFormat}, tymed={format.tymed}, dwAspect={format.dwAspect}, lindex={format.lindex}";
+    }
 }
 
 [ComImport]

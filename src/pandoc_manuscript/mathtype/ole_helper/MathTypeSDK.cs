@@ -2,6 +2,9 @@
 // Purpose:
 // $Header: /MathType/Windows/SDK/DotNET/MTSDKDN/MTSDKDN/MathTypeSDK.cs 7     4/07/10 11:00a Jimm $
 
+#nullable disable
+#pragma warning disable 0618
+
 using System;
 using System.Collections.Generic;
 using System.Runtime.ExceptionServices;

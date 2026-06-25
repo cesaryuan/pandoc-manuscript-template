@@ -30,6 +30,14 @@ docxConvertSvgToPng: false
 # Set to true for continuous DOCX line numbers, or use a string such as
 # '连续', '每页重编', '每节重编', 'continuous', 'restart-page', or 'restart-section'.
 show-line-numbers: '连续'
+
+# DOCX page margins applied to every section during post-processing.
+docxPageMargins:
+  top: 2.54cm
+  bottom: 2.54cm
+  left: 3.17cm
+  right: 3.17cm
+
 # DOCX paragraph style formatting (applied by exact style name in post-processing)
 docxStyle:
   标题 1: { fontSize: 小四 }

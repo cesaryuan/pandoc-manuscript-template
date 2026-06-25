@@ -44,6 +44,7 @@ try:
     from .docx_style import apply_docx_style_metadata, format_applied_style_summary
     from .inline_math_spacing import add_space_after_standalone_inline_math
     from .line_numbers import apply_line_number_metadata
+    from .page_margins import apply_page_margin_metadata
     from .where_paragraph_style import process_where_paragraph_styles
     from .reply_blue_italic_style import apply_reply_blue_italic_style
 except ImportError as e:
@@ -62,6 +63,7 @@ except ImportError as e:
     print("  - docx_style.py")
     print("  - inline_math_spacing.py")
     print("  - line_numbers.py")
+    print("  - page_margins.py")
     print("  - where_paragraph_style.py")
     print("  - reply_blue_italic_style.py")
     sys.exit(1)
@@ -155,6 +157,15 @@ def postprocess_docx(
                 f"Line numbers: restart={result['restart']}, sections={result['sections']}"
             )
 
+        def apply_page_margin_step() -> None:
+            """Apply merged YAML page-margin metadata to all DOCX sections."""
+            result = apply_page_margin_metadata(doc, metadata)
+            if result is None:
+                return
+            print_debug_success(
+                f"Page margins: sections={result['sections']}, margins={result['margins']}"
+            )
+
         def merge_table_cells_step() -> None:
             """Merge table cells marked with left/up merge placeholders."""
             left_merges, up_merges = merge_table_cells(doc)
@@ -229,6 +240,7 @@ def postprocess_docx(
             # Metadata-driven document-wide settings must run before table-specific cleanup.
             ("Applying DOCX style metadata", apply_docx_style_step),
             ("Applying line-number metadata", apply_line_number_step),
+            ("Applying page-margin metadata", apply_page_margin_step),
             ("Merging table cells", merge_table_cells_step),
             ("Clearing subfigure table formatting", clear_subfigure_table_format_step),
             ("Converting table text style", convert_table_text_style_step),
@@ -278,6 +290,7 @@ Processing steps:
   - Insert author information from merged metadata (if metadata provided)
   - Apply DOCX paragraph style settings from merged metadata (if metadata provided)
   - Apply line numbers from show-line-numbers metadata (if metadata provided)
+  - Apply page margins from docxPageMargins metadata (if metadata provided)
   - Merge table cells based on markers (!<! and !^!)
   - Clear formatting for tables above 'Image Caption' paragraphs
   - Convert table text style from 'Compact' to 'Table Text'

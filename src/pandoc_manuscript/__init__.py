@@ -5,9 +5,19 @@ from __future__ import annotations
 import importlib.metadata as importlib_metadata
 import json
 
-__version__ = "0.1.0"
-
 _DIST_NAME = "pandoc-manuscript-template"
+_UNKNOWN_VERSION = "0+unknown"
+
+
+def _installed_version() -> str:
+    """Read the installed package version so CLI output follows release metadata."""
+    try:
+        return importlib_metadata.version(_DIST_NAME)
+    except importlib_metadata.PackageNotFoundError:
+        return _UNKNOWN_VERSION
+
+
+__version__ = _installed_version()
 
 
 def _direct_url_commit_id() -> str | None:

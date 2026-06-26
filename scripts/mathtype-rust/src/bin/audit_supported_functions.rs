@@ -1,0 +1,977 @@
+#![allow(dead_code)]
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::env;
+use std::fs;
+use std::path::PathBuf;
+
+#[path = "../ast.rs"]
+mod ast;
+#[path = "../generated/mod.rs"]
+mod generated;
+#[path = "../mtef.rs"]
+mod mtef;
+#[path = "../parser.rs"]
+mod parser;
+#[path = "../raw_fallback.rs"]
+mod raw_fallback;
+#[path = "../typeface.rs"]
+mod typeface;
+
+use ast::Expr;
+use mtef::write_mtef;
+use parser::{normalize_latex, Parser};
+use raw_fallback::is_known_mathtype_raw_command;
+
+/// Scan Supported Functions.md and classify snippets against the current parser.
+fn main() -> Result<(), String> {
+    let config = Config::parse(env::args().skip(1).collect())?;
+    let markdown = fs::read_to_string(&config.input)
+        .map_err(|err| format!("failed to read {}: {err}", config.input.display()))?;
+    let snippets = extract_tex_snippets(&markdown);
+    let math_sections = extract_math_snippet_sections(&markdown);
+    let math_snippets = math_sections.keys().cloned().collect::<Vec<_>>();
+    let report = audit_snippets(&snippets);
+    let math_report = audit_snippets(&math_snippets);
+    if config.view.includes_code() {
+        print_report("supported_functions", &report, config.limit);
+    }
+    let math_raw_class = classify_raw_fallbacks(&math_report.raw_fallback);
+    if config.view.includes_math() {
+        print_report("supported_functions_math", &math_report, config.limit);
+        print_section_counts(
+            "supported_functions_math_raw_fallback_sections",
+            &math_report.raw_fallback,
+            &math_sections,
+            config.limit,
+        );
+        print_section_counts(
+            "supported_functions_math_unclassified_raw_fallback_sections",
+            &math_raw_class.unclassified,
+            &math_sections,
+            config.limit,
+        );
+        print_remaining_blocker_counts(
+            "supported_functions_math_unclassified_raw_fallback_blockers",
+            &math_raw_class.unclassified,
+            config.limit,
+        );
+    }
+    if let Some(path) = &config.unclassified_jsonl {
+        write_unclassified_jsonl(path, &math_raw_class.unclassified, &math_sections)?;
+        println!("wrote_unclassified_jsonl={}", path.display());
+    }
+    if let Some(path) = &config.remaining_jsonl {
+        write_remaining_jsonl(path, &math_raw_class.unclassified, &math_sections)?;
+        println!("wrote_remaining_jsonl={}", path.display());
+    }
+    Ok(())
+}
+
+struct Config {
+    input: PathBuf,
+    limit: usize,
+    view: AuditView,
+    unclassified_jsonl: Option<PathBuf>,
+    remaining_jsonl: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AuditView {
+    Both,
+    Code,
+    Math,
+}
+
+impl AuditView {
+    /// Return true when inline-code snippets should be printed.
+    fn includes_code(self) -> bool {
+        matches!(self, AuditView::Both | AuditView::Code)
+    }
+
+    /// Return true when complete math formulas should be printed.
+    fn includes_math(self) -> bool {
+        matches!(self, AuditView::Both | AuditView::Math)
+    }
+}
+
+impl Config {
+    /// Parse the small CLI surface used for coverage audits.
+    fn parse(args: Vec<String>) -> Result<Self, String> {
+        let mut input = PathBuf::from(r"docs\Supported Functions.md");
+        let mut limit = 80usize;
+        let mut view = AuditView::Both;
+        let mut unclassified_jsonl = None;
+        let mut remaining_jsonl = None;
+        let mut index = 0;
+        while index < args.len() {
+            match args[index].as_str() {
+                "--input" => {
+                    index += 1;
+                    input = PathBuf::from(
+                        args.get(index)
+                            .ok_or_else(|| "--input requires a path".to_string())?,
+                    );
+                }
+                "--limit" => {
+                    index += 1;
+                    let raw = args
+                        .get(index)
+                        .ok_or_else(|| "--limit requires a number".to_string())?;
+                    limit = raw
+                        .parse::<usize>()
+                        .map_err(|err| format!("invalid --limit {raw}: {err}"))?;
+                }
+                "--view" => {
+                    index += 1;
+                    let raw = args
+                        .get(index)
+                        .ok_or_else(|| "--view requires both, code, or math".to_string())?;
+                    view = parse_audit_view(raw)?;
+                }
+                "--math-only" => view = AuditView::Math,
+                "--code-only" => view = AuditView::Code,
+                "--write-unclassified-jsonl" => {
+                    index += 1;
+                    unclassified_jsonl = Some(PathBuf::from(args.get(index).ok_or_else(|| {
+                        "--write-unclassified-jsonl requires a path".to_string()
+                    })?));
+                }
+                "--write-remaining-jsonl" => {
+                    index += 1;
+                    remaining_jsonl =
+                        Some(PathBuf::from(args.get(index).ok_or_else(|| {
+                            "--write-remaining-jsonl requires a path".to_string()
+                        })?));
+                }
+                other => return Err(format!("unknown option: {other}\n{}", usage())),
+            }
+            index += 1;
+        }
+        Ok(Self {
+            input,
+            limit,
+            view,
+            unclassified_jsonl,
+            remaining_jsonl,
+        })
+    }
+}
+
+/// Return the usage text for invalid audit invocations.
+fn usage() -> &'static str {
+    "Usage: audit_supported_functions [--input <Supported Functions.md>] [--limit <N>] [--view both|code|math] [--math-only] [--code-only] [--write-unclassified-jsonl <path>] [--write-remaining-jsonl <path>]"
+}
+
+/// Parse a report-view selector from the CLI.
+fn parse_audit_view(raw: &str) -> Result<AuditView, String> {
+    match raw {
+        "both" => Ok(AuditView::Both),
+        "code" => Ok(AuditView::Code),
+        "math" => Ok(AuditView::Math),
+        _ => Err(format!(
+            "invalid --view {raw}; expected both, code, or math"
+        )),
+    }
+}
+
+#[derive(Default)]
+struct AuditReport {
+    total: usize,
+    native_parse: Vec<String>,
+    native_render: Vec<String>,
+    raw_fallback: Vec<String>,
+    raw_render: Vec<String>,
+    raw_render_error: Vec<(String, String)>,
+    render_error: Vec<(String, String)>,
+    syntax_fragment: Vec<(String, Option<String>)>,
+    parse_error: Vec<(String, String)>,
+}
+
+struct RawFallbackClass {
+    known: Vec<String>,
+    unclassified: Vec<String>,
+}
+
+/// Extract unique inline-code snippets that contain TeX control sequences.
+fn extract_tex_snippets(markdown: &str) -> Vec<String> {
+    let mut snippets = BTreeSet::new();
+    let mut chars = markdown.chars().peekable();
+    let mut in_code = false;
+    let mut current = String::new();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{60}' {
+            if chars.peek() == Some(&'\u{60}') {
+                continue;
+            }
+            if in_code {
+                add_tex_snippet(&current, &mut snippets);
+                current.clear();
+            }
+            in_code = !in_code;
+        } else if in_code {
+            current.push(ch);
+        }
+    }
+    snippets.into_iter().collect()
+}
+
+/// Extract unique Markdown math spans as complete formulas for coverage audits.
+fn extract_math_snippets(markdown: &str) -> Vec<String> {
+    extract_math_snippet_sections(markdown)
+        .into_keys()
+        .collect::<Vec<_>>()
+}
+
+/// Extract Markdown math spans and the Supported Functions section they came from.
+fn extract_math_snippet_sections(markdown: &str) -> BTreeMap<String, String> {
+    let mut snippets = BTreeMap::new();
+    let chars = markdown.chars().collect::<Vec<_>>();
+    let sections = section_by_char(markdown);
+    let mut index = 0usize;
+    while index < chars.len() {
+        if chars[index] == '\u{60}' {
+            index = skip_code_span(&chars, index);
+            continue;
+        }
+        if chars[index] != '$' {
+            index += 1;
+            continue;
+        }
+        let delimiter_len = if chars.get(index + 1) == Some(&'$') {
+            2
+        } else {
+            1
+        };
+        let start = index + delimiter_len;
+        if let Some(end) = find_math_span_end(&chars, start, delimiter_len) {
+            if let Some(snippet) = clean_math_snippet(&chars[start..end].iter().collect::<String>())
+            {
+                let section = sections
+                    .get(start)
+                    .cloned()
+                    .unwrap_or_else(|| "<unknown>".to_string());
+                snippets.entry(snippet).or_insert(section);
+            }
+            index = end + delimiter_len;
+        } else {
+            index += delimiter_len;
+        }
+    }
+    snippets
+}
+
+/// Return the active Markdown heading at each character offset.
+fn section_by_char(markdown: &str) -> Vec<String> {
+    let mut sections = Vec::new();
+    let mut current_section = "<preamble>".to_string();
+    for line in markdown.split_inclusive('\n') {
+        let heading_line = line.trim_end_matches('\n').trim_end_matches('\r');
+        if let Some(heading) = markdown_heading(heading_line) {
+            current_section = heading.to_string();
+        }
+        sections.extend(line.chars().map(|_| current_section.clone()));
+    }
+    sections
+}
+
+/// Skip a Markdown code span, including doubled backtick delimiters.
+fn skip_code_span(chars: &[char], start: usize) -> usize {
+    let delimiter_len = count_repeated(chars, start, '\u{60}');
+    let mut index = start + delimiter_len;
+    while index < chars.len() {
+        if chars[index] == '\u{60}' && count_repeated(chars, index, '\u{60}') >= delimiter_len {
+            return index + delimiter_len;
+        }
+        index += 1;
+    }
+    start + delimiter_len
+}
+
+/// Add one code span when it looks like a TeX expression worth auditing.
+fn add_tex_snippet(raw: &str, snippets: &mut BTreeSet<String>) {
+    let snippet = raw.trim();
+    if snippet.contains('\\') && !snippet.contains("https://") && !snippet.contains('…') {
+        snippets.insert(snippet.to_string());
+    }
+}
+
+/// Find a matching `$` or `$$` delimiter that is not escaped.
+fn find_math_span_end(chars: &[char], start: usize, delimiter_len: usize) -> Option<usize> {
+    let mut index = start;
+    let mut brace_depth = 0usize;
+    while index < chars.len() {
+        if delimiter_len == 1 && matches!(chars[index], '\n' | '\r') {
+            return None;
+        }
+        if chars[index] == '\\' {
+            index += 2;
+            continue;
+        }
+        match chars[index] {
+            '{' => brace_depth += 1,
+            '}' => brace_depth = brace_depth.saturating_sub(1),
+            _ => {}
+        }
+        if brace_depth == 0
+            && delimiter_len == 2
+            && chars[index] == '$'
+            && chars.get(index + 1) == Some(&'$')
+        {
+            return Some(index);
+        }
+        if brace_depth == 0 && delimiter_len == 1 && chars[index] == '$' {
+            return Some(index);
+        }
+        index += 1;
+    }
+    None
+}
+
+/// Count repeated delimiter characters from an index.
+fn count_repeated(chars: &[char], start: usize, needle: char) -> usize {
+    let mut index = start;
+    while chars.get(index) == Some(&needle) {
+        index += 1;
+    }
+    index - start
+}
+
+/// Add one complete math span when it is useful as parser/writer coverage.
+fn clean_math_snippet(raw: &str) -> Option<String> {
+    let snippet = raw.trim();
+    if !snippet.is_empty()
+        && !snippet.contains("https://")
+        && !snippet.contains('…')
+        && !snippet.contains("<span")
+        && !snippet.contains('\u{60}')
+        && !snippet.contains("\n\n")
+    {
+        Some(snippet.to_string())
+    } else {
+        None
+    }
+}
+
+/// Return a Markdown heading's display text.
+fn markdown_heading(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    let level_end = trimmed.chars().take_while(|ch| *ch == '#').count();
+    if level_end == 0 || trimmed.as_bytes().get(level_end) != Some(&b' ') {
+        return None;
+    }
+    Some(trimmed[level_end..].trim())
+}
+
+/// Classify snippets according to the current parser's AST.
+fn audit_snippets(snippets: &[String]) -> AuditReport {
+    let mut report = AuditReport {
+        total: snippets.len(),
+        ..AuditReport::default()
+    };
+    for snippet in snippets {
+        if is_syntax_fragment(snippet) {
+            report.syntax_fragment.push((snippet.clone(), None));
+            continue;
+        }
+        let normalized = normalize_latex(snippet);
+        match Parser::new(&normalized).parse() {
+            Ok(expr) if expr.contains_raw_tex() => {
+                report.raw_fallback.push(snippet.clone());
+                match write_mtef(&normalized, &expr) {
+                    Ok(_) => report.raw_render.push(snippet.clone()),
+                    Err(err) => report.raw_render_error.push((snippet.clone(), err)),
+                }
+            }
+            Ok(expr) => {
+                report.native_parse.push(snippet.clone());
+                match write_mtef(&normalized, &expr) {
+                    Ok(_) => report.native_render.push(snippet.clone()),
+                    Err(err) => report.render_error.push((snippet.clone(), err)),
+                }
+            }
+            Err(err) if is_documentation_fragment(snippet, &err) => {
+                report.syntax_fragment.push((snippet.clone(), Some(err)));
+            }
+            Err(err) => report.parse_error.push((snippet.clone(), err)),
+        }
+    }
+    report
+}
+
+/// Return true for documentation fragments that are not standalone formulas.
+fn is_syntax_fragment(snippet: &str) -> bool {
+    let trimmed = snippet.trim();
+    is_placeholder_code_span(trimmed)
+        || is_bare_incomplete_command(trimmed)
+        || trimmed.starts_with("\\begin{") && !trimmed.contains("\\end{")
+        || trimmed.starts_with("\\end{")
+        || matches!(
+            trimmed,
+            "\\left" | "\\left." | "\\right" | "\\right." | "\\color"
+        )
+        || trimmed.ends_with("_{")
+        || trimmed.contains("\\begin{") && !trimmed.contains("\\end{")
+}
+
+/// Return true for code spans that document syntax placeholders, not formulas.
+fn is_placeholder_code_span(trimmed: &str) -> bool {
+    [
+        "content",
+        "definition",
+        "distance",
+        "macroname",
+        "numargs",
+        "textXX",
+        "TextOrMath",
+    ]
+    .iter()
+    .any(|placeholder| trimmed.contains(placeholder))
+}
+
+/// Return true for command names that need surrounding TeX syntax to be meaningful.
+fn is_bare_incomplete_command(trimmed: &str) -> bool {
+    if trimmed.starts_with("\\global\\")
+        || trimmed.starts_with("\\futurelet")
+        || trimmed.starts_with("\\let")
+    {
+        return true;
+    }
+    matches!(
+        trimmed,
+        "\\char"
+            | "\\clap"
+            | "\\cline"
+            | "\\colorbox"
+            | "\\cr"
+            | "\\expandafter"
+            | "\\fcolorbox"
+            | "\\gdef"
+            | "\\hspace"
+            | "\\html"
+            | "\\includegraphics"
+            | "\\limits"
+            | "\\llap"
+            | "\\long"
+            | "\\makeatletter"
+            | "\\mathbin"
+            | "\\mathchoice"
+            | "\\mathclose"
+            | "\\mathinner"
+            | "\\mathop"
+            | "\\mathopen"
+            | "\\mathord"
+            | "\\mathpunct"
+            | "\\middle"
+            | "\\mkern"
+            | "\\mskip"
+            | "\\multicolumn"
+            | "\\newline"
+            | "\\nobreak"
+            | "\\noexpand"
+            | "\\par"
+            | "\\pmb"
+            | "\\raisebox"
+            | "\\relax"
+            | "\\rlap"
+            | "\\vcenter"
+            | "\\xdef"
+    )
+}
+
+/// Return true for documentation fragments that are not complete formulas.
+fn is_documentation_fragment(snippet: &str, err: &str) -> bool {
+    let trimmed = snippet.trim();
+    trimmed.starts_with("\\begin{")
+        || trimmed.starts_with("\\end{")
+        || matches!(
+            trimmed,
+            "\\left" | "\\left." | "\\right" | "\\right." | "\\color"
+        )
+        || trimmed.ends_with('{')
+        || err.contains("found None")
+}
+
+/// Print compact totals and representative missing snippets.
+fn print_report(prefix: &str, report: &AuditReport, limit: usize) {
+    println!("{prefix}_snippets={}", report.total);
+    println!("{prefix}_native_parse={}", report.native_parse.len());
+    println!("{prefix}_native_render={}", report.native_render.len());
+    println!("{prefix}_raw_fallback={}", report.raw_fallback.len());
+    let raw_class = classify_raw_fallbacks(&report.raw_fallback);
+    println!(
+        "{prefix}_known_mathtype_raw_fallback={}",
+        raw_class.known.len()
+    );
+    println!(
+        "{prefix}_unclassified_raw_fallback={}",
+        raw_class.unclassified.len()
+    );
+    println!("{prefix}_raw_render={}", report.raw_render.len());
+    println!(
+        "{prefix}_raw_render_error={}",
+        report.raw_render_error.len()
+    );
+    println!("{prefix}_render_error={}", report.render_error.len());
+    println!("{prefix}_syntax_fragment={}", report.syntax_fragment.len());
+    println!("{prefix}_parse_error={}", report.parse_error.len());
+    print_list(
+        &format!("{prefix}_raw_fallback_examples"),
+        report.raw_fallback.iter().map(|item| (item, None)),
+        limit,
+    );
+    print_raw_command_groups(
+        &format!("{prefix}_raw_fallback_command_groups"),
+        &report.raw_fallback,
+        limit,
+    );
+    print_list(
+        &format!("{prefix}_unclassified_raw_fallback_examples"),
+        raw_class.unclassified.iter().map(|item| (item, None)),
+        limit,
+    );
+    print_raw_command_groups(
+        &format!("{prefix}_unclassified_raw_fallback_command_groups"),
+        &raw_class.unclassified,
+        limit,
+    );
+    print_list(
+        &format!("{prefix}_raw_render_error_examples"),
+        report
+            .raw_render_error
+            .iter()
+            .map(|(snippet, err)| (snippet, Some(err))),
+        limit,
+    );
+    print_list(
+        &format!("{prefix}_render_error_examples"),
+        report
+            .render_error
+            .iter()
+            .map(|(snippet, err)| (snippet, Some(err))),
+        limit,
+    );
+    print_list(
+        &format!("{prefix}_syntax_fragment_examples"),
+        report
+            .syntax_fragment
+            .iter()
+            .map(|(snippet, err)| (snippet, err.as_ref())),
+        limit,
+    );
+    print_list(
+        &format!("{prefix}_parse_error_examples"),
+        report
+            .parse_error
+            .iter()
+            .map(|(snippet, err)| (snippet, Some(err))),
+        limit,
+    );
+}
+
+/// Split raw fallback into documented MathType behavior and still-unclassified gaps.
+fn classify_raw_fallbacks(snippets: &[String]) -> RawFallbackClass {
+    let mut known = Vec::new();
+    let mut unclassified = Vec::new();
+    for snippet in snippets {
+        let raw_commands = raw_fallback_commands(snippet);
+        if !raw_commands.is_empty()
+            && raw_commands
+                .iter()
+                .all(|command| is_known_mathtype_raw_command(command))
+        {
+            known.push(snippet.clone());
+        } else {
+            unclassified.push(snippet.clone());
+        }
+    }
+    RawFallbackClass {
+        known,
+        unclassified,
+    }
+}
+
+/// Return raw TeX command names produced by the parser for one snippet.
+fn raw_fallback_commands(snippet: &str) -> Vec<String> {
+    let normalized = normalize_latex(snippet);
+    let Ok(expr) = Parser::new(&normalized).parse() else {
+        return Vec::new();
+    };
+    let mut commands = Vec::new();
+    collect_raw_commands(&expr, &mut commands);
+    commands.sort();
+    commands.dedup();
+    commands
+}
+
+/// Collect command names from Expr::RawTex nodes, preserving raw fallback evidence.
+fn collect_raw_commands(expr: &Expr, commands: &mut Vec<String>) {
+    match expr {
+        Expr::RawTex(text) => {
+            if let Some(command) = raw_text_command(text) {
+                commands.push(command);
+            }
+        }
+        Expr::Sequence(items) => items
+            .iter()
+            .for_each(|item| collect_raw_commands(item, commands)),
+        Expr::Color { content, .. }
+        | Expr::Style { content, .. }
+        | Expr::Font { content, .. }
+        | Expr::Accent { content, .. }
+        | Expr::ArrowAccent { content, .. }
+        | Expr::BarTemplate { content, .. }
+        | Expr::Strike { content, .. }
+        | Expr::Boxed(content)
+        | Expr::Sqrt(content)
+        | Expr::Delimited { content, .. }
+        | Expr::Script { base: content, .. } => collect_raw_commands(content, commands),
+        Expr::XArrow { label, under, .. } => {
+            collect_raw_commands(label, commands);
+            if let Some(under) = under {
+                collect_raw_commands(under, commands);
+            }
+        }
+        Expr::Fraction(left, right)
+        | Expr::Stackrel {
+            upper: left,
+            lower: right,
+        }
+        | Expr::Underset {
+            lower: left,
+            base: right,
+        }
+        | Expr::Pile {
+            upper: left,
+            lower: right,
+            ..
+        } => {
+            collect_raw_commands(left, commands);
+            collect_raw_commands(right, commands);
+        }
+        Expr::NthRoot { index, radicand } => {
+            collect_raw_commands(index, commands);
+            collect_raw_commands(radicand, commands);
+        }
+        Expr::BigOp {
+            lower, upper, body, ..
+        }
+        | Expr::IntegralOp {
+            lower, upper, body, ..
+        } => {
+            lower
+                .as_deref()
+                .into_iter()
+                .for_each(|expr| collect_raw_commands(expr, commands));
+            upper
+                .as_deref()
+                .into_iter()
+                .for_each(|expr| collect_raw_commands(expr, commands));
+            body.as_deref()
+                .into_iter()
+                .for_each(|expr| collect_raw_commands(expr, commands));
+        }
+        Expr::Limit { lower, upper, .. } => {
+            lower
+                .as_deref()
+                .into_iter()
+                .for_each(|expr| collect_raw_commands(expr, commands));
+            upper
+                .as_deref()
+                .into_iter()
+                .for_each(|expr| collect_raw_commands(expr, commands));
+        }
+        Expr::Brace {
+            content,
+            annotation,
+            ..
+        }
+        | Expr::Bracket {
+            content,
+            annotation,
+            ..
+        } => {
+            collect_raw_commands(content, commands);
+            annotation
+                .as_deref()
+                .into_iter()
+                .for_each(|expr| collect_raw_commands(expr, commands));
+        }
+        Expr::Matrix { rows, .. } | Expr::Environment { rows, .. } => rows
+            .iter()
+            .flat_map(|row| row.iter())
+            .for_each(|expr| collect_raw_commands(expr, commands)),
+        Expr::Char(_)
+        | Expr::CommandSymbol { .. }
+        | Expr::BigSymbol(_)
+        | Expr::SumOperatorSymbol(_)
+        | Expr::Space(_)
+        | Expr::FunctionName(_)
+        | Expr::Text(_)
+        | Expr::Integral { .. } => {}
+    }
+}
+
+/// Extract the command name from the raw TeX text emitted by parser fallback.
+fn raw_text_command(text: &str) -> Option<String> {
+    let chars = text.chars().collect::<Vec<_>>();
+    if chars.first() != Some(&'\\') {
+        return None;
+    }
+    let mut end = 1usize;
+    while chars.get(end).is_some_and(|ch| ch.is_ascii_alphabetic()) {
+        end += 1;
+    }
+    (end > 1).then(|| chars[1..end].iter().collect())
+}
+
+/// Print raw-fallback snippets grouped by the actual RawTex commands in the AST.
+fn print_raw_command_groups(title: &str, snippets: &[String], limit: usize) {
+    let mut groups: BTreeMap<String, Vec<&String>> = BTreeMap::new();
+    for snippet in snippets {
+        let commands = raw_fallback_commands(snippet);
+        if commands.is_empty() {
+            groups
+                .entry("<none>".to_string())
+                .or_default()
+                .push(snippet);
+            continue;
+        }
+        for command in commands {
+            groups.entry(command).or_default().push(snippet);
+        }
+    }
+    let mut groups = groups.into_iter().collect::<Vec<_>>();
+    groups.sort_by(|left, right| {
+        right
+            .1
+            .len()
+            .cmp(&left.1.len())
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    println!("{title}:");
+    for (index, (command, examples)) in groups.iter().enumerate() {
+        if index >= limit {
+            println!("  ... {} more", groups.len() - limit);
+            break;
+        }
+        if let Some(example) = examples.first() {
+            println!("  - \\{command}: {} example={example}", examples.len());
+        }
+    }
+}
+
+/// Print snippets grouped by their source Supported Functions section.
+fn print_section_counts(
+    title: &str,
+    snippets: &[String],
+    sections: &BTreeMap<String, String>,
+    limit: usize,
+) {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for snippet in snippets {
+        let section = sections
+            .get(snippet)
+            .cloned()
+            .unwrap_or_else(|| "<unknown>".to_string());
+        *counts.entry(section).or_default() += 1;
+    }
+    let mut counts = counts.into_iter().collect::<Vec<_>>();
+    counts.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    println!("{title}:");
+    for (index, (section, count)) in counts.iter().enumerate() {
+        if index >= limit {
+            println!("  ... {} more", counts.len() - limit);
+            break;
+        }
+        println!("  - {section}: {count}");
+    }
+}
+
+/// Print remaining raw fallbacks grouped by the blocker that prevents native output.
+fn print_remaining_blocker_counts(title: &str, snippets: &[String], limit: usize) {
+    let mut groups = BTreeMap::<String, usize>::new();
+    for snippet in snippets {
+        let commands = raw_fallback_commands(snippet);
+        let blocker = remaining_blocker(&commands);
+        *groups.entry(blocker.bucket.to_string()).or_default() += 1;
+    }
+    let mut groups = groups.into_iter().collect::<Vec<_>>();
+    groups.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    println!("{title}:");
+    for (index, (bucket, count)) in groups.iter().enumerate() {
+        if index >= limit {
+            println!("  ... {} more", groups.len() - limit);
+            break;
+        }
+        println!("  - {bucket}: {count}");
+    }
+}
+
+/// Write unclassified complete-formula fallbacks as a reusable probe queue.
+fn write_unclassified_jsonl(
+    path: &PathBuf,
+    snippets: &[String],
+    sections: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    let mut output = String::new();
+    for snippet in snippets {
+        let section = sections
+            .get(snippet)
+            .cloned()
+            .unwrap_or_else(|| "<unknown>".to_string());
+        let commands = raw_fallback_commands(snippet);
+        output.push_str(&format!(
+            "{{\"section\":\"{}\",\"snippet\":\"{}\",\"commands\":[{}]}}\n",
+            json_escape(&section),
+            json_escape(snippet),
+            commands
+                .iter()
+                .map(|command| format!("\"{}\"", json_escape(command)))
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
+    }
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    }
+    fs::write(path, output).map_err(|err| format!("failed to write {}: {err}", path.display()))
+}
+
+/// Write the remaining native-implementation queue with an explicit blocker bucket.
+fn write_remaining_jsonl(
+    path: &PathBuf,
+    snippets: &[String],
+    sections: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    let mut output = String::new();
+    for snippet in snippets {
+        let section = sections
+            .get(snippet)
+            .cloned()
+            .unwrap_or_else(|| "<unknown>".to_string());
+        let commands = raw_fallback_commands(snippet);
+        let blocker = remaining_blocker(&commands);
+        output.push_str(&format!(
+            "{{\"section\":\"{}\",\"snippet\":\"{}\",\"commands\":[{}],\"bucket\":\"{}\",\"note\":\"{}\"}}\n",
+            json_escape(&section),
+            json_escape(snippet),
+            commands
+                .iter()
+                .map(|command| format!("\"{}\"", json_escape(command)))
+                .collect::<Vec<_>>()
+                .join(","),
+            json_escape(blocker.bucket),
+            json_escape(blocker.note)
+        ));
+    }
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    }
+    fs::write(path, output).map_err(|err| format!("failed to write {}: {err}", path.display()))
+}
+
+struct RemainingBlocker {
+    bucket: &'static str,
+    note: &'static str,
+}
+
+/// Explain why a remaining raw fallback is not safe to mark native yet.
+fn remaining_blocker(commands: &[String]) -> RemainingBlocker {
+    if commands.iter().any(|command| command == "begin") {
+        return RemainingBlocker {
+            bucket: "unsupported_environment",
+            note:
+                "CD diagrams need a native arrow-diagram writer or fresh MathType probe evidence.",
+        };
+    }
+    if commands
+        .iter()
+        .any(|command| command == "mathfrak" || command == "frak")
+    {
+        return RemainingBlocker {
+            bucket: "missing_generated_font_table",
+            note: "Fraktur targets exist in the generator but no extractable cached MathType OLE is available.",
+        };
+    }
+    if commands.iter().any(|command| command == "mathsfit") {
+        return RemainingBlocker {
+            bucket: "missing_font_variant",
+            note: "Sans-serif italic needs a verified MathType font/typeface mapping.",
+        };
+    }
+    if commands.iter().any(|command| command == "rule") {
+        return RemainingBlocker {
+            bucket: "missing_rule_template",
+            note: "Visible rule boxes need a documented or probed MTEF representation before native output.",
+        };
+    }
+    if commands.iter().any(|command| command == "tag") {
+        return RemainingBlocker {
+            bucket: "annotation_semantics",
+            note: "Equation tags affect row annotation/numbering semantics and should not be appended as ordinary text.",
+        };
+    }
+    if commands.iter().any(|command| {
+        matches!(
+            command.as_str(),
+            "overgroup" | "undergroup" | "overlinesegment" | "underlinesegment" | "utilde"
+        )
+    }) {
+        return RemainingBlocker {
+            bucket: "missing_accent_template_mapping",
+            note: "The MTEF template table has no direct selector for this accent family, so probe evidence is required.",
+        };
+    }
+    RemainingBlocker {
+        bucket: "needs_probe",
+        note: "No safe native mapping has been classified yet.",
+    }
+}
+
+/// Escape a string for the small JSONL files emitted by this audit tool.
+fn json_escape(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(|ch| match ch {
+            '"' => "\\\"".chars().collect::<Vec<_>>(),
+            '\\' => "\\\\".chars().collect::<Vec<_>>(),
+            '\n' => "\\n".chars().collect::<Vec<_>>(),
+            '\r' => "\\r".chars().collect::<Vec<_>>(),
+            '\t' => "\\t".chars().collect::<Vec<_>>(),
+            ch if ch.is_control() => format!("\\u{:04x}", ch as u32).chars().collect(),
+            ch => vec![ch],
+        })
+        .collect()
+}
+
+/// Print a bounded list without hiding the total count.
+fn print_list<'a>(
+    title: &str,
+    items: impl Iterator<Item = (&'a String, Option<&'a String>)>,
+    limit: usize,
+) {
+    println!("{title}:");
+    let mut count = 0usize;
+    for (index, (snippet, err)) in items.enumerate() {
+        count += 1;
+        if index < limit {
+            if let Some(err) = err {
+                println!("  - {snippet} => {err}");
+            } else {
+                println!("  - {snippet}");
+            }
+        }
+    }
+    if count > limit {
+        println!("  ... {} more", count - limit);
+    }
+}

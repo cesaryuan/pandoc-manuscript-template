@@ -1,4 +1,6 @@
 mod ast;
+#[cfg(test)]
+mod cfb;
 mod cli;
 mod generated;
 mod mtef;

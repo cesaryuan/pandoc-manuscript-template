@@ -58,7 +58,7 @@ MathTypeOleHelper --format <clipboard format> --input <file-or-tex-or-mtef> --ou
 ```powershell
 & $helper `
   --method set-data `
-  --pre-verb 0 `
+  --pre-verb 2 `
   --format "TeX Input Language" `
   --input '$$1=a$$' `
   --output .pmt-eq.ole.bin `
@@ -70,7 +70,7 @@ MathTypeOleHelper --format <clipboard format> --input <file-or-tex-or-mtef> --ou
 
 常用约定：
 
-- `--pre-verb 0` 会在写入数据前打开 MathType OLE 对象，通常比旧的 `--pre-verb 2` 更稳。
+- `--pre-verb 2` 会在写入数据前打开 MathType OLE 对象，通常比旧的 `--pre-verb 0` 更稳。
 - `--no-verb` 会跳过写入后的 `DoVerb(2)`，用于避免某些机器在二次 verb 时崩溃。
 - `--encoding utf16le` 推荐配合 `"TeX Input Language"` 使用。
 - `--input` 如果不是已存在文件路径，就会按 literal TeX 文本处理。
@@ -80,7 +80,7 @@ MathTypeOleHelper --format <clipboard format> --input <file-or-tex-or-mtef> --ou
 ```powershell
 & $helper `
   --method set-data `
-  --pre-verb 0 `
+  --pre-verb 2 `
   --format "TeX Input Language" `
   --input C:\tmp\formula.tex `
   --output C:\tmp\formula.ole.bin `
@@ -93,7 +93,7 @@ MathTypeOleHelper --format <clipboard format> --input <file-or-tex-or-mtef> --ou
 ```powershell
 & $helper `
   --method set-data `
-  --pre-verb 0 `
+  --pre-verb 2 `
   --format "TeX Input Language" `
   --input '$$1=a$$' `
   --output C:\tmp\formula.ole.bin `
@@ -200,7 +200,7 @@ Python 侧写 Word XML 时使用。示例结构如下：
 
 ```powershell
 $env:MATHTYPE_OLE_HELPER_VERBOSE = "1"
-& $helper --method set-data --pre-verb 0 --format "TeX Input Language" --input '$$1=a$$' --output .pmt-eq.ole.bin --encoding utf16le --no-verb
+& $helper --method set-data --pre-verb 2 --format "TeX Input Language" --input '$$1=a$$' --output .pmt-eq.ole.bin --encoding utf16le --no-verb
 ```
 
 日志会输出到 stderr，前缀是 `[ole-helper]`。程序成功时退出码为 `0`，失败时退出码为

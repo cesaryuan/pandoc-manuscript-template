@@ -219,6 +219,15 @@ for row in examples: print(row)"
 matched 302 mismatched 0 missing 0
 ```
 
+## Development Notes
+
+- [`docs/Supported Functions Implementation Log.md`](docs/Supported%20Functions%20Implementation%20Log.md):
+  记录本轮从单个复杂样本修补，转向基于 `Supported Functions.md` 的 audit、probe、
+  generated-table 和 known raw fallback 工作流。
+- [`docs/MathType TeX Input Probe Notes.md`](docs/MathType%20TeX%20Input%20Probe%20Notes.md):
+  记录 MathType TeX Input 的实际探针结论，尤其是 native CHAR、raw fallback、
+  ignored layout hint 和 helper `--pre-verb 2` 行为。
+
 ## Regenerate MathType References
 
 普通使用 Rust 程序不需要 MathType。只有当你修改了样本、更新了 `manuscript.md`

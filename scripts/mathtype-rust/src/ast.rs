@@ -2,11 +2,22 @@
 pub(crate) enum Expr {
     Sequence(Vec<Expr>),
     Char(char),
+    CommandSymbol {
+        command: String,
+        ch: char,
+    },
+    BigSymbol(char),
+    SumOperatorSymbol(char),
+    RawTex(String),
     Space(u8),
     FunctionName(String),
     Text(String),
     Color {
         name: String,
+        content: Box<Expr>,
+    },
+    Style {
+        kind: StyleKind,
         content: Box<Expr>,
     },
     Font {
@@ -17,8 +28,22 @@ pub(crate) enum Expr {
         kind: AccentKind,
         content: Box<Expr>,
     },
+    ArrowAccent {
+        kind: ArrowAccentKind,
+        under: bool,
+        content: Box<Expr>,
+    },
+    BarTemplate {
+        kind: BarTemplateKind,
+        content: Box<Expr>,
+    },
+    Strike {
+        kind: StrikeKind,
+        content: Box<Expr>,
+    },
     Fraction(Box<Expr>, Box<Expr>),
     Sqrt(Box<Expr>),
+    Boxed(Box<Expr>),
     NthRoot {
         index: Box<Expr>,
         radicand: Box<Expr>,
@@ -43,7 +68,34 @@ pub(crate) enum Expr {
         upper: Option<Box<Expr>>,
         body: Option<Box<Expr>>,
     },
-    Binomial(Box<Expr>, Box<Expr>),
+    Pile {
+        kind: PileKind,
+        upper: Box<Expr>,
+        lower: Box<Expr>,
+    },
+    Brace {
+        kind: BraceKind,
+        content: Box<Expr>,
+        annotation: Option<Box<Expr>>,
+    },
+    Bracket {
+        kind: BracketKind,
+        content: Box<Expr>,
+        annotation: Option<Box<Expr>>,
+    },
+    Stackrel {
+        upper: Box<Expr>,
+        lower: Box<Expr>,
+    },
+    Underset {
+        lower: Box<Expr>,
+        base: Box<Expr>,
+    },
+    XArrow {
+        kind: XArrowKind,
+        label: Box<Expr>,
+        under: Option<Box<Expr>>,
+    },
     Matrix {
         kind: MatrixKind,
         rows: Vec<Vec<Expr>>,
@@ -64,13 +116,104 @@ pub(crate) enum Expr {
     },
 }
 
+impl Expr {
+    /// Return true when this expression still depends on MathType raw TeX fallback.
+    #[allow(dead_code)]
+    pub(crate) fn contains_raw_tex(&self) -> bool {
+        match self {
+            Expr::RawTex(_) => true,
+            Expr::Sequence(items) => items.iter().any(Expr::contains_raw_tex),
+            Expr::Color { content, .. }
+            | Expr::Style { content, .. }
+            | Expr::Font { content, .. }
+            | Expr::Accent { content, .. }
+            | Expr::ArrowAccent { content, .. }
+            | Expr::BarTemplate { content, .. }
+            | Expr::Strike { content, .. }
+            | Expr::Boxed(content)
+            | Expr::Sqrt(content)
+            | Expr::Delimited { content, .. }
+            | Expr::Script { base: content, .. } => content.contains_raw_tex(),
+            Expr::XArrow { label, under, .. } => {
+                label.contains_raw_tex() || under.as_deref().is_some_and(Expr::contains_raw_tex)
+            }
+            Expr::Fraction(left, right)
+            | Expr::Stackrel {
+                upper: left,
+                lower: right,
+            }
+            | Expr::Underset {
+                lower: left,
+                base: right,
+            }
+            | Expr::Pile {
+                upper: left,
+                lower: right,
+                ..
+            } => left.contains_raw_tex() || right.contains_raw_tex(),
+            Expr::NthRoot { index, radicand } => {
+                index.contains_raw_tex() || radicand.contains_raw_tex()
+            }
+            Expr::BigOp {
+                lower, upper, body, ..
+            }
+            | Expr::IntegralOp {
+                lower, upper, body, ..
+            } => {
+                lower.as_deref().is_some_and(Expr::contains_raw_tex)
+                    || upper.as_deref().is_some_and(Expr::contains_raw_tex)
+                    || body.as_deref().is_some_and(Expr::contains_raw_tex)
+            }
+            Expr::Limit { lower, upper, .. } => {
+                lower.as_deref().is_some_and(Expr::contains_raw_tex)
+                    || upper.as_deref().is_some_and(Expr::contains_raw_tex)
+            }
+            Expr::Brace {
+                content,
+                annotation,
+                ..
+            }
+            | Expr::Bracket {
+                content,
+                annotation,
+                ..
+            } => {
+                content.contains_raw_tex()
+                    || annotation.as_deref().is_some_and(Expr::contains_raw_tex)
+            }
+            Expr::Matrix { rows, .. } | Expr::Environment { rows, .. } => rows
+                .iter()
+                .flat_map(|row| row.iter())
+                .any(Expr::contains_raw_tex),
+            Expr::Char(_)
+            | Expr::CommandSymbol { .. }
+            | Expr::BigSymbol(_)
+            | Expr::SumOperatorSymbol(_)
+            | Expr::Space(_)
+            | Expr::FunctionName(_)
+            | Expr::Text(_)
+            | Expr::Integral { .. } => false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StyleKind {
+    Display,
+    Text,
+    Script,
+    ScriptScript,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FontKind {
     Bold,
     MathCal,
     MathSf,
+    MathTt,
     MathBb,
     MathScr,
+    MathFrak,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,31 +221,114 @@ pub(crate) enum AccentKind {
     Bar,
     Hat,
     WideHat,
-    Vec,
+    Breve,
+    Dot,
+    Ddot,
+    Dddot,
+    Ddddot,
+    Tilde,
+    UnderTilde,
+    Acute,
+    Grave,
+    Check,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ArrowAccentKind {
+    Left,
+    Right,
+    LeftRight,
+    LeftHarpoon,
+    RightHarpoon,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BarTemplateKind {
+    Over,
+    Under,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StrikeKind {
+    Horizontal,
+    Up,
+    Down,
+    Both,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum XArrowKind {
+    Left,
+    Right,
+    DoubleLeft,
+    DoubleRight,
+    HookLeft,
+    HookRight,
+    TwoHeadLeft,
+    TwoHeadRight,
+    Mapsto,
+    LongEqual,
+    ToFrom,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BigOpKind {
     Sum,
     Product,
+    Coproduct,
+    Union,
+    Intersection,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum IntegralKind {
     Single,
     Double,
+    Triple,
     Contour,
+    ContourDouble,
+    ContourTriple,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BraceKind {
+    Over,
+    Under,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BracketKind {
+    Over,
+    Under,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PileKind {
+    Plain,
+    Parenthesized,
+    Braced,
+    Bracketed,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MatrixKind {
+    Plain,
     Parenthesized,
     Bracketed,
+    Braced,
+    Barred,
+    DoubleBarred,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum EnvironmentKind {
     Align,
+    Split,
     Aligned,
+    AlignAt,
+    AlignedAt,
     Cases,
+    RightCases,
+    Gather,
+    Gathered,
 }

@@ -1,6 +1,8 @@
+use crate::ast::{EnvironmentKind, Expr, MatrixKind};
+use crate::cfb::read_regular_stream;
 use crate::mtef::write_mtef;
-use crate::ole::{END_OF_CHAIN, FAT_SECTOR, FREE_SECTOR, SECTOR_SIZE};
 use crate::parser::{normalize_latex, Parser};
+use crate::typeface::{FN_EXPAND, FN_LC_GREEK, FN_SPACE, FN_SYMBOL, FN_TEXT, FN_USER1};
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -109,251 +111,593 @@ fn compare_sample(tex_path: &Path, mt_path: &Path) -> Result<(), String> {
     ))
 }
 
+/// Ensure common matrix environments take the native MATRIX path, not raw TeX fallback.
+#[test]
+fn matrix_environments_parse_and_render_natively() {
+    let cases = [
+        ("\\begin{matrix}a&b\\\\c&d\\end{matrix}", MatrixKind::Plain),
+        (
+            "\\begin{smallmatrix}a&b\\\\c&d\\end{smallmatrix}",
+            MatrixKind::Plain,
+        ),
+        (
+            "\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}",
+            MatrixKind::Parenthesized,
+        ),
+        (
+            "\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}",
+            MatrixKind::Bracketed,
+        ),
+        (
+            "\\begin{Bmatrix}a&b\\\\c&d\\end{Bmatrix}",
+            MatrixKind::Braced,
+        ),
+        (
+            "\\begin{vmatrix}a&b\\\\c&d\\end{vmatrix}",
+            MatrixKind::Barred,
+        ),
+        (
+            "\\begin{Vmatrix}a&b\\\\c&d\\end{Vmatrix}",
+            MatrixKind::DoubleBarred,
+        ),
+        (
+            "\\def\\arraystretch{1.5}\\begin{array}{c:c:c}a&b&c\\\\\\hline d&e&f\\\\\\hdashline g&h&i\\end{array}",
+            MatrixKind::Plain,
+        ),
+    ];
+
+    for (latex, expected_kind) in cases {
+        let expr = Parser::new(latex)
+            .parse()
+            .expect("matrix environment parses");
+        assert_matrix_kind(&expr, expected_kind);
+        let bytes = write_mtef(latex, &expr).expect("matrix environment renders");
+        assert!(bytes.len() > 28, "matrix MTEF should include body bytes");
+    }
+}
+
+/// Ensure related layout environments consume their arguments and render natively.
+#[test]
+fn layout_environments_parse_and_render_natively() {
+    let environments = [
+        (
+            "\\begin{gather}a=b\\\\c=d\\end{gather}",
+            EnvironmentKind::Gather,
+        ),
+        (
+            "\\begin{gathered}a=b\\\\c=d\\end{gathered}",
+            EnvironmentKind::Gathered,
+        ),
+        (
+            "\\begin{alignat}{2}10&x+&3&y=2\\\\3&x+&13&y=4\\end{alignat}",
+            EnvironmentKind::AlignAt,
+        ),
+        (
+            "\\begin{split}a&=b+c\\\\&=e+f\\end{split}",
+            EnvironmentKind::Split,
+        ),
+        (
+            "\\begin{alignedat}{2}10&x+&3&y=2\\\\3&x+&13&y=4\\end{alignedat}",
+            EnvironmentKind::AlignedAt,
+        ),
+        (
+            "\\begin{aligned}\\sum_{\\substack{0<i<m\\\\0<j<n}}\\end{aligned}",
+            EnvironmentKind::Aligned,
+        ),
+        (
+            "\\begin{rcases}a&b\\\\c&d\\end{rcases}",
+            EnvironmentKind::RightCases,
+        ),
+        (
+            "\\begin{dcases}a&b\\\\c&d\\end{dcases}",
+            EnvironmentKind::Cases,
+        ),
+    ];
+
+    for (latex, expected_kind) in environments {
+        let expr = Parser::new(latex)
+            .parse()
+            .expect("layout environment parses");
+        assert_environment_kind(&expr, expected_kind);
+        assert_no_raw_tex(&expr);
+        let bytes = write_mtef(latex, &expr).expect("layout environment renders");
+        assert!(
+            bytes.len() > 28,
+            "layout environment MTEF should include body bytes"
+        );
+    }
+
+    for latex in [
+        "\\begin{array}{cc}a&b\\\\c&d\\end{array}",
+        "\\begin{subarray}{l}i\\in\\Lambda\\\\0<j<n\\end{subarray}",
+    ] {
+        let expr = Parser::new(latex)
+            .parse()
+            .expect("array environment parses");
+        assert_matrix_kind(&expr, MatrixKind::Plain);
+        assert_no_raw_tex(&expr);
+        let bytes = write_mtef(latex, &expr).expect("array environment renders");
+        assert!(bytes.len() > 28, "array MTEF should include body bytes");
+    }
+
+    let wrapped = "\\begin{equation}\\begin{split}a&=b+c\\\\&=e+f\\end{split}\\end{equation}";
+    let expr = Parser::new(wrapped)
+        .parse()
+        .expect("equation wrapper parses");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(wrapped, &expr).expect("equation wrapper renders");
+    assert!(
+        bytes.len() > 28,
+        "equation wrapper MTEF should include body bytes"
+    );
+}
+
+/// Check the top-level matrix kind without tying the test to row internals.
+fn assert_matrix_kind(expr: &Expr, expected: MatrixKind) {
+    match expr {
+        Expr::Sequence(items) if items.len() == 1 => assert_matrix_kind(&items[0], expected),
+        Expr::Matrix { kind, .. } => assert_eq!(*kind, expected),
+        other => panic!("expected matrix expression, found {other:?}"),
+    }
+}
+
+/// Check the top-level environment kind without tying the test to row internals.
+fn assert_environment_kind(expr: &Expr, expected: EnvironmentKind) {
+    match expr {
+        Expr::Sequence(items) if items.len() == 1 => assert_environment_kind(&items[0], expected),
+        Expr::Environment { kind, .. } => assert_eq!(*kind, expected),
+        other => panic!("expected environment expression, found {other:?}"),
+    }
+}
+
+/// Ensure \limits and \nolimits attach scripts to the preceding operator.
+#[test]
+fn limits_modifiers_render_natively() {
+    let cases = [
+        "\\lim\\limits_{x\\to0} f(x)",
+        "\\sum\\limits_{i=1}^{n} x_i",
+        "\\prod\\nolimits_{i=1}^{n} x_i",
+    ];
+    for latex in cases {
+        let expr = Parser::new(latex).parse().expect("limits modifier parses");
+        assert_no_raw_tex(&expr);
+        let bytes = write_mtef(latex, &expr).expect("limits modifier renders");
+        assert!(bytes.len() > 28, "limits MTEF should include body bytes");
+    }
+}
+
+/// Ensure TeX style switches emit MathType logical-size records instead of disappearing.
+#[test]
+fn style_switches_emit_size_records() {
+    let latex = "\\scriptstyle x+\\scriptscriptstyle y+\\displaystyle z+\\textstyle w";
+    let expr = Parser::new(latex).parse().expect("style switches parse");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("style switches render");
+    assert!(
+        bytes.contains(&0x0b),
+        "scriptstyle should emit MathType's sub-size marker"
+    );
+    assert!(
+        bytes.contains(&0x0c),
+        "scriptscriptstyle should emit MathType's sub2-size marker"
+    );
+}
+
+/// Ensure \char hex escapes are parsed as Unicode while incomplete \char stays raw.
+#[test]
+fn char_hex_escape_renders_natively() {
+    let expr = Parser::new("\\char\"263a")
+        .parse()
+        .expect("hex char escape parses");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef("\\char\"263a", &expr).expect("hex char escape renders");
+    assert!(
+        bytes.windows(2).any(|window| window == [0x3a, 0x26]),
+        "MTEF should contain U+263A in little-endian form"
+    );
+
+    let incomplete = Parser::new("\\char")
+        .parse()
+        .expect("incomplete char command stays parseable");
+    assert!(
+        incomplete.contains_raw_tex(),
+        "bare \\char should remain raw fallback"
+    );
+}
+
+/// Ensure \middle accepts a following delimiter while bare \middle stays raw.
+#[test]
+fn middle_delimiter_renders_natively_when_complete() {
+    let latex = "\\left(x\\middle|y\\right)+\\left\\{a\\middle\\vert b\\right\\}+\\vert";
+    let expr = Parser::new(latex)
+        .parse()
+        .expect("complete middle delimiters parse");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("middle delimiters render");
+    assert!(
+        bytes.len() > 28,
+        "middle delimiter MTEF should include body bytes"
+    );
+
+    let incomplete = Parser::new("\\middle")
+        .parse()
+        .expect("incomplete middle command stays parseable");
+    assert!(
+        incomplete.contains_raw_tex(),
+        "bare \\middle should remain raw fallback"
+    );
+}
+
+/// Ensure Supported Functions arrow aliases parse through the generated table.
+#[test]
+fn supported_arrow_aliases_render_natively() {
+    let latex = "\\curvearrowleft+\\curvearrowright+\\dashleftarrow+\\dashrightarrow+\\downdownarrows+\\downharpoonleft+\\downharpoonright+\\hArr+\\hookleftarrow+\\hookrightarrow+\\iff+\\impliedby+\\implies+\\leadsto+\\leftarrowtail+\\leftharpoondown+\\leftleftarrows+\\leftrightarrows+\\leftrightharpoons+\\leftrightsquigarrow+\\longleftarrow+\\longleftrightarrow+\\longmapsto+\\longrightarrow+\\looparrowleft+\\looparrowright+\\nleftarrow+\\nleftrightarrow+\\nrightarrow+\\restriction+\\rightarrowtail+\\rightharpoondown+\\rightleftarrows+\\rightleftharpoons+\\rightrightarrows+\\rightsquigarrow+\\twoheadleftarrow+\\twoheadrightarrow+\\upharpoonleft+\\upharpoonright+\\upuparrows";
+    let expr = Parser::new(latex)
+        .parse()
+        .expect("Supported Functions arrow aliases parse");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("Supported Functions arrow aliases render");
+    assert!(
+        bytes
+            .windows(5)
+            .any(|window| window == [0x02, 0x00, FN_SYMBOL, 0xb6, 0x21]),
+        "curvearrowleft should render as a symbol CHAR record"
+    );
+}
+
+/// Ensure Supported Functions x-arrow variants share the native extensible template.
+#[test]
+fn supported_xarrow_variants_render_natively() {
+    let latex = "\\xLeftarrow{abc}+\\xRightarrow{abc}+\\xhookleftarrow{abc}+\\xhookrightarrow{abc}+\\xtwoheadleftarrow{abc}+\\xtwoheadrightarrow{abc}+\\xmapsto{abc}+\\xlongequal{abc}+\\xtofrom{abc}";
+    let expr = Parser::new(latex)
+        .parse()
+        .expect("Supported Functions x-arrow variants parse");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("Supported Functions x-arrow variants render");
+    assert!(
+        bytes
+            .windows(5)
+            .any(|window| window == [0x02, 0x00, FN_EXPAND, 0xd2, 0x21]),
+        "xLeftarrow/xRightarrow should use an expandable double-arrow glyph"
+    );
+}
+
+/// Ensure horizontal bracket accents use MathType's tmHBRACK template natively.
+#[test]
+fn horizontal_brackets_render_natively() {
+    let latex = "\\overbracket{AB}^{\\text{note}}+\\underbracket{CD}_{\\text{note}}";
+    let expr = Parser::new(latex)
+        .parse()
+        .expect("horizontal brackets parse");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("horizontal brackets render");
+    assert!(
+        bytes
+            .windows(5)
+            .any(|window| window == [0x03, 0x00, 0x19, 0x01, 0x00]),
+        "overbracket should use the tmHBRACK top template"
+    );
+    assert!(
+        bytes
+            .windows(5)
+            .any(|window| window == [0x03, 0x00, 0x19, 0x00, 0x00]),
+        "underbracket should use the tmHBRACK bottom template"
+    );
+    assert!(
+        bytes
+            .windows(5)
+            .any(|window| window == [0x02, 0x00, FN_EXPAND, 0xb4, 0x23]),
+        "overbracket should append the top-square-bracket expanding glyph"
+    );
+    assert!(
+        bytes
+            .windows(5)
+            .any(|window| window == [0x02, 0x00, FN_EXPAND, 0xb5, 0x23]),
+        "underbracket should append the bottom-square-bracket expanding glyph"
+    );
+}
+
+/// Ensure MathType-raw x-arrow commands stay raw instead of being over-supported.
+#[test]
+fn known_raw_xarrow_variants_stay_raw_fallback() {
+    let expr = Parser::new("\\xleftrightarrow{abc}")
+        .parse()
+        .expect("known raw xleftrightarrow parses");
+    assert!(
+        expr.contains_raw_tex(),
+        "MathType stores \\xleftrightarrow as raw text, so it must stay raw"
+    );
+}
+
+/// Ensure Supported Functions relation aliases parse through the generated table.
+#[test]
+fn supported_relation_aliases_render_natively() {
+    let latex = "\\leqq+\\geqslant+\\lessapprox+\\gtrsim+\\curlyeqprec+\\curlyeqsucc+\\ncong+\\nless+\\nparallel+\\subsetneqq+\\succnapprox+\\trianglelefteq+\\vartriangleright+\\vDash+\\not =+\\not\\in+\\not\\subset+\\not\\Rightarrow+\\dblcolon+\\coloneqq+\\colonequals+\\eqqcolon+\\equalscolon+\\eqcolon+\\minuscolon+\\coloneq+\\colonminus+\\colonapprox+\\colonsim+\\ratio+\\coloncolonequals+\\equalscoloncolon+\\coloncolonminus+\\minuscoloncolon+\\coloncolonapprox+\\coloncolonsim+\\simcoloncolon+\\approxcoloncolon";
+    let expr = Parser::new(latex)
+        .parse()
+        .expect("Supported Functions relation aliases parse");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("Supported Functions relation aliases render");
+    assert!(
+        bytes
+            .windows(5)
+            .any(|window| window == [0x02, 0x00, FN_SYMBOL, 0x66, 0x22]),
+        "leqq should render as a symbol CHAR record"
+    );
+    assert!(
+        bytes
+            .windows(6)
+            .any(|window| window == [0x02, 0x04, FN_SYMBOL, 0x60, 0x22, 0xb9]),
+        "not-equals should render as a negated relation CHAR record"
+    );
+}
+
+/// Ensure Supported Functions symbol/text aliases use generated semantic tables.
+#[test]
+fn supported_symbol_and_text_aliases_render_natively() {
+    let latex = "\\bigvee+\\bigwedge+\\daleth+\\gimel+\\diagdown+\\diagup+\\diamonds+\\doublecap+\\doublecup+\\gtrdot+\\image+\\ldotp+\\lgroup x\\rgroup+\\llbracket x\\rrbracket+\\lmoustache x\\rmoustache+\\lozenge+\\maltese+\\mathellipsis+\\measuredangle+\\minuso+\\omicron+\\prime+\\real+\\smallint+\\sphericalangle+\\surd+\\thetasym+\\triangle+\\ulcorner+\\urcorner+\\varDelta+\\varGamma+\\varLambda+\\varOmega+\\varPhi+\\varPi+\\varPsi+\\varSigma+\\varTheta+\\varUpsilon+\\varXi+\\varnothing+\\veebar+\\weierp+\\wr+\\copyright+\\lq+\\mathsterling+\\pounds+\\rq+\\yen";
+    let expr = Parser::new(latex)
+        .parse()
+        .expect("Supported Functions symbol/text aliases parse");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("Supported Functions symbol/text aliases render");
+    assert!(
+        bytes
+            .windows(5)
+            .any(|window| window == [0x02, 0x00, FN_SYMBOL, 0xc1, 0x22]),
+        "bigvee should render as a symbol CHAR record"
+    );
+    assert!(
+        bytes
+            .windows(5)
+            .any(|window| window == [0x02, 0x00, FN_TEXT, 0xa9, 0x00]),
+        "copyright should render as a text CHAR record"
+    );
+    assert!(
+        bytes
+            .windows(6)
+            .any(|window| window == [0x02, 0x04, FN_LC_GREEK, 0xbf, 0x03, b'o']),
+        "omicron should render through the lowercase Greek typeface"
+    );
+}
+
+/// Ensure common function, font-switch, and text-color aliases stay native.
+#[test]
+fn semantic_alias_commands_render_natively() {
+    let latex = "\\bf Ab0+\\sf Ab0+\\it Ab0+\\textsf{Ab0}+\\textbf{Ab0}+\\bold{Ab0}+\\pmb{\\mu}+\\mathtt{Ab0}+\\texttt{Ab0}+\\verb!x^2!+\\textcolor{blue}{F=ma}+\\text{\\textdegree \\OE \\P \\textcircled a}+\\text{\\'{a} \\`{a} \\~{a} \\={a} \\\"{a} \\H{a} \\.{a} \\v{a} \\^{a} \\u{a} \\r{a}}+\\text{\\sout{abc}}+\\arccos x+\\argmax_x f+\\ch x+\\det A+\\gcd(a,b)+\\inf A+\\cth x+\\th x+\\sinh x+\\tanh x+\\tg x+\\liminf_n x_n+\\operatornamewithlimits{rank}_n A+x\\bmod y+x\\mod y+x\\pmod y+x\\pod y+\\thinspace+\\medspace+\\thickspace+\\negthinspace+\\negmedspace+\\negthickspace+\\space+\\nobreakspace+\\ +\\bra{\\phi}+\\ket{\\psi}+\\braket{\\phi\\|\\psi}+\\braket{\\phi\\VERT\\psi}+\\Braket{\\phi\\VERT\\psi}+\\Set{x\\VERT x<5}+\\phase{-78^\\circ}+\\def\\foo{x^2}\\foo+\\gdef\\bar#1{#1^2}\\bar{y}+\\gdef\\VERT{|}+{a \\over b}+{a \\above{2pt} b+1}+\\genfrac ( ] {2pt}{1}a{a+1}+{a \\atop b}+{n \\choose k}+{n \\brace k}+{n \\brack k}+\\sum_{\\substack{0<i<m\\\\0<j<n}}x_{ij}+\\rm Ab0+\\mathrm{Ab0}+\\mathnormal{Ab0}+\\textnormal{Ab0}+\\textup{Ab0}+\\textmd{Ab0}+\\mathit{Ab0}+\\textit{Ab0}+\\emph{Ab0}+\\bm{Ab0}+\\boldsymbol{xy}+\\lt+\\gt+\\colon+\\clubs+\\hearts+\\spades+\\degree+\\left\\lt x \\right\\gt+\\langle x\\rangle+\\lbrace y\\rbrace+\\lbrack z\\rbrack+\\lVert v\\rVert+\\intop f+\\iiint f+\\oiint f+\\oiiint f+\\overleftarrow{AB}+\\overrightarrow{AB}+\\Overrightarrow{CD}+\\underleftarrow{AB}+\\underrightarrow{AB}+\\overleftrightarrow{AB}+\\underleftrightarrow{AB}+\\overleftharpoon{ac}+\\overrightharpoon{ac}+\\xleftarrow{abc}+\\xrightarrow[under]{over}+\\overline{AB}+\\underline{CD}+\\underbar{X}+\\u{a}+\\v{a}+\\widecheck{ac}+\\cancel{5}+\\bcancel{5}+\\xcancel{ABC}+\\sout{abc}+\\stackrel{!}{=}+\\overset{!}{=}+\\underset{!}{=}+\\boxed{\\pi=\\frac c d}+\\cal AB0";
+    let expr = Parser::new(latex)
+        .parse()
+        .expect("semantic alias commands parse");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("semantic alias commands render");
+    assert!(
+        bytes.len() > 28,
+        "semantic alias MTEF should include body bytes"
+    );
+    assert!(
+        bytes
+            .windows(5)
+            .any(|window| window == [0x02, 0x00, FN_USER1, b'A', 0x00]),
+        "mathtt/texttt should render through MathType's Courier New user style"
+    );
+}
+
+/// Ensure MathType-native spacing aliases use the probed fnSPACE records.
+#[test]
+fn spacing_aliases_render_natively() {
+    let latex = "\\medspace x+\\thickspace y+\\negmedspace z+\\negthickspace w";
+    let expr = Parser::new(latex).parse().expect("spacing aliases parse");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("spacing aliases render");
+    for width in [0x02, 0x04, 0x01] {
+        assert!(
+            bytes
+                .windows(5)
+                .any(|window| window == [0x02, 0x00, FN_SPACE, width, 0xef]),
+            "spacing alias should render fnSPACE width 0x{width:02x}"
+        );
+    }
+}
+
+/// Ensure simple \utilde groups use MathType's documented under-tilde embellishment.
+#[test]
+fn simple_under_tilde_renders_natively() {
+    let latex = "\\utilde{AB}";
+    let expr = Parser::new(latex).parse().expect("simple utilde parses");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("simple utilde renders");
+    let under_tilde_count = bytes
+        .windows(3)
+        .filter(|window| *window == [0x06, 0x00, 0x1e])
+        .count();
+    assert_eq!(
+        under_tilde_count, 2,
+        "each simple utilde character should carry embU_TILDE"
+    );
+}
+
+/// Ensure metadata/layout wrappers keep their visible math content native.
+#[test]
+fn content_wrapper_commands_render_natively() {
+    let latex = "\\htmlId{bar}{x}+\\htmlClass{foo}{y}+\\htmlStyle{color:red;}{z}+\\htmlData{foo=a}{w}+\\colorbox{aqua}{$F=ma$}+\\fcolorbox{red}{aqua}{$E=mc^2$}+a\\raisebox{0.25em}{$b$}c+\\textrm{Ab0}+\\tt Ab0+\\sum_{\\mathclap{1\\le i\\le n}}x_i+{=}\\mathllap{/\\,}+\\mathrlap{\\,/}{=}+\\sqrt{\\smash[b]{y}}+\\left(\\vcenter{\\frac{\\frac a b}c}\\right)";
+    let expr = Parser::new(latex)
+        .parse()
+        .expect("content wrapper commands parse");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("content wrapper commands render");
+    assert!(
+        bytes
+            .windows(5)
+            .any(|window| window == [0x02, 0x00, FN_USER1, b'A', 0x00]),
+        "tt should render through MathType's Courier New user style"
+    );
+}
+
+/// Ensure incomplete pmb stays raw while braced pmb uses the bold-font path.
+#[test]
+fn pmb_requires_an_argument_for_native_rendering() {
+    let bare = Parser::new("\\pmb").parse().expect("bare pmb parses");
+    assert!(
+        bare.contains_raw_tex(),
+        "bare \\pmb is incomplete and should remain raw"
+    );
+
+    let expr = Parser::new("\\pmb{\\mu}")
+        .parse()
+        .expect("braced pmb parses");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef("\\pmb{\\mu}", &expr).expect("braced pmb renders");
+    assert!(
+        bytes.len() > 28,
+        "braced pmb should render through the native bold-font path"
+    );
+}
+
+/// Ensure standard blackboard aliases reuse the generated mathbb table.
+#[test]
+fn blackboard_aliases_render_natively() {
+    let latex = "\\Bbb{AB}+\\Complex+\\cnums+\\Reals+\\reals+\\N+\\natnums+\\Z";
+    let expr = Parser::new(latex)
+        .parse()
+        .expect("blackboard aliases parse");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("blackboard aliases render");
+    assert!(bytes.len() > 28, "alias MTEF should include body bytes");
+}
+
+/// Ensure \mathfrak uses the generated table, including MathType's special I record.
+#[test]
+fn mathfrak_renders_from_generated_table() {
+    let latex = "\\mathfrak{AIz}";
+    let expr = Parser::new(latex).parse().expect("mathfrak parses");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("mathfrak renders");
+    assert!(
+        bytes
+            .windows(6)
+            .any(|window| window == [0x02, 0x04, FN_SYMBOL, 0x11, 0x21, 0xc1]),
+        "mathfrak I should use the generated MathType special CHAR record"
+    );
+}
+
+/// Ensure text mode can emit UTF-16 surrogate pairs for non-BMP symbols.
+#[test]
+fn non_bmp_text_renders_as_utf16_char_records() {
+    let latex = "\\text{𝐀-𝟗}";
+    let expr = Parser::new(latex).parse().expect("non-BMP text parses");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("non-BMP text renders");
+    assert!(
+        bytes.windows(2).any(|window| window == [0x35, 0xd8]),
+        "MTEF should contain a high-surrogate code unit"
+    );
+}
+
+/// Preserve unsupported environments as raw TeX instead of failing parsing.
+#[test]
+fn unsupported_environment_renders_as_raw_fallback() {
+    let latex = "\\begin{CD}A @>a>> B \\\\ C @= D\\end{CD}";
+    let expr = Parser::new(latex)
+        .parse()
+        .expect("unsupported environment parses as fallback");
+    assert!(
+        expr.contains_raw_tex(),
+        "unsupported environment should stay visibly raw"
+    );
+    let bytes = write_mtef(latex, &expr).expect("unsupported environment renders");
+    assert!(
+        bytes.len() > 28,
+        "raw fallback MTEF should include body bytes"
+    );
+}
+
+/// Reject raw TeX fallback in tests that claim native parser support.
+fn assert_no_raw_tex(expr: &Expr) {
+    match expr {
+        Expr::RawTex(text) => panic!("unexpected raw TeX fallback: {text}"),
+        Expr::Sequence(items) => items.iter().for_each(assert_no_raw_tex),
+        Expr::Color { content, .. }
+        | Expr::Style { content, .. }
+        | Expr::Font { content, .. }
+        | Expr::Accent { content, .. }
+        | Expr::ArrowAccent { content, .. }
+        | Expr::BarTemplate { content, .. }
+        | Expr::Strike { content, .. }
+        | Expr::Boxed(content)
+        | Expr::Sqrt(content)
+        | Expr::Delimited { content, .. }
+        | Expr::Script { base: content, .. } => assert_no_raw_tex(content),
+        Expr::Fraction(left, right)
+        | Expr::Stackrel {
+            upper: left,
+            lower: right,
+        }
+        | Expr::Underset {
+            lower: left,
+            base: right,
+        } => {
+            assert_no_raw_tex(left);
+            assert_no_raw_tex(right);
+        }
+        Expr::Pile { upper, lower, .. } => {
+            assert_no_raw_tex(upper);
+            assert_no_raw_tex(lower);
+        }
+        Expr::NthRoot { index, radicand } => {
+            assert_no_raw_tex(index);
+            assert_no_raw_tex(radicand);
+        }
+        Expr::BigOp {
+            lower, upper, body, ..
+        }
+        | Expr::IntegralOp {
+            lower, upper, body, ..
+        } => {
+            lower.as_deref().into_iter().for_each(assert_no_raw_tex);
+            upper.as_deref().into_iter().for_each(assert_no_raw_tex);
+            body.as_deref().into_iter().for_each(assert_no_raw_tex);
+        }
+        Expr::Limit { lower, upper, .. } => {
+            lower.as_deref().into_iter().for_each(assert_no_raw_tex);
+            upper.as_deref().into_iter().for_each(assert_no_raw_tex);
+        }
+        Expr::Brace {
+            content,
+            annotation,
+            ..
+        }
+        | Expr::Bracket {
+            content,
+            annotation,
+            ..
+        } => {
+            assert_no_raw_tex(content);
+            annotation
+                .as_deref()
+                .into_iter()
+                .for_each(assert_no_raw_tex);
+        }
+        Expr::XArrow { label, under, .. } => {
+            assert_no_raw_tex(label);
+            under.as_deref().into_iter().for_each(assert_no_raw_tex);
+        }
+        Expr::Matrix { rows, .. } | Expr::Environment { rows, .. } => rows
+            .iter()
+            .flat_map(|row| row.iter())
+            .for_each(assert_no_raw_tex),
+        Expr::Char(_)
+        | Expr::CommandSymbol { .. }
+        | Expr::BigSymbol(_)
+        | Expr::SumOperatorSymbol(_)
+        | Expr::Space(_)
+        | Expr::FunctionName(_)
+        | Expr::Text(_)
+        | Expr::Integral { .. } => {}
+    }
+}
+
 /// Render MTEF through the same parser/writer path as the CLI.
 fn render_mtef_for_test(latex: &str) -> Result<Vec<u8>, String> {
     let expr = Parser::new(latex).parse()?;
     write_mtef(latex, &expr)
-}
-
-/// Read a regular CFB stream from MathType's reference OLE file.
-fn read_regular_stream(file: &[u8], stream_name: &str) -> Result<Vec<u8>, String> {
-    if file.len() < SECTOR_SIZE {
-        return Err("compound file is shorter than one header sector".to_string());
-    }
-    if file.get(..8) != Some(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]) {
-        return Err("compound file signature does not match CFB".to_string());
-    }
-
-    let sector_shift = read_u16_at(file, 30)? as usize;
-    let sector_size = 1usize
-        .checked_shl(sector_shift as u32)
-        .ok_or_else(|| format!("invalid CFB sector shift: {sector_shift}"))?;
-    if sector_size != SECTOR_SIZE {
-        return Err(format!("unsupported CFB sector size: {sector_size}"));
-    }
-
-    let first_directory_sector = read_u32_at(file, 48)?;
-    let mini_stream_cutoff = read_u32_at(file, 56)? as u64;
-    let first_mini_fat_sector = read_u32_at(file, 60)?;
-    let mini_fat_sector_count = read_u32_at(file, 64)? as usize;
-    let fat_sector_count = read_u32_at(file, 44)? as usize;
-    let fat_sectors = read_header_difat(file, fat_sector_count)?;
-    let fat = read_fat(file, &fat_sectors, sector_size)?;
-    let directory = read_sector_chain(file, first_directory_sector, &fat, sector_size)?;
-    let stream = find_directory_entry(&directory, stream_name)?;
-    let root = find_directory_entry(&directory, "Root Entry")?;
-    let mut data = if stream.size < mini_stream_cutoff {
-        let mini_fat = read_mini_fat(
-            file,
-            first_mini_fat_sector,
-            mini_fat_sector_count,
-            &fat,
-            sector_size,
-        )?;
-        let mini_stream = read_sector_chain(file, root.start_sector, &fat, sector_size)?;
-        read_mini_stream_chain(&mini_stream, stream.start_sector, &mini_fat)?
-    } else {
-        read_sector_chain(file, stream.start_sector, &fat, sector_size)?
-    };
-    let wanted_len = usize::try_from(stream.size)
-        .map_err(|_| format!("stream is too large to fit in memory: {}", stream.size))?;
-    if data.len() < wanted_len {
-        return Err(format!(
-            "stream {stream_name} chain is shorter than declared size: {} < {wanted_len}",
-            data.len()
-        ));
-    }
-    data.truncate(wanted_len);
-    Ok(data)
-}
-
-#[derive(Debug)]
-struct DirectoryEntry {
-    start_sector: u32,
-    size: u64,
-}
-
-/// Decode the DIFAT entries stored directly in the CFB header.
-fn read_header_difat(file: &[u8], fat_sector_count: usize) -> Result<Vec<u32>, String> {
-    if fat_sector_count > 109 {
-        return Err("test CFB reader only supports header DIFAT entries".to_string());
-    }
-    let mut sectors = Vec::new();
-    for index in 0..fat_sector_count {
-        let sector = read_u32_at(file, 76 + index * 4)?;
-        if sector != FREE_SECTOR {
-            sectors.push(sector);
-        }
-    }
-    Ok(sectors)
-}
-
-/// Load the FAT table from the listed FAT sectors.
-fn read_fat(file: &[u8], fat_sectors: &[u32], sector_size: usize) -> Result<Vec<u32>, String> {
-    let mut fat = Vec::new();
-    for &sector in fat_sectors {
-        let bytes = sector_bytes(file, sector, sector_size)?;
-        for chunk in bytes.chunks_exact(4) {
-            fat.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
-        }
-    }
-    Ok(fat)
-}
-
-/// Follow a regular FAT chain and concatenate all sector payloads.
-fn read_sector_chain(
-    file: &[u8],
-    start_sector: u32,
-    fat: &[u32],
-    sector_size: usize,
-) -> Result<Vec<u8>, String> {
-    if start_sector == END_OF_CHAIN {
-        return Ok(Vec::new());
-    }
-    let mut data = Vec::new();
-    let mut sector = start_sector;
-    let mut guard = 0usize;
-    while sector != END_OF_CHAIN {
-        if sector == FREE_SECTOR || sector == FAT_SECTOR {
-            return Err(format!("invalid sector in chain: 0x{sector:08x}"));
-        }
-        data.extend_from_slice(sector_bytes(file, sector, sector_size)?);
-        let next = *fat
-            .get(sector as usize)
-            .ok_or_else(|| format!("sector {sector} is outside the FAT"))?;
-        sector = next;
-        guard += 1;
-        if guard > fat.len() {
-            return Err("sector chain appears to contain a cycle".to_string());
-        }
-    }
-    Ok(data)
-}
-
-/// Locate a named stream entry in the decoded directory bytes.
-fn find_directory_entry(directory: &[u8], name: &str) -> Result<DirectoryEntry, String> {
-    for entry in directory.chunks_exact(128) {
-        let entry_name = directory_entry_name(entry)?;
-        if entry_name == name {
-            return Ok(DirectoryEntry {
-                start_sector: read_u32_at(entry, 116)?,
-                size: read_u64_at(entry, 120)?,
-            });
-        }
-    }
-    Err(format!("stream not found in compound file: {name}"))
-}
-
-/// Load the MiniFAT chain, which MathType uses for small Equation Native streams.
-fn read_mini_fat(
-    file: &[u8],
-    first_sector: u32,
-    sector_count: usize,
-    fat: &[u32],
-    sector_size: usize,
-) -> Result<Vec<u32>, String> {
-    if sector_count == 0 || first_sector == END_OF_CHAIN {
-        return Ok(Vec::new());
-    }
-    let mut bytes = Vec::new();
-    let mut sector = first_sector;
-    for _ in 0..sector_count {
-        bytes.extend_from_slice(sector_bytes(file, sector, sector_size)?);
-        sector = *fat
-            .get(sector as usize)
-            .ok_or_else(|| format!("MiniFAT sector {sector} is outside the FAT"))?;
-        if sector == END_OF_CHAIN {
-            break;
-        }
-    }
-    Ok(bytes
-        .chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect())
-}
-
-/// Follow a MiniFAT chain inside the root mini stream.
-fn read_mini_stream_chain(
-    mini_stream: &[u8],
-    start_sector: u32,
-    mini_fat: &[u32],
-) -> Result<Vec<u8>, String> {
-    const MINI_SECTOR_SIZE: usize = 64;
-    if start_sector == END_OF_CHAIN {
-        return Ok(Vec::new());
-    }
-    let mut data = Vec::new();
-    let mut sector = start_sector;
-    let mut guard = 0usize;
-    while sector != END_OF_CHAIN {
-        if sector == FREE_SECTOR {
-            return Err("invalid free mini sector in chain".to_string());
-        }
-        let start = sector as usize * MINI_SECTOR_SIZE;
-        let end = start + MINI_SECTOR_SIZE;
-        let bytes = mini_stream
-            .get(start..end)
-            .ok_or_else(|| format!("mini sector {sector} is outside the mini stream"))?;
-        data.extend_from_slice(bytes);
-        sector = *mini_fat
-            .get(sector as usize)
-            .ok_or_else(|| format!("mini sector {sector} is outside the MiniFAT"))?;
-        guard += 1;
-        if guard > mini_fat.len() {
-            return Err("mini sector chain appears to contain a cycle".to_string());
-        }
-    }
-    Ok(data)
-}
-
-/// Decode a CFB directory entry name from UTF-16LE.
-fn directory_entry_name(entry: &[u8]) -> Result<String, String> {
-    let name_len = read_u16_at(entry, 64)? as usize;
-    if name_len < 2 || name_len > 64 {
-        return Ok(String::new());
-    }
-    let raw_name = &entry[..name_len - 2];
-    let units = raw_name
-        .chunks_exact(2)
-        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
-        .collect::<Vec<_>>();
-    String::from_utf16(&units).map_err(|err| format!("invalid directory UTF-16 name: {err}"))
-}
-
-/// Return one CFB sector by sector number.
-fn sector_bytes(file: &[u8], sector: u32, sector_size: usize) -> Result<&[u8], String> {
-    let start = (sector as usize + 1)
-        .checked_mul(sector_size)
-        .ok_or_else(|| format!("sector offset overflow for sector {sector}"))?;
-    let end = start
-        .checked_add(sector_size)
-        .ok_or_else(|| format!("sector end overflow for sector {sector}"))?;
-    file.get(start..end)
-        .ok_or_else(|| format!("sector {sector} is outside the compound file"))
-}
-
-/// Read a little-endian u16 from a fixed offset.
-fn read_u16_at(data: &[u8], offset: usize) -> Result<u16, String> {
-    let bytes = data
-        .get(offset..offset + 2)
-        .ok_or_else(|| format!("u16 offset {offset} is outside the buffer"))?;
-    Ok(u16::from_le_bytes([bytes[0], bytes[1]]))
-}
-
-/// Read a little-endian u32 from a fixed offset.
-fn read_u32_at(data: &[u8], offset: usize) -> Result<u32, String> {
-    let bytes = data
-        .get(offset..offset + 4)
-        .ok_or_else(|| format!("u32 offset {offset} is outside the buffer"))?;
-    Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
-}
-
-/// Read a little-endian u64 from a fixed offset.
-fn read_u64_at(data: &[u8], offset: usize) -> Result<u64, String> {
-    let bytes = data
-        .get(offset..offset + 8)
-        .ok_or_else(|| format!("u64 offset {offset} is outside the buffer"))?;
-    Ok(u64::from_le_bytes([
-        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-    ]))
 }

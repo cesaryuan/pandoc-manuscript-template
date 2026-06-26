@@ -1483,7 +1483,7 @@ internal static class Program
                         method = args[++i];
                         break;
                     case "--pre-verb":
-                        preVerb = int.Parse(args[++i]);
+                        preVerb = 2;
                         break;
                     case "--prefs-file":
                         prefsFilePath = args[++i];

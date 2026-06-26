@@ -2,7 +2,10 @@ use crate::ast::{EnvironmentKind, Expr, MatrixKind};
 use crate::cfb::read_regular_stream;
 use crate::mtef::write_mtef;
 use crate::parser::{normalize_latex, Parser};
-use crate::typeface::{FN_EXPAND, FN_LC_GREEK, FN_SPACE, FN_SYMBOL, FN_TEXT, FN_USER1};
+use crate::typeface::{
+    EXPLICIT_FONT_NEG_1, FN_EXPAND, FN_LC_GREEK, FN_MT_EXTRA, FN_SPACE, FN_SYMBOL, FN_TEXT,
+    FN_USER1,
+};
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -339,9 +342,9 @@ fn supported_arrow_aliases_render_natively() {
     let bytes = write_mtef(latex, &expr).expect("Supported Functions arrow aliases render");
     assert!(
         bytes
-            .windows(5)
-            .any(|window| window == [0x02, 0x00, FN_SYMBOL, 0xb6, 0x21]),
-        "curvearrowleft should render as a symbol CHAR record"
+            .windows(6)
+            .any(|window| window == [0x02, 0x04, EXPLICIT_FONT_NEG_1, 0xb6, 0x21, 0xd1]),
+        "curvearrowleft should render through the generated command-specific record"
     );
 }
 
@@ -460,9 +463,9 @@ fn supported_symbol_and_text_aliases_render_natively() {
     let bytes = write_mtef(latex, &expr).expect("Supported Functions symbol/text aliases render");
     assert!(
         bytes
-            .windows(5)
-            .any(|window| window == [0x02, 0x00, FN_SYMBOL, 0xc1, 0x22]),
-        "bigvee should render as a symbol CHAR record"
+            .windows(6)
+            .any(|window| window == [0x02, 0x04, FN_MT_EXTRA, 0xfd, 0xff, 0x6e]),
+        "bigvee should render through the generated MathType big-operator glyph"
     );
     assert!(
         bytes

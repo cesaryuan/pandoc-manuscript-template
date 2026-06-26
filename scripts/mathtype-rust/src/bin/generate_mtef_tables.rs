@@ -559,6 +559,14 @@ fn build_targets(
             selector: Selector::LastChar { ch: logical },
         });
     }
+    for &(logical, tex, name) in generated_big_symbol_targets() {
+        targets.push(Target {
+            name,
+            category: Category::BigOperator,
+            formula: tex,
+            selector: Selector::LastChar { ch: logical },
+        });
+    }
     for &(logical, tex, name) in generated_sum_operator_alias_targets() {
         targets.push(Target {
             name,
@@ -754,9 +762,26 @@ fn generated_command_alias_targets() -> &'static [(char, &'static str, &'static 
     ]
 }
 
+/// Return standalone big-symbol glyphs that MathType stores with operator sizing.
+fn generated_big_symbol_targets() -> &'static [(char, &'static str, &'static str)] {
+    &[
+        ('\u{222a}', r"$\bigcup$", "bigop_standalone_union"),
+        ('\u{2229}', r"$\bigcap$", "bigop_standalone_intersection"),
+        ('\u{22c1}', r"$\bigvee$", "bigop_bigvee"),
+        ('\u{22c0}', r"$\bigwedge$", "bigop_bigwedge"),
+    ]
+}
+
 /// Return command-specific symbols whose CHAR encoding differs from the generic character.
 fn generated_command_specific_targets() -> &'static [(char, &'static str, &'static str)] {
-    &[('\u{22c5}', r"$\centerdot$", "command_centerdot")]
+    &[
+        ('\u{22c5}', r"$\centerdot$", "command_centerdot"),
+        ('\u{21b6}', r"$\curvearrowleft$", "command_curvearrowleft"),
+        ('\u{21b7}', r"$\curvearrowright$", "command_curvearrowright"),
+        ('\u{22de}', r"$\curlyeqprec$", "command_curlyeqprec"),
+        ('\u{22df}', r"$\curlyeqsucc$", "command_curlyeqsucc"),
+        ('\u{2138}', r"$\daleth$", "command_daleth"),
+    ]
 }
 
 /// Return tmSUMOP-style big symbols verified by MathType probes.
@@ -1286,7 +1311,7 @@ fn normalize_explicit_font_family(
     mtef: &[u8],
     category: Category,
 ) -> CharRecord {
-    if category == Category::Special
+    if matches!(category, Category::Special | Category::CommandSpecific)
         && record.typeface == EXPLICIT_FONT_NEG_1
         && record.font_pos.is_some()
     {

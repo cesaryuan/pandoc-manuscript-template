@@ -231,10 +231,10 @@ fn render_tex_command_text_table(output: &mut String) {
 /// Render big symbol commands that need source-command-aware script writing.
 fn render_big_symbol_command_table(output: &mut String, rows: &[(Target, CharRecord)]) {
     output.push_str("pub(crate) const BIG_SYMBOL_COMMAND_CHARS: &[TexCommandChar] = &[\n");
-    for (target, record) in rows
-        .iter()
-        .filter(|(target, _)| target.category == Category::CommandAlias)
-    {
+    for (target, record) in rows.iter().filter(|(target, _)| {
+        target.category == Category::CommandAlias
+            || (target.category == Category::BigOperator && target.name.starts_with("bigop_big"))
+    }) {
         if let (Some(command), Some(ch)) = (
             tex_command_from_formula(target.formula),
             target_logical_char(*target, *record),
@@ -289,6 +289,9 @@ fn render_big_operator_table(output: &mut String, rows: &[(Target, CharRecord)])
     {
         let name = match target.selector {
             Selector::BigOperator { name } | Selector::NamedMtCode { name, .. } => Some(name),
+            Selector::LastChar { .. } if target.name.starts_with("bigop_") => {
+                target.name.strip_prefix("bigop_")
+            }
             _ => None,
         };
         if let Some(name) = name {

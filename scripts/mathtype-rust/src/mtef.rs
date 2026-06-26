@@ -199,22 +199,28 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
     } else {
         let starts_with_big_symbol_script = expr_starts_with_big_symbol_script_base(expr);
         let starts_with_euclid_math_one = expr_starts_with_euclid_math_one(expr);
-        let starts_with_euclid_math_two =
-            starts_with_big_symbol_script && expr_starts_with_euclid_math_two(expr);
+        let starts_with_euclid_math_two = expr_starts_with_euclid_math_two(expr);
+        let starts_with_euclid_fraktur = expr_starts_with_euclid_fraktur(expr);
         if starts_with_euclid_math_one {
             writer.ensure_euclid_math_one(out);
         }
         if starts_with_euclid_math_two {
             writer.ensure_euclid_math_two(out);
         }
+        if starts_with_euclid_fraktur {
+            writer.ensure_euclid_fraktur(out);
+        }
         if starts_with_big_symbol_script {
             out.push(0x0d);
             writer.big_symbol_line_marker_pending = true;
+        } else if expr_starts_with_standalone_big_glyph(expr) {
+            out.push(0x0d);
         }
         if !expr_starts_with_top_matrix(expr)
             && !expr_starts_with_raw_tex(expr)
             && !expr_starts_with_explicit_accent_template(expr)
             && !expr_starts_with_sum_operator_script_base(expr)
+            && !expr_starts_with_slotless_big_op(expr)
         {
             writer.ensure_black_color_def(out);
             color_black(out);
@@ -306,6 +312,33 @@ fn expr_starts_with_sum_operator_script_base(expr: &Expr) -> bool {
     }
 }
 
+/// Return true when MathType prefixes a standalone large glyph with a line marker.
+fn expr_starts_with_standalone_big_glyph(expr: &Expr) -> bool {
+    match expr {
+        Expr::BigSymbol(_) | Expr::SumOperatorSymbol(_) => true,
+        Expr::Style { content, .. } => expr_starts_with_standalone_big_glyph(content),
+        Expr::Sequence(items) => items
+            .first()
+            .is_some_and(expr_starts_with_standalone_big_glyph),
+        _ => false,
+    }
+}
+
+/// Return true when a slotless BigOp branch must own its marker/color order.
+fn expr_starts_with_slotless_big_op(expr: &Expr) -> bool {
+    match expr {
+        Expr::BigOp {
+            lower: None,
+            upper: None,
+            body: None,
+            ..
+        } => true,
+        Expr::Style { content, .. } => expr_starts_with_slotless_big_op(content),
+        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_slotless_big_op),
+        _ => false,
+    }
+}
+
 /// Return true when MathType emits Euclid Math One before the first line def.
 fn expr_starts_with_euclid_math_one(expr: &Expr) -> bool {
     match expr {
@@ -318,9 +351,13 @@ fn expr_starts_with_euclid_math_one(expr: &Expr) -> bool {
             .or_else(|| encoding::special_char(*ch).map(|entry| entry.explicit_font))
             .is_some_and(|font| font == Some(ExplicitFont::EuclidMathOne)),
         Expr::Font {
-            kind: FontKind::MathCal,
-            ..
-        } => true,
+            kind: FontKind::MathCal | FontKind::MathScr,
+            content,
+        } => first_plain_char(content).is_some_and(|ch| {
+            encoding::mathcal_char(ch).is_ok_and(|entry| {
+                entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
+            })
+        }),
         Expr::Font { content, .. } | Expr::Accent { content, .. } | Expr::Style { content, .. } => {
             expr_starts_with_euclid_math_one(content)
         }
@@ -343,8 +380,12 @@ fn expr_starts_with_euclid_math_two(expr: &Expr) -> bool {
             .is_some_and(|font| font == Some(ExplicitFont::EuclidMathTwo)),
         Expr::Font {
             kind: FontKind::MathBb,
-            ..
-        } => true,
+            content,
+        } => first_plain_char(content).is_some_and(|ch| {
+            encoding::mathbb_char(ch).is_ok_and(|entry| {
+                entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
+            })
+        }),
         Expr::Font { content, .. } | Expr::Accent { content, .. } | Expr::Style { content, .. } => {
             expr_starts_with_euclid_math_two(content)
         }
@@ -360,7 +401,7 @@ fn expr_starts_with_euclid_fraktur(expr: &Expr) -> bool {
         Expr::Font {
             kind: FontKind::MathFrak,
             content,
-        } => single_font_char(content).is_some_and(|(_, ch)| {
+        } => first_plain_char(content).is_some_and(|ch| {
             encoding::mathfrak_char(ch).is_ok_and(|entry| {
                 entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
             })
@@ -431,7 +472,11 @@ fn write_expr(
                     }
                 }
                 if state.color != ColorState::Black && !expr_sets_own_color(item) {
-                    if expr_starts_with_euclid_fraktur(item) {
+                    if expr_starts_with_euclid_math_one(item) {
+                        writer.ensure_euclid_math_one(out);
+                    } else if expr_starts_with_euclid_math_two(item) {
+                        writer.ensure_euclid_math_two(out);
+                    } else if expr_starts_with_euclid_fraktur(item) {
                         writer.ensure_euclid_fraktur(out);
                     }
                     writer.ensure_black_color_def(out);
@@ -481,7 +526,7 @@ fn write_expr(
             }
         }
         Expr::BigSymbol(ch) => {
-            write_char(*ch, out, writer)?;
+            write_big_symbol_char(*ch, out, writer)?;
             WriteState {
                 size: current_size,
                 color: ColorState::Black,
@@ -1009,11 +1054,7 @@ fn write_named_big_operator_glyph(name: &str, out: &mut Vec<u8>) -> Result<(), S
     let glyph = encoding::big_operator_glyph(name)?;
     out.push(0x02);
     out.push(0x04);
-    out.push(if name == "contour_loop" {
-        FN_MT_EXTRA
-    } else {
-        FN_SYMBOL
-    });
+    out.push(glyph.typeface);
     write_u16(glyph.mtcode, out);
     out.push(glyph.font_pos);
     Ok(())
@@ -2032,6 +2073,16 @@ fn single_font_char(expr: &Expr) -> Option<(Option<FontKind>, char)> {
     }
 }
 
+/// Return the first plain character inside a font command before emitting color.
+fn first_plain_char(expr: &Expr) -> Option<char> {
+    match expr {
+        Expr::Char(ch) => Some(*ch),
+        Expr::Sequence(items) => items.first().and_then(first_plain_char),
+        Expr::Style { content, .. } => first_plain_char(content),
+        _ => None,
+    }
+}
+
 /// Extract the single character from \widehat{\bar{x}} so both accents share one CHAR record.
 fn widehat_bar_char(expr: &Expr) -> Option<char> {
     match expr {
@@ -2321,7 +2372,10 @@ fn write_big_op(
 ) -> Result<WriteState, String> {
     let Some(body) = body else {
         if lower.is_none() && upper.is_none() {
-            write_big_op_glyph(kind, out)?;
+            out.push(0x0d);
+            writer.ensure_black_color_def(out);
+            color_black(out);
+            write_standalone_big_op_glyph(kind, out)?;
             return Ok(WriteState {
                 size: current_size,
                 color: ColorState::Black,
@@ -2430,13 +2484,13 @@ fn write_standalone_big_op_limits(
 /// Write the Sigma/Pi glyph MathType appends at the end of a big-op template.
 fn write_big_op_glyph(kind: BigOpKind, out: &mut Vec<u8>) -> Result<(), String> {
     let name = big_op_glyph_name(kind);
-    let glyph = encoding::big_operator_glyph(name)?;
-    out.push(0x02);
-    out.push(0x04);
-    out.push(glyph.typeface);
-    write_u16(glyph.mtcode, out);
-    out.push(glyph.font_pos);
-    Ok(())
+    write_named_big_operator_glyph(name, out)
+}
+
+/// Write MathType's standalone glyph form for big operators without slots.
+fn write_standalone_big_op_glyph(kind: BigOpKind, out: &mut Vec<u8>) -> Result<(), String> {
+    let name = standalone_big_op_glyph_name(kind);
+    write_named_big_operator_glyph(name, out)
 }
 
 /// Return MathType's template selector for large operators with limits.
@@ -2458,6 +2512,37 @@ fn big_op_glyph_name(kind: BigOpKind) -> &'static str {
         BigOpKind::Coproduct => "coproduct",
         BigOpKind::Union => "union",
         BigOpKind::Intersection => "intersection",
+    }
+}
+
+/// Return the generated glyph-table key for slotless large operators.
+fn standalone_big_op_glyph_name(kind: BigOpKind) -> &'static str {
+    match kind {
+        BigOpKind::Union => "standalone_union",
+        BigOpKind::Intersection => "standalone_intersection",
+        _ => big_op_glyph_name(kind),
+    }
+}
+
+/// Write standalone big-symbol commands whose glyph bytes are learned by probes.
+fn write_big_symbol_char(
+    ch: char,
+    out: &mut Vec<u8>,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    if let Some(name) = big_symbol_glyph_name(ch) {
+        write_named_big_operator_glyph(name, out)
+    } else {
+        write_char(ch, out, writer)
+    }
+}
+
+/// Return the generated glyph-table key for standalone big-symbol aliases.
+fn big_symbol_glyph_name(ch: char) -> Option<&'static str> {
+    match ch {
+        '\u{22c1}' => Some("bigvee"),
+        '\u{22c0}' => Some("bigwedge"),
+        _ => None,
     }
 }
 
@@ -2596,7 +2681,6 @@ fn write_sum_operator_glyph(
     out: &mut Vec<u8>,
     writer: &mut MtefWriter,
 ) -> Result<(), String> {
-    out.push(0x0d);
     write_char(ch, out, writer)
 }
 
@@ -2663,6 +2747,8 @@ fn write_line(
     if expr_starts_with_big_symbol_script_base(expr) {
         out.push(0x0d);
         writer.big_symbol_line_marker_pending = true;
+    } else if expr_starts_with_standalone_big_glyph(expr) {
+        out.push(0x0d);
     }
     if starts_with_euclid_math_one || starts_with_euclid_math_two || starts_with_euclid_fraktur {
         writer.ensure_black_color_def(out);

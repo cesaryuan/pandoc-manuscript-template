@@ -434,6 +434,11 @@ pub(crate) const SPECIAL_CHARS: &[StyledChar] = &[
 
 pub(crate) const COMMAND_SPECIFIC_CHARS: &[CommandStyledChar] = &[
     CommandStyledChar { command: "centerdot", ch: '\u{22c5}', typeface: FN_MT_EXTRA, mtcode: 0xe98f, font_pos: Some(0x67), explicit_font: None },
+    CommandStyledChar { command: "curvearrowleft", ch: '\u{21b6}', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x21b6, font_pos: Some(0xd1), explicit_font: Some(ExplicitFont::EuclidMathOne) },
+    CommandStyledChar { command: "curvearrowright", ch: '\u{21b7}', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x21b7, font_pos: Some(0xd0), explicit_font: Some(ExplicitFont::EuclidMathOne) },
+    CommandStyledChar { command: "curlyeqprec", ch: '\u{22de}', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x22de, font_pos: Some(0xb2), explicit_font: Some(ExplicitFont::EuclidMathTwo) },
+    CommandStyledChar { command: "curlyeqsucc", ch: '\u{22df}', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x22df, font_pos: Some(0xb3), explicit_font: Some(ExplicitFont::EuclidMathTwo) },
+    CommandStyledChar { command: "daleth", ch: '\u{2138}', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x2138, font_pos: Some(0xfd), explicit_font: Some(ExplicitFont::EuclidMathOne) },
 ];
 
 pub(crate) const TEX_COMMAND_CHARS: &[TexCommandChar] = &[
@@ -975,6 +980,8 @@ pub(crate) const BIG_SYMBOL_COMMAND_CHARS: &[TexCommandChar] = &[
     TexCommandChar { command: "bigotimes", ch: '\u{2297}' },
     TexCommandChar { command: "bigodot", ch: '\u{2299}' },
     TexCommandChar { command: "biguplus", ch: '\u{228e}' },
+    TexCommandChar { command: "bigvee", ch: '\u{22c1}' },
+    TexCommandChar { command: "bigwedge", ch: '\u{22c0}' },
 ];
 
 pub(crate) const SUM_OPERATOR_COMMAND_CHARS: &[TexCommandChar] = &[
@@ -1015,6 +1022,10 @@ pub(crate) const OPERATOR_CHARS: &[EncodedChar] = &[
 ];
 
 pub(crate) const BIG_OPERATOR_GLYPHS: &[BigOperatorGlyph] = &[
+    BigOperatorGlyph { name: "standalone_union", typeface: FN_SYMBOL, mtcode: 0x222a, font_pos: 0xc8 },
+    BigOperatorGlyph { name: "standalone_intersection", typeface: FN_SYMBOL, mtcode: 0x2229, font_pos: 0xc7 },
+    BigOperatorGlyph { name: "bigvee", typeface: FN_MT_EXTRA, mtcode: 0xfffd, font_pos: 0x6e },
+    BigOperatorGlyph { name: "bigwedge", typeface: FN_MT_EXTRA, mtcode: 0xfffd, font_pos: 0x6e },
     BigOperatorGlyph { name: "sum", typeface: FN_SYMBOL, mtcode: 0x2211, font_pos: 0xe5 },
     BigOperatorGlyph { name: "product", typeface: FN_SYMBOL, mtcode: 0x220f, font_pos: 0xd5 },
     BigOperatorGlyph { name: "coproduct", typeface: FN_MT_EXTRA, mtcode: 0x2210, font_pos: 0x43 },

@@ -13,6 +13,16 @@ pub(super) fn char_slice_literal(chars: &[char]) -> String {
     format!("&[{items}]")
 }
 
+/// Format a byte slice literal for generated Rust source.
+pub(super) fn byte_slice_literal(bytes: &[u8]) -> String {
+    let items = bytes
+        .iter()
+        .map(|byte| format!("0x{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("&[{items}]")
+}
+
 /// Format a Rust string literal with ASCII-only Unicode escapes.
 pub(super) fn string_literal(value: &str) -> String {
     let mut literal = String::from("\"");

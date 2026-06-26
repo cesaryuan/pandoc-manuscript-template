@@ -16,6 +16,10 @@ mod cfb;
 mod format;
 #[path = "../generated/mod.rs"]
 mod generated;
+#[path = "../mathtype_ansi.rs"]
+mod mathtype_ansi;
+#[path = "../mathtype_input.rs"]
+mod mathtype_input;
 #[path = "../parser.rs"]
 mod parser;
 #[path = "../raw_fallback.rs"]
@@ -31,6 +35,7 @@ mod typeface;
 #[path = "generate_mtef_tables/types.rs"]
 mod types;
 use format::{json_escape, path_string};
+use mathtype_input::mathtype_tex_payload;
 use render::{
     delimiter_command_aliases, render_tables, tex_command_aliases, tex_command_from_formula,
 };
@@ -77,15 +82,25 @@ fn main() -> Result<(), String> {
     }
 
     let mut rows = Vec::new();
+    let mut raw_literal_rows = Vec::new();
     for target in config.selected_targets()? {
-        match generate_target_row(&config, target) {
-            Ok(row) => rows.push(row),
+        let result = if target.category == Category::RawLiteral {
+            generate_raw_literal_row(&config, target).map(|row| {
+                raw_literal_rows.push(row);
+            })
+        } else {
+            generate_target_row(&config, target).map(|row| {
+                rows.push(row);
+            })
+        };
+        match result {
+            Ok(()) => {}
             Err(err) if config.skip_invalid => eprintln!("skipped {}: {err}", target.name),
             Err(err) => return Err(err),
         }
     }
 
-    let source = render_tables(&rows);
+    let source = render_tables(&rows, &raw_literal_rows);
     if let Some(parent) = config.output.parent() {
         fs::create_dir_all(parent)
             .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
@@ -100,7 +115,7 @@ fn main() -> Result<(), String> {
 fn generate_target_row(config: &Config, target: Target) -> Result<(Target, CharRecord), String> {
     let ole_path = config.work_dir.join(format!("{}.ole.bin", target.name));
     let tex_path = config.work_dir.join(format!("{}.tex", target.name));
-    fs::write(&tex_path, target.formula)
+    fs::write(&tex_path, mathtype_tex_payload(target.formula))
         .map_err(|err| format!("failed to write {}: {err}", tex_path.display()))?;
     let record = if config.reuse_existing && ole_path.exists() {
         match extract_target_record(&ole_path, target) {
@@ -132,6 +147,44 @@ fn generate_target_row(config: &Config, target: Target) -> Result<(Target, CharR
         extract_target_record(&ole_path, target)?
     };
     Ok((target, record))
+}
+
+/// Generate or reuse one raw-literal byte row from a stable MathType fallback probe.
+fn generate_raw_literal_row(config: &Config, target: Target) -> Result<(Target, Vec<u8>), String> {
+    let ole_path = config.work_dir.join(format!("{}.ole.bin", target.name));
+    let tex_path = config.work_dir.join(format!("{}.tex", target.name));
+    fs::write(&tex_path, mathtype_tex_payload(target.formula))
+        .map_err(|err| format!("failed to write {}: {err}", tex_path.display()))?;
+    let bytes = if config.reuse_existing && ole_path.exists() {
+        match extract_target_raw_text_run(&ole_path, target) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                if config.existing_only {
+                    return Err(format!("cached OLE is invalid: {}", ole_path.display()));
+                }
+                run_mathtype_helper(
+                    &config.helper,
+                    &config.pre_verb,
+                    &tex_path,
+                    &ole_path,
+                    config.timeout_ms,
+                )?;
+                extract_target_raw_text_run(&ole_path, target)?
+            }
+        }
+    } else if config.existing_only {
+        return Err(format!("cached OLE is missing: {}", ole_path.display()));
+    } else {
+        run_mathtype_helper(
+            &config.helper,
+            &config.pre_verb,
+            &tex_path,
+            &ole_path,
+            config.timeout_ms,
+        )?;
+        extract_target_raw_text_run(&ole_path, target)?
+    };
+    Ok((target, bytes))
 }
 
 struct Config {
@@ -372,7 +425,7 @@ fn write_probe_manifest(config: &Config) -> Result<(), String> {
         let ole_path = config.work_dir.join(format!("{}.ole.bin", target.name));
         let tex_path = config.work_dir.join(format!("{}.tex", target.name));
         // Manifest rows are also runnable probe inputs, so keep the .tex cache materialized.
-        fs::write(&tex_path, target.formula)
+        fs::write(&tex_path, mathtype_tex_payload(target.formula))
             .map_err(|err| format!("failed to write {}: {err}", tex_path.display()))?;
         let cache_status = probe_manifest_cache_status(&ole_path, *target);
         let section = if target.category == Category::SupportedSnippet {
@@ -551,6 +604,33 @@ fn build_targets(
             selector: Selector::LastChar { ch: logical },
         });
     }
+    for &(logical, tex, name, index) in generated_raw_literal_targets() {
+        targets.push(Target {
+            name,
+            category: Category::RawLiteral,
+            formula: tex,
+            selector: Selector::RawTextRun { ch: logical, index },
+        });
+    }
+    for &(command, logical) in SUPPORTED_SYMBOL_ALIASES {
+        if command_has_non_alias_generated_target(command) {
+            continue;
+        }
+        let formula = Box::leak(format!("$\\{command}$").into_boxed_str());
+        let name = Box::leak(
+            format!(
+                "supported_alias_command_{}",
+                generated_target_command_name(command)
+            )
+            .into_boxed_str(),
+        );
+        targets.push(Target {
+            name,
+            category: Category::CommandSpecific,
+            formula,
+            selector: Selector::LastChar { ch: logical },
+        });
+    }
     for &(logical, tex, name) in generated_command_alias_targets() {
         targets.push(Target {
             name,
@@ -576,16 +656,25 @@ fn build_targets(
         });
     }
 
-    for ch in ['+', '-', '=', '<', '>'] {
-        let leaked = Box::leak(format!("$x{ch}y$").into_boxed_str());
+    for ch in ['+', '-', '=', '<', '>', '~'] {
+        let leaked = if ch == '~' {
+            "$(~)$"
+        } else {
+            Box::leak(format!("$x{ch}y$").into_boxed_str())
+        };
         targets.push(Target {
             name: Box::leak(format!("operator_{}", operator_name(ch)).into_boxed_str()),
             category: Category::Operator,
             formula: leaked,
-            selector: Selector::FontPos {
-                ch,
-                typeface: FN_SYMBOL,
-                font_pos: ch as u8,
+            selector: if ch == '~' {
+                // MathType hangs on x~y, but (~) reliably exposes the same visible tilde glyph.
+                Selector::VisibleCharIndex { ch, index: 1 }
+            } else {
+                Selector::FontPos {
+                    ch,
+                    typeface: FN_SYMBOL,
+                    font_pos: ch as u8,
+                }
             },
         });
     }
@@ -637,6 +726,51 @@ fn build_targets(
         selector: Selector::NamedMtCode {
             ch: '\u{2229}',
             name: "intersection",
+        },
+    });
+    targets.push(Target {
+        name: "bigop_bodyless_sum",
+        category: Category::BigOperator,
+        formula: r"$\sum_{i=1}^{N}$",
+        selector: Selector::NamedMtCode {
+            ch: '\u{2211}',
+            name: "bodyless_sum",
+        },
+    });
+    targets.push(Target {
+        name: "bigop_bodyless_product",
+        category: Category::BigOperator,
+        formula: r"$\prod_{i=1}^{N}$",
+        selector: Selector::NamedMtCode {
+            ch: '\u{220f}',
+            name: "bodyless_product",
+        },
+    });
+    targets.push(Target {
+        name: "bigop_bodyless_coproduct",
+        category: Category::BigOperator,
+        formula: r"$\coprod_{i=1}^{N}$",
+        selector: Selector::NamedMtCode {
+            ch: '\u{2210}',
+            name: "bodyless_coproduct",
+        },
+    });
+    targets.push(Target {
+        name: "bigop_bodyless_union",
+        category: Category::BigOperator,
+        formula: r"$\bigcup_{i=1}^{N}$",
+        selector: Selector::NamedMtCode {
+            ch: '\u{222a}',
+            name: "bodyless_union",
+        },
+    });
+    targets.push(Target {
+        name: "bigop_bodyless_intersection",
+        category: Category::BigOperator,
+        formula: r"$\bigcap_{i=1}^{N}$",
+        selector: Selector::NamedMtCode {
+            ch: '\u{2229}',
+            name: "bodyless_intersection",
         },
     });
     targets.push(Target {
@@ -752,6 +886,16 @@ fn validate_unique_target_names(targets: &[Target]) -> Result<(), String> {
     Ok(())
 }
 
+/// Return direct-input literal probes whose raw fallback bytes should be learned.
+fn generated_raw_literal_targets() -> &'static [(char, &'static str, &'static str, usize)] {
+    &[(
+        '\u{2295}',
+        r"$+ - / * ⋅ ∘ ∙ ± × ÷ ∓ ∔ ∧ ∨ ∩ ∪ ≀ ⊎ ⊓ ⊔ ⊕ ⊖ ⊗ ⊘ ⊙ ⊚ ⊛ ⊝ ◯ ∖ {}$",
+        "raw_literal_oplus",
+        3,
+    )]
+}
+
 /// Return parser aliases whose output is verified by MathType probes.
 fn generated_command_alias_targets() -> &'static [(char, &'static str, &'static str)] {
     &[
@@ -787,6 +931,50 @@ fn generated_command_specific_targets() -> &'static [(char, &'static str, &'stat
 /// Return tmSUMOP-style big symbols verified by MathType probes.
 fn generated_sum_operator_alias_targets() -> &'static [(char, &'static str, &'static str)] {
     &[('\u{2294}', r"$\bigsqcup$", "alias_bigsqcup")]
+}
+
+/// Skip Supported Functions aliases already covered by a non-alias target category.
+fn command_has_non_alias_generated_target(command: &str) -> bool {
+    special_targets()
+        .iter()
+        .any(|(_, formula, _, _, _)| tex_command_from_formula(formula) == Some(command))
+        || generated_special_targets()
+            .iter()
+            .any(|(_, formula, _)| tex_command_from_formula(formula) == Some(command))
+        || generated_command_specific_targets()
+            .iter()
+            .any(|(_, formula, _)| tex_command_from_formula(formula) == Some(command))
+        || generated_command_alias_targets()
+            .iter()
+            .any(|(_, formula, _)| tex_command_from_formula(formula) == Some(command))
+        || generated_sum_operator_alias_targets()
+            .iter()
+            .any(|(_, formula, _)| tex_command_from_formula(formula) == Some(command))
+        || generated_big_symbol_targets()
+            .iter()
+            .any(|(_, formula, _)| tex_command_from_formula(formula) == Some(command))
+        || delimiter_command_aliases()
+            .iter()
+            .any(|(alias, _)| *alias == command)
+        || tex_command_aliases()
+            .iter()
+            .any(|(alias, _)| *alias == command)
+}
+
+/// Encode alias command names into stable generated target suffixes.
+fn generated_target_command_name(command: &str) -> String {
+    let mut name = String::new();
+    for ch in command.chars() {
+        if ch.is_ascii_uppercase() {
+            name.push_str("_uc_");
+            name.push(ch.to_ascii_lowercase());
+        } else if ch.is_ascii_alphanumeric() {
+            name.push(ch);
+        } else {
+            name.push('_');
+        }
+    }
+    name
 }
 
 /// Return symbol probes whose typeface/font-position should be learned from MathType.
@@ -1125,6 +1313,7 @@ fn operator_name(ch: char) -> &'static str {
         '=' => "equals",
         '<' => "lt",
         '>' => "gt",
+        '~' => "tilde",
         '*' => "asterisk",
         _ => "unknown",
     }
@@ -1139,16 +1328,13 @@ fn run_mathtype_helper(
     timeout_ms: u64,
 ) -> Result<(), String> {
     let _ = fs::remove_file(ole_path);
-    let mut child = Command::new(helper)
-        .args([
-            "--method",
-            "set-data",
-            "--pre-verb",
-            pre_verb,
-            "--format",
-            "TeX Input Language",
-            "--input",
-        ])
+    let mut command = Command::new(helper);
+    command.args(["--method", "set-data"]);
+    if helper_needs_pre_verb(pre_verb) {
+        command.args(["--pre-verb", pre_verb]);
+    }
+    let mut child = command
+        .args(["--format", "TeX Input Language", "--input"])
         .arg(tex_path)
         .args(["--output"])
         .arg(ole_path)
@@ -1170,6 +1356,11 @@ fn run_mathtype_helper(
         ));
     }
     Ok(())
+}
+
+/// Preserve the old CLI surface where --pre-verb 0 means skipping the pre-open step.
+fn helper_needs_pre_verb(pre_verb: &str) -> bool {
+    pre_verb != "0"
 }
 
 /// Wait for MathType's COM helper and kill it if one probe hangs.
@@ -1248,6 +1439,18 @@ fn extract_target_record(ole_path: &Path, target: Target) -> Result<CharRecord, 
                 record.typeface == typeface && record.mtcode == mtcode && record.font_pos.is_none()
             })
             .ok_or_else(|| format!("no plain CHAR record matched {}", target.name)),
+        Selector::VisibleCharIndex { index, .. } => records
+            .iter()
+            .copied()
+            .filter(|record| !is_probe_placeholder(*record) && (record.options & 0x80) == 0)
+            .nth(index)
+            .ok_or_else(|| format!("no visible CHAR record matched {}", target.name)),
+        Selector::RawTextRun { .. } => {
+            return Err(format!(
+                "raw text selector is not a CHAR probe: {}",
+                target.name
+            ));
+        }
         Selector::NamedMtCode { ch, .. } => records
             .iter()
             .rev()
@@ -1276,6 +1479,70 @@ fn extract_target_record(ole_path: &Path, target: Target) -> Result<CharRecord, 
     ))
 }
 
+/// Extract one raw-text byte run from a generated MathType OLE object.
+fn extract_target_raw_text_run(ole_path: &Path, target: Target) -> Result<Vec<u8>, String> {
+    let ole = fs::read(ole_path)
+        .map_err(|err| format!("failed to read {}: {err}", ole_path.display()))?;
+    let equation_native = cfb::read_regular_stream(&ole, "Equation Native")?;
+    let mtef = equation_native
+        .get(28..)
+        .ok_or_else(|| "Equation Native stream is shorter than the native header".to_string())?;
+    let Selector::RawTextRun { index, .. } = target.selector else {
+        return Err(format!("target is not a raw-text probe: {}", target.name));
+    };
+    let runs = collect_raw_text_runs(mtef);
+    let raw = runs
+        .get(index)
+        .ok_or_else(|| format!("no raw text run matched {}", target.name))?;
+    let trimmed = trim_ascii_space_bytes(raw);
+    if trimmed.is_empty() {
+        return Err(format!(
+            "raw text run was empty after trimming: {}",
+            target.name
+        ));
+    }
+    Ok(trimmed.to_vec())
+}
+
+/// Collect contiguous fnTEXT raw-fallback byte runs from MTEF bytes.
+fn collect_raw_text_runs(mtef: &[u8]) -> Vec<Vec<u8>> {
+    let mut runs = Vec::new();
+    let mut current = Vec::new();
+    let mut index = 0usize;
+    while index + 4 < mtef.len() {
+        if mtef[index] == 0x02 && (mtef[index + 1] & 0x80) != 0 && mtef[index + 2] == FN_TEXT {
+            let code = u16::from_le_bytes([mtef[index + 3], mtef[index + 4]]);
+            if let Ok(byte) = u8::try_from(code) {
+                current.push(byte);
+            }
+            index += if (mtef[index + 1] & 0x04) != 0 { 6 } else { 5 };
+            continue;
+        }
+        if !current.is_empty() {
+            runs.push(std::mem::take(&mut current));
+        }
+        index += 1;
+    }
+    if !current.is_empty() {
+        runs.push(current);
+    }
+    runs
+}
+
+/// Trim probe-added ASCII spacing so the generated bytes represent the literal itself.
+fn trim_ascii_space_bytes(bytes: &[u8]) -> &[u8] {
+    let start = bytes
+        .iter()
+        .position(|byte| *byte != b' ')
+        .unwrap_or(bytes.len());
+    let end = bytes
+        .iter()
+        .rposition(|byte| *byte != b' ')
+        .map(|index| index + 1)
+        .unwrap_or(start);
+    &bytes[start..end]
+}
+
 /// Collect explicit-font CHAR records from MTEF bytes.
 fn collect_char_records(mtef: &[u8]) -> Vec<CharRecord> {
     let mut records = Vec::new();
@@ -1300,6 +1567,7 @@ fn collect_char_records(mtef: &[u8]) -> Vec<CharRecord> {
             mtcode: u16::from_le_bytes([mtef[index + 3], mtef[index + 4]]),
             font_pos,
             explicit_font: None,
+            font_style_selector: None,
         });
     }
     records
@@ -1311,8 +1579,10 @@ fn normalize_explicit_font_family(
     mtef: &[u8],
     category: Category,
 ) -> CharRecord {
-    if matches!(category, Category::Special | Category::CommandSpecific)
-        && record.typeface == EXPLICIT_FONT_NEG_1
+    if matches!(
+        category,
+        Category::Special | Category::CommandSpecific | Category::BigOperator
+    ) && record.typeface == EXPLICIT_FONT_NEG_1
         && record.font_pos.is_some()
     {
         record.explicit_font = match explicit_font_family_before(mtef, record.offset) {
@@ -1320,6 +1590,9 @@ fn normalize_explicit_font_family(
             Some(2) => Some(ExplicitFont::EuclidMathTwo),
             _ => None,
         };
+        if record.explicit_font.is_none() && matches!(category, Category::BigOperator) {
+            record.font_style_selector = local_font_style_selector_before(mtef, record.offset);
+        }
     }
     record
 }
@@ -1335,6 +1608,14 @@ fn explicit_font_family_before(mtef: &[u8], offset: usize) -> Option<u8> {
         (None, Some(_)) => Some(2),
         (None, None) => None,
     }
+}
+
+/// Return a nearby FONT_STYLE selector that precedes a big-operator glyph line.
+fn local_font_style_selector_before(mtef: &[u8], offset: usize) -> Option<u8> {
+    let prefix = mtef.get(..offset)?;
+    let tail = prefix.get(prefix.len().saturating_sub(5)..)?;
+    (tail.len() == 5 && tail[0] == 0x08 && tail[2] == 0x00 && tail[3] == 0x0f && tail[4] == 0x01)
+        .then_some(tail[1])
 }
 
 /// Find the last byte offset of a literal ASCII needle.

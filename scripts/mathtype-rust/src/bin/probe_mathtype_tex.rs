@@ -7,9 +7,12 @@ use std::time::{Duration, Instant};
 
 #[path = "../cfb.rs"]
 mod cfb;
+#[path = "../mathtype_input.rs"]
+mod mathtype_input;
 #[path = "../typeface.rs"]
 mod typeface;
 
+use mathtype_input::mathtype_tex_payload;
 use typeface::FN_TEXT;
 
 /// Probe MathType's TeX input translator and print the resulting MTEF record outline.
@@ -79,7 +82,7 @@ fn probe_latex(latex: &str, options: &Options) -> Result<Vec<u8>, String> {
         .map_err(|err| format!("failed to create {}: {err}", probe_dir.display()))?;
     let tex_path = probe_dir.join("probe.tex");
     let ole_path = probe_dir.join("probe.ole.bin");
-    fs::write(&tex_path, latex)
+    fs::write(&tex_path, mathtype_tex_payload(latex))
         .map_err(|err| format!("failed to write {}: {err}", tex_path.display()))?;
     run_mathtype_helper(
         &options.helper,
@@ -126,7 +129,8 @@ impl Options {
             r"..\..\src\pandoc_manuscript\mathtype\ole_helper\bin\Release\net48\MathTypeOleHelper.exe",
         );
         let mut work_dir = PathBuf::from(r".pmt\probe-mathtype-tex");
-        let mut pre_verb = "2".to_string();
+        // Keep probe cache keys aligned with the no-pre-open helper path used in audits.
+        let mut pre_verb = "0".to_string();
         let mut latex = None;
         let mut input = None;
         let mut ole = None;
@@ -251,16 +255,13 @@ fn run_mathtype_helper(
     timeout_ms: u64,
 ) -> Result<(), String> {
     let _ = fs::remove_file(ole_path);
-    let mut child = Command::new(helper)
-        .args([
-            "--method",
-            "set-data",
-            "--pre-verb",
-            pre_verb,
-            "--format",
-            "TeX Input Language",
-            "--input",
-        ])
+    let mut command = Command::new(helper);
+    command.args(["--method", "set-data"]);
+    if helper_needs_pre_verb(pre_verb) {
+        command.args(["--pre-verb", pre_verb]);
+    }
+    let mut child = command
+        .args(["--format", "TeX Input Language", "--input"])
         .arg(tex_path)
         .args(["--output"])
         .arg(ole_path)
@@ -281,6 +282,11 @@ fn run_mathtype_helper(
         ));
     }
     Ok(())
+}
+
+/// Preserve the old CLI surface where --pre-verb 0 means skipping the pre-open step.
+fn helper_needs_pre_verb(pre_verb: &str) -> bool {
+    pre_verb != "0"
 }
 
 /// Wait for MathType's COM helper without allowing unsupported probes to hang.

@@ -3,6 +3,9 @@ use crate::generated::char_tables::{
     BIG_SYMBOL_COMMAND_CHARS, COMMAND_SPECIFIC_CHARS, DELIMITER_COMMAND_CHARS,
     SUM_OPERATOR_COMMAND_CHARS, TEX_COMMAND_CHARS, TEX_COMMAND_SEQUENCES, TEX_COMMAND_TEXTS,
 };
+use crate::generated::raw_text_tables::{literal_raw_text_override, LiteralOverrideFragment};
+use crate::mathtype_ansi::encode_mathtype_text;
+use crate::raw_fallback::should_force_raw_simple_command;
 use std::collections::HashMap;
 
 #[path = "parser/text_mode.rs"]
@@ -35,6 +38,7 @@ pub(crate) struct Parser {
     pos: usize,
     macros: HashMap<String, MacroDefinition>,
     expansion_depth: usize,
+    pending_raw_ws: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -61,6 +65,7 @@ impl Parser {
             pos: 0,
             macros: HashMap::new(),
             expansion_depth: 0,
+            pending_raw_ws: false,
         }
     }
 
@@ -78,7 +83,7 @@ impl Parser {
     fn parse_sequence(&mut self, until: Option<char>) -> Result<Expr, String> {
         let mut items = Vec::new();
         loop {
-            self.skip_ws();
+            let had_leading_ws = self.consume_ws();
             if self.pos >= self.chars.len() || until.is_some_and(|end| self.peek() == Some(end)) {
                 break;
             }
@@ -87,7 +92,7 @@ impl Parser {
                 let right = self.parse_sequence(until)?;
                 return Ok(infix_expr(infix, left, right));
             }
-            let atom = self.parse_complete_atom()?;
+            let atom = with_leading_raw_space(self.parse_complete_atom()?, had_leading_ws);
             if expr_is_empty_sequence(&atom) {
                 continue;
             }
@@ -101,16 +106,16 @@ impl Parser {
 
     /// Parse one atom, including a small set of control words.
     fn parse_atom(&mut self) -> Result<Expr, String> {
-        self.skip_ws();
+        let had_leading_ws = self.consume_ws() || self.take_pending_raw_ws();
         match self.peek() {
             Some('{') => {
                 self.pos += 1;
                 self.parse_sequence(Some('}'))
             }
-            Some('\\') => self.parse_command(),
+            Some('\\') => self.parse_command(had_leading_ws),
             Some(ch) if ch != '}' => {
                 self.pos += 1;
-                Ok(Expr::Char(ch))
+                parse_literal_char(ch, had_leading_ws)
             }
             other => Err(format!("expected atom, found {other:?}")),
         }
@@ -128,7 +133,7 @@ impl Parser {
     }
 
     /// Parse supported LaTeX commands that map directly to MTEF templates.
-    fn parse_command(&mut self) -> Result<Expr, String> {
+    fn parse_command(&mut self, had_leading_ws: bool) -> Result<Expr, String> {
         self.expect('\\')?;
         let start = self.pos;
         while self.peek().is_some_and(|ch| ch.is_ascii_alphabetic()) {
@@ -137,10 +142,16 @@ impl Parser {
         let command: String = self.chars[start..self.pos].iter().collect();
         if command != "def" && command != "gdef" {
             if let Some(expanded) = self.expand_macro_command(&command)? {
-                return Ok(expanded);
+                return Ok(with_leading_raw_space(expanded, had_leading_ws));
             }
         }
-        match command.as_str() {
+        if should_force_raw_simple_command(&command) && self.raw_simple_command_is_standalone() {
+            return Ok(with_leading_raw_space(
+                Expr::RawTex(format!("\\{command}")),
+                had_leading_ws,
+            ));
+        }
+        let expr = match command.as_str() {
             "frac" | "dfrac" | "tfrac" => {
                 let numerator = self.parse_required_group_or_atom("fraction numerator")?;
                 let denominator = self.parse_required_group_or_atom("fraction denominator")?;
@@ -165,9 +176,10 @@ impl Parser {
                     Expr::Sqrt(Box::new(radicand))
                 })
             }
-            "boxed" => Ok(Expr::Boxed(Box::new(
-                self.parse_required_group("boxed content")?,
-            ))),
+            "boxed" => Ok(raw_prefix_expr(
+                command.as_str(),
+                Expr::Boxed(Box::new(self.parse_required_group("boxed content")?)),
+            )),
             "sum" => Ok(Expr::BigOp {
                 kind: BigOpKind::Sum,
                 lower: None,
@@ -289,7 +301,11 @@ impl Parser {
             | "varinjlim" | "varliminf" | "varlimsup" | "varprojlim" | "Pr" => {
                 Ok(Expr::FunctionName(command))
             }
-            "bmod" => Ok(Expr::FunctionName("mod".to_string())),
+            "bmod" => Ok(Expr::Sequence(vec![
+                Expr::Space(0x02),
+                Expr::FunctionName("mod".to_string()),
+                Expr::Space(0x02),
+            ])),
             "mod" => Ok(Expr::Sequence(vec![
                 Expr::Space(0x05),
                 Expr::FunctionName("mod".to_string()),
@@ -300,23 +316,23 @@ impl Parser {
                 let argument = self.parse_required_group_or_atom("modulo argument")?;
                 Ok(modulo_parenthesized_expr(command.as_str(), argument))
             }
-            "ket" | "Ket" => Ok(Expr::Delimited {
-                left: '|',
-                right: '〉',
-                content: Box::new(self.parse_required_group("ket content")?),
-            }),
-            "VERT" => Ok(Expr::Char('‖')),
-            "bra" | "Bra" => Ok(bra_expr(self.parse_required_group("bra content")?)),
-            "braket" | "Braket" => Ok(Expr::Delimited {
-                left: '〈',
-                right: '〉',
-                content: Box::new(self.parse_required_group("braket content")?),
-            }),
-            "set" | "Set" => Ok(Expr::Delimited {
-                left: '{',
-                right: '}',
-                content: Box::new(self.parse_required_group("set content")?),
-            }),
+            "ket" | "Ket" => Ok(raw_prefix_expr(
+                command.as_str(),
+                self.parse_required_group("ket content")?,
+            )),
+            "VERT" => Ok(Expr::RawTex("\\VERT".to_string())),
+            "bra" | "Bra" => Ok(raw_prefix_expr(
+                command.as_str(),
+                self.parse_required_group("bra content")?,
+            )),
+            "braket" | "Braket" => Ok(raw_prefix_expr(
+                command.as_str(),
+                self.parse_required_group("braket content")?,
+            )),
+            "set" | "Set" => Ok(raw_prefix_expr(
+                command.as_str(),
+                self.parse_required_group("set content")?,
+            )),
             "rm" => Ok(self.parse_switch_content("rm content")?),
             "it" => Ok(self.parse_switch_content("it content")?),
             "mathrm" | "mathnormal" | "textnormal" | "textup" | "textmd" | "textrm" => {
@@ -346,10 +362,7 @@ impl Parser {
                     Ok(Expr::RawTex("\\pmb".to_string()))
                 }
             }
-            "cal" => Ok(Expr::Font {
-                kind: FontKind::MathCal,
-                content: Box::new(self.parse_switch_content("cal content")?),
-            }),
+            "cal" => self.parse_switch_content("cal content"),
             "mathcal" => Ok(Expr::Font {
                 kind: FontKind::MathCal,
                 content: Box::new(self.parse_required_group("mathcal content")?),
@@ -460,7 +473,11 @@ impl Parser {
                 kind: AccentKind::Check,
                 content: Box::new(self.parse_required_group("widecheck content")?),
             }),
-            "vec" | "overrightarrow" | "Overrightarrow" => Ok(Expr::ArrowAccent {
+            "Overrightarrow" => Ok(raw_prefix_expr(
+                command.as_str(),
+                self.parse_required_group("vector arrow content")?,
+            )),
+            "vec" | "overrightarrow" => Ok(Expr::ArrowAccent {
                 kind: ArrowAccentKind::Right,
                 under: false,
                 content: Box::new(self.parse_required_group("vector arrow content")?),
@@ -533,7 +550,10 @@ impl Parser {
                     base: Box::new(base),
                 })
             }
-            "mathclap" | "mathllap" | "mathrlap" => self.parse_required_group("overlap content"),
+            "mathclap" | "mathllap" | "mathrlap" => Ok(raw_prefix_expr(
+                command.as_str(),
+                self.parse_required_group("overlap content")?,
+            )),
             "vcenter" => self.parse_required_group("vcenter content"),
             "hspace" => self.parse_hspace_content(),
             "hline" | "hdashline" => Ok(Expr::Sequence(Vec::new())),
@@ -589,14 +609,14 @@ impl Parser {
                 let ch = self
                     .next()
                     .ok_or_else(|| "dangling backslash".to_string())?;
-                if ch == '!' {
-                    return Ok(Expr::Space(0x01));
-                }
-                if ch == ',' {
-                    return Ok(Expr::Space(0x08));
+                if let Some(width) = escaped_single_char_space(ch) {
+                    return Ok(Expr::Space(width));
                 }
                 if ch.is_whitespace() {
                     return Ok(Expr::Space(0x08));
+                }
+                if let Some(text_char) = escaped_single_char_math_char(ch) {
+                    return Ok(Expr::Char(text_char));
                 }
                 if ch == '|' {
                     return Ok(Expr::Char('‖'));
@@ -604,7 +624,8 @@ impl Parser {
                 Ok(Expr::Char(ch))
             }
             _ => self.parse_unsupported_command(command),
-        }
+        }?;
+        Ok(with_leading_raw_space(expr, had_leading_ws))
     }
 
     /// Preserve unsupported TeX primitive assignments as one raw text run.
@@ -618,6 +639,18 @@ impl Parser {
             self.pos += 1;
         }
         raw
+    }
+
+    /// Return true when a raw-only alias stands alone instead of feeding scripts or grouped content.
+    fn raw_simple_command_is_standalone(&self) -> bool {
+        let mut pos = self.pos;
+        while self.chars.get(pos).is_some_and(|ch| ch.is_whitespace()) {
+            pos += 1;
+        }
+        matches!(
+            self.chars.get(pos),
+            None | Some('}') | Some(']') | Some(')') | Some('&') | Some('\\')
+        )
     }
 
     /// Parse \utilde when it can be represented by documented character embellishments.
@@ -679,6 +712,7 @@ impl Parser {
             pos: 0,
             macros: self.macros.clone(),
             expansion_depth: self.expansion_depth + 1,
+            pending_raw_ws: false,
         };
         let expr = parser.parse_sequence(None)?;
         parser.skip_ws();
@@ -807,14 +841,17 @@ impl Parser {
 
     /// Preserve MathType TeX Input fallback for unsupported control words.
     fn parse_unsupported_command(&mut self, command: String) -> Result<Expr, String> {
-        let raw = Expr::RawTex(format!("\\{command}"));
-        self.skip_ws();
+        let mut raw = format!("\\{command}");
+        let consumed_ws = self.consume_ws();
         if self.peek() == Some('{') {
             self.pos += 1;
             let argument = self.parse_sequence(Some('}'))?;
-            Ok(Expr::Sequence(vec![raw, argument]))
+            Ok(Expr::Sequence(vec![Expr::RawTex(raw), argument]))
         } else {
-            Ok(raw)
+            if consumed_ws && raw_command_preserves_trailing_space(&command) {
+                raw.push(' ');
+            }
+            Ok(Expr::RawTex(raw))
         }
     }
 
@@ -859,7 +896,7 @@ impl Parser {
     fn parse_atom_with_scripts(&mut self) -> Result<Expr, String> {
         let mut atom = self.parse_atom()?;
         loop {
-            self.skip_ws();
+            let consumed_ws = self.consume_ws();
             if self.consume_limits_modifier() {
                 continue;
             }
@@ -874,7 +911,13 @@ impl Parser {
                     let sup = self.parse_script_arg()?;
                     atom = merge_script(atom, None, Some(sup));
                 }
-                _ => break,
+                _ => {
+                    if consumed_ws {
+                        // MathType keeps this source-space inside the next raw-text fallback run.
+                        self.pending_raw_ws = true;
+                    }
+                    break;
+                }
             }
         }
         Ok(atom)
@@ -954,10 +997,20 @@ impl Parser {
                     rows: self.parse_environment_rows(name)?,
                 });
             }
-            "matrix" | "smallmatrix" => {
+            "matrix" => {
                 return Ok(Expr::Matrix {
                     kind: MatrixKind::Plain,
                     rows: self.parse_environment_rows(name)?,
+                })
+            }
+            // MathType writes smallmatrix in script-sized layout rather than as plain matrix.
+            "smallmatrix" => {
+                return Ok(Expr::Style {
+                    kind: StyleKind::Script,
+                    content: Box::new(Expr::Matrix {
+                        kind: MatrixKind::Plain,
+                        rows: self.parse_environment_rows(name)?,
+                    }),
                 })
             }
             "pmatrix" => {
@@ -1516,9 +1569,23 @@ impl Parser {
 
     /// Ignore whitespace, matching MathType's treatment for simple TeX input.
     fn skip_ws(&mut self) {
+        self.consume_ws();
+    }
+
+    /// Ignore whitespace and report whether at least one space was consumed.
+    fn consume_ws(&mut self) -> bool {
+        let start = self.pos;
         while self.peek().is_some_and(char::is_whitespace) {
             self.pos += 1;
         }
+        self.pos != start
+    }
+
+    /// Consume one deferred space that belongs to the next raw fallback token.
+    fn take_pending_raw_ws(&mut self) -> bool {
+        let pending = self.pending_raw_ws;
+        self.pending_raw_ws = false;
+        pending
     }
 }
 
@@ -1612,6 +1679,72 @@ fn raw_prefix_expr(command: &str, operand: Expr) -> Expr {
     Expr::Sequence(vec![Expr::RawTex(format!("\\{command}")), operand])
 }
 
+/// Return true when MathType keeps one following source-space inside the raw command run.
+fn raw_command_preserves_trailing_space(command: &str) -> bool {
+    matches!(command, "allowbreak")
+}
+
+/// Preserve spaces that MathType keeps inside raw-text fallback runs before unsupported commands.
+fn with_leading_raw_space(expr: Expr, had_leading_ws: bool) -> Expr {
+    if !had_leading_ws {
+        return expr;
+    }
+    match expr {
+        Expr::RawTex(text) => Expr::RawTex(format!(" {text}")),
+        Expr::Sequence(mut items) => {
+            if let Some(Expr::RawTex(text)) = items.first_mut() {
+                text.insert(0, ' ');
+            }
+            Expr::Sequence(items)
+        }
+        other => other,
+    }
+}
+
+/// Mirror MathType TeX Input's fallback behavior for direct literals MathType stores as raw fragments.
+fn parse_literal_char(ch: char, had_leading_ws: bool) -> Result<Expr, String> {
+    if let Some(fragments) = literal_raw_text_override(ch) {
+        return Ok(literal_override_expr(fragments, had_leading_ws));
+    }
+    if ch.is_ascii() {
+        return Ok(Expr::Char(ch));
+    }
+    let encoded = encode_mathtype_text(&ch.to_string())?;
+    if encoded == b"?" {
+        return Ok(Expr::Char('?'));
+    }
+    let mut raw = encoded.into_iter().map(char::from).collect::<String>();
+    if had_leading_ws {
+        raw.insert(0, ' ');
+    }
+    Ok(Expr::RawTex(raw))
+}
+
+/// Build one parser expression from generated direct-literal fallback fragments.
+fn literal_override_expr(fragments: &[LiteralOverrideFragment], had_leading_ws: bool) -> Expr {
+    let mut items = Vec::with_capacity(fragments.len());
+    for fragment in fragments {
+        match fragment {
+            LiteralOverrideFragment::Raw(bytes) => {
+                let mut raw = bytes.iter().copied().map(char::from).collect::<String>();
+                if had_leading_ws && items.is_empty() {
+                    raw.insert(0, ' ');
+                }
+                items.push(Expr::RawTex(raw));
+            }
+            LiteralOverrideFragment::Char(ch) => items.push(Expr::Char(*ch)),
+        }
+    }
+    match items.len() {
+        0 => Expr::Sequence(Vec::new()),
+        1 => items
+            .into_iter()
+            .next()
+            .expect("one literal override fragment"),
+        _ => Expr::Sequence(items),
+    }
+}
+
 /// Return true when a group can be stored as per-character MTEF embellishments.
 fn is_simple_embellishment_run(raw: &str) -> bool {
     !raw.is_empty()
@@ -1668,11 +1801,6 @@ fn style_command_kind(command: &str) -> StyleKind {
         "scriptscriptstyle" => StyleKind::ScriptScript,
         _ => unreachable!("style_command_kind is only called for style switches"),
     }
-}
-
-/// Build a native bra expression without guessing MathType's scalable bra template.
-fn bra_expr(content: Expr) -> Expr {
-    Expr::Sequence(vec![Expr::Char('〈'), content, Expr::Char('|')])
 }
 
 /// Build a blackboard-bold single-letter alias such as \R or \Complex.
@@ -1800,6 +1928,25 @@ fn spacing_command_width(command: &str) -> Option<u8> {
         "thickspace" => Some(0x04),
         "thinspace" | "space" | "nobreakspace" => Some(0x08),
         "negthinspace" | "negmedspace" | "negthickspace" => Some(0x01),
+        _ => None,
+    }
+}
+
+/// Map one-character TeX spacing escapes onto MathType's fnSPACE widths.
+fn escaped_single_char_space(ch: char) -> Option<u8> {
+    match ch {
+        '!' => Some(0x01),
+        ',' => Some(0x08),
+        ':' | '>' => Some(0x02),
+        ';' => Some(0x04),
+        _ => None,
+    }
+}
+
+/// Return escaped single-character commands that MathType stores as visible math glyphs.
+fn escaped_single_char_math_char(ch: char) -> Option<char> {
+    match ch {
+        '#' | '%' | '&' | '_' => Some(ch),
         _ => None,
     }
 }

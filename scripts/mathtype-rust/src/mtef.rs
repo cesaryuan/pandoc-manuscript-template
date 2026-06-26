@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::generated::char_tables::ExplicitFont;
+use crate::mathtype_ansi::encode_mathtype_source;
 use crate::typeface::{
     EXPLICIT_FONT_NEG_1, EXPLICIT_FONT_NEG_2, FN_EXPAND, FN_FUNCTION, FN_MT_EXTRA, FN_NUMBER,
     FN_SPACE, FN_SYMBOL, FN_TEXT, FN_USER1, FN_VARIABLE, FN_VECTOR,
@@ -95,6 +96,11 @@ struct MtefWriter {
     euclid_fraktur_typeface: u8,
     black_color_defined: bool,
     big_symbol_line_marker_pending: bool,
+    suppress_next_pile_color_default: bool,
+    emit_top_fenced_matrix_color: bool,
+    suppress_next_style_restore: bool,
+    emit_top_color_selector_one: bool,
+    top_sequence_starts_default: bool,
 }
 
 impl MtefWriter {
@@ -153,11 +159,13 @@ impl MtefWriter {
 pub(crate) fn write_mtef(source_latex: &str, expr: &Expr) -> Result<Vec<u8>, String> {
     let mut out = vec![0x05, 0x01, 0x00, 0x07, 0x08];
     out.extend_from_slice(b"DSMT7\0");
+    // Live helper probes currently store 0x01 here for both ordinary inline formulas and
+    // top-level \displaystyle snippets, so keep the same header byte for every equation body.
     out.push(0x01);
     out.push(0x66);
 
     let mut source = b"TeX Input Language\0".to_vec();
-    source.extend_from_slice(source_latex.as_bytes());
+    source.extend_from_slice(&encode_mathtype_source(source_latex)?);
     source.push(0x00);
     write_unsigned(source.len(), &mut out)?;
     out.extend_from_slice(&source);
@@ -191,12 +199,18 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
         euclid_fraktur_typeface: EXPLICIT_FONT_NEG_1,
         black_color_defined: false,
         big_symbol_line_marker_pending: false,
+        suppress_next_pile_color_default: false,
+        emit_top_fenced_matrix_color: false,
+        suppress_next_style_restore: false,
+        emit_top_color_selector_one: false,
+        top_sequence_starts_default: false,
     };
     if expr_is_only_spaces(expr) {
         write_only_spaces(expr, out)?;
         out.extend_from_slice(&[0x00, 0x00]);
         return Ok(());
     } else {
+        let leading_space = top_leading_space_rest(expr);
         let starts_with_big_symbol_script = expr_starts_with_big_symbol_script_base(expr);
         let starts_with_euclid_math_one = expr_starts_with_euclid_math_one(expr);
         let starts_with_euclid_math_two = expr_starts_with_euclid_math_two(expr);
@@ -216,15 +230,43 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
         } else if expr_starts_with_standalone_big_glyph(expr) {
             out.push(0x0d);
         }
+        let starts_with_bodyless_big_op_script = expr_starts_with_bodyless_big_op_script(expr);
+        let starts_with_top_pile_template = expr_starts_with_top_pile_template(expr);
+        let starts_with_top_fenced_matrix = expr_starts_with_top_fenced_matrix(expr);
+        let starts_with_top_style = expr_starts_with_top_style(expr);
+        let starts_with_top_color = expr_starts_with_top_color(expr);
+        if let Some((width, rest)) = leading_space {
+            write_space_without_color(width, out);
+            if rest.is_empty() {
+                out.extend_from_slice(&[0x00, 0x00]);
+                return Ok(());
+            }
+            writer.ensure_black_color_def(out);
+            color_black(out);
+            let rest_expr = Expr::Sequence(rest);
+            write_expr(&rest_expr, out, SizeState::Full, &mut writer)?;
+            out.extend_from_slice(&[0x00, 0x00]);
+            return Ok(());
+        }
         if !expr_starts_with_top_matrix(expr)
             && !expr_starts_with_raw_tex(expr)
             && !expr_starts_with_explicit_accent_template(expr)
             && !expr_starts_with_sum_operator_script_base(expr)
+            && !starts_with_bodyless_big_op_script
             && !expr_starts_with_slotless_big_op(expr)
+            && !starts_with_top_pile_template
+            && !starts_with_top_style
+            && !expr_sets_own_color(expr)
         {
             writer.ensure_black_color_def(out);
             color_black(out);
         }
+        writer.suppress_next_pile_color_default = starts_with_top_pile_template;
+        writer.emit_top_fenced_matrix_color = starts_with_top_fenced_matrix;
+        writer.suppress_next_style_restore = starts_with_top_style;
+        writer.emit_top_color_selector_one = starts_with_top_color;
+        writer.top_sequence_starts_default =
+            expr_starts_with_sum_operator_script_base(expr) || starts_with_bodyless_big_op_script;
     }
     write_expr(expr, out, SizeState::Full, &mut writer)?;
     out.extend_from_slice(&[0x00, 0x00]);
@@ -243,6 +285,56 @@ fn expr_starts_with_top_matrix(expr: &Expr) -> bool {
         Expr::Matrix { .. } => true,
         Expr::Style { content, .. } => expr_starts_with_top_matrix(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_top_matrix),
+        _ => false,
+    }
+}
+
+/// Return true for top-level matrices wrapped in a fence template.
+fn expr_starts_with_top_fenced_matrix(expr: &Expr) -> bool {
+    match expr {
+        Expr::Matrix {
+            kind:
+                MatrixKind::Parenthesized
+                | MatrixKind::Bracketed
+                | MatrixKind::Braced
+                | MatrixKind::Barred
+                | MatrixKind::DoubleBarred,
+            ..
+        } => true,
+        Expr::Style { content, .. } => expr_starts_with_top_fenced_matrix(content),
+        Expr::Sequence(items) => items
+            .first()
+            .is_some_and(expr_starts_with_top_fenced_matrix),
+        _ => false,
+    }
+}
+
+/// Return true when MathType writes a top-level PILE template before line color.
+fn expr_starts_with_top_pile_template(expr: &Expr) -> bool {
+    match expr {
+        Expr::Pile { .. } => true,
+        Expr::Style { content, .. } => expr_starts_with_top_pile_template(content),
+        Expr::Sequence(items) => items
+            .first()
+            .is_some_and(expr_starts_with_top_pile_template),
+        _ => false,
+    }
+}
+
+/// Return true when a line-leading style switch owns the visible size transition.
+fn expr_starts_with_top_style(expr: &Expr) -> bool {
+    match expr {
+        Expr::Style { .. } => true,
+        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_top_style),
+        _ => false,
+    }
+}
+
+/// Return true when the first visible top-level node is a color wrapper.
+fn expr_starts_with_top_color(expr: &Expr) -> bool {
+    match expr {
+        Expr::Color { .. } => true,
+        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_top_color),
         _ => false,
     }
 }
@@ -308,6 +400,23 @@ fn expr_starts_with_sum_operator_script_base(expr: &Expr) -> bool {
         Expr::Sequence(items) => items
             .first()
             .is_some_and(expr_starts_with_sum_operator_script_base),
+        _ => false,
+    }
+}
+
+/// Return true when a bodyless big operator with limits owns the first color/template order.
+fn expr_starts_with_bodyless_big_op_script(expr: &Expr) -> bool {
+    match expr {
+        Expr::BigOp {
+            body: None,
+            lower,
+            upper,
+            ..
+        } => lower.is_some() || upper.is_some(),
+        Expr::Style { content, .. } => expr_starts_with_bodyless_big_op_script(content),
+        Expr::Sequence(items) => items
+            .first()
+            .is_some_and(expr_starts_with_bodyless_big_op_script),
         _ => false,
     }
 }
@@ -447,9 +556,17 @@ fn write_expr(
     let next_state = match expr {
         Expr::Sequence(items) => {
             let starts_with_explicit_accent = expr_starts_with_explicit_accent_template(expr);
+            let start_default = writer.top_sequence_starts_default;
+            if start_default {
+                writer.top_sequence_starts_default = false;
+            }
             let mut state = WriteState {
                 size: current_size,
-                color: ColorState::Black,
+                color: if start_default {
+                    ColorState::Default
+                } else {
+                    ColorState::Black
+                },
             };
             for (index, item) in items.iter().enumerate() {
                 if state.size != current_size && !matches!(item, Expr::Integral { .. }) {
@@ -471,7 +588,10 @@ fn write_expr(
                         continue;
                     }
                 }
-                if state.color != ColorState::Black && !expr_sets_own_color(item) {
+                if state.color != ColorState::Black
+                    && !(index == 0 && start_default)
+                    && !expr_sets_own_color(item)
+                {
                     if expr_starts_with_euclid_math_one(item) {
                         writer.ensure_euclid_math_one(out);
                     } else if expr_starts_with_euclid_math_two(item) {
@@ -485,6 +605,11 @@ fn write_expr(
                 }
                 if state.color == ColorState::Black
                     && expr_starts_with_sum_operator_script_base(item)
+                {
+                    color_default(out);
+                    state.color = ColorState::Default;
+                }
+                if state.color == ColorState::Black && expr_starts_with_bodyless_big_op_script(item)
                 {
                     color_default(out);
                     state.color = ColorState::Default;
@@ -506,6 +631,9 @@ fn write_expr(
                 {
                     color_default(out);
                     state.color = ColorState::Default;
+                }
+                if index == 0 && start_default && expr_starts_with_top_style(item) {
+                    writer.top_sequence_starts_default = true;
                 }
                 state = write_expr(item, out, state.size, writer)?;
             }
@@ -701,7 +829,13 @@ fn write_color_expr(
     match name {
         "blue" => {
             out.extend_from_slice(&[0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0xe8, 0x03]);
-            out.extend_from_slice(&[0x0f, 0x02]);
+            let selector = if writer.emit_top_color_selector_one {
+                writer.emit_top_color_selector_one = false;
+                0x01
+            } else {
+                0x02
+            };
+            out.extend_from_slice(&[0x0f, selector]);
             let state = write_expr(expr, out, current_size, writer)?;
             Ok(WriteState {
                 size: state.size,
@@ -715,7 +849,7 @@ fn write_color_expr(
 /// Return true for nodes that begin by selecting their own color.
 fn expr_sets_own_color(expr: &Expr) -> bool {
     match expr {
-        Expr::Color { .. } | Expr::RawTex(_) => true,
+        Expr::Color { .. } | Expr::RawTex(_) | Expr::Boxed(_) => true,
         Expr::Style { content, .. } => expr_sets_own_color(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_sets_own_color),
         _ => false,
@@ -760,6 +894,10 @@ fn write_char(ch: char, out: &mut Vec<u8>, writer: &mut MtefWriter) -> Result<()
         out.push(0x00);
         out.push(if ch.is_ascii_digit() {
             FN_NUMBER
+        } else if ch == '?' {
+            // MathType falls back to a visible punctuation glyph when TeX Input cannot map
+            // a direct non-ASCII literal into a math character.
+            FN_FUNCTION
         } else {
             FN_VARIABLE
         });
@@ -856,11 +994,16 @@ fn write_style_expr(
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
     let target_size = style_size(kind);
-    if target_size != current_size {
+    let changed_size = target_size != current_size;
+    let suppress_restore = writer.suppress_next_style_restore;
+    if suppress_restore {
+        writer.suppress_next_style_restore = false;
+    }
+    if changed_size {
         write_size(target_size, out);
     }
     let state = write_expr(content, out, target_size, writer)?;
-    if state.size != current_size {
+    if changed_size && !suppress_restore && state.size != current_size {
         write_size(current_size, out);
     }
     Ok(WriteState {
@@ -1052,11 +1195,31 @@ fn write_integral_glyph(out: &mut Vec<u8>) -> Result<(), String> {
 /// Write a generated glyph used by MathType's big-operator templates.
 fn write_named_big_operator_glyph(name: &str, out: &mut Vec<u8>) -> Result<(), String> {
     let glyph = encoding::big_operator_glyph(name)?;
-    out.push(0x02);
-    out.push(0x04);
-    out.push(glyph.typeface);
-    write_u16(glyph.mtcode, out);
-    out.push(glyph.font_pos);
+    if let Some(selector) = glyph.font_style_selector {
+        out.extend_from_slice(&[0x08, selector, 0x00]);
+    }
+    write_styled_table_char(
+        glyph.typeface,
+        glyph.mtcode,
+        Some(glyph.font_pos),
+        glyph.explicit_font,
+        out,
+        &mut MtefWriter {
+            euclid_math_one_defined: false,
+            euclid_math_one_typeface: EXPLICIT_FONT_NEG_1,
+            euclid_math_two_defined: false,
+            euclid_math_two_typeface: EXPLICIT_FONT_NEG_1,
+            euclid_fraktur_defined: false,
+            euclid_fraktur_typeface: EXPLICIT_FONT_NEG_1,
+            black_color_defined: false,
+            big_symbol_line_marker_pending: false,
+            suppress_next_pile_color_default: false,
+            emit_top_fenced_matrix_color: false,
+            suppress_next_style_restore: false,
+            emit_top_color_selector_one: false,
+            top_sequence_starts_default: false,
+        },
+    );
     Ok(())
 }
 
@@ -1080,9 +1243,17 @@ fn write_pile(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
-    color_default(out);
+    let suppress_initial_color = writer.suppress_next_pile_color_default;
+    if suppress_initial_color {
+        writer.suppress_next_pile_color_default = false;
+    } else {
+        color_default(out);
+    }
     if let Some((left, right)) = pile_delimiters(kind) {
         out.extend_from_slice(&[0x03, 0x00, delimiter_selector(left, right)?, 0x03, 0x00]);
+    }
+    if suppress_initial_color {
+        writer.ensure_black_color_def(out);
     }
     color_black(out);
     out.extend_from_slice(&[0x04, 0x00, 0x02, 0x01]);
@@ -1366,7 +1537,7 @@ fn write_environment(
         }
         EnvironmentKind::AlignedAt => write_align_matrix_record(rows, out, current_size, writer),
         EnvironmentKind::Gather | EnvironmentKind::Gathered => {
-            write_matrix_record(rows, out, current_size, writer)
+            write_environment_fallback("gather", " \\\\", " \\end", rows, out, current_size, writer)
         }
         EnvironmentKind::Cases => write_left_fenced_matrix(rows, out, current_size, writer),
         EnvironmentKind::RightCases => write_right_fenced_matrix(rows, out, current_size, writer),
@@ -1540,11 +1711,15 @@ fn write_fenced_matrix(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<(), String> {
+    if writer.emit_top_fenced_matrix_color {
+        writer.emit_top_fenced_matrix_color = false;
+        writer.ensure_black_color_def(out);
+        color_black(out);
+    }
     out.extend_from_slice(&[0x03, 0x00, selector, 0x03, 0x00]);
     color_default(out);
     write_matrix_slot_line(rows, out, current_size, writer, MatrixHeaderStyle::Fenced)?;
-    write_delimiter_glyph(left, out)?;
-    write_delimiter_glyph(right, out)?;
+    write_delimiter_glyph_pair(left, right, out)?;
     out.push(0x00);
     Ok(())
 }
@@ -2114,6 +2289,11 @@ fn write_hat_template_for_bold_char(ch: char, out: &mut Vec<u8>) -> Result<(), S
             euclid_fraktur_typeface: EXPLICIT_FONT_NEG_1,
             black_color_defined: true,
             big_symbol_line_marker_pending: false,
+            suppress_next_pile_color_default: false,
+            emit_top_fenced_matrix_color: false,
+            suppress_next_style_restore: false,
+            emit_top_color_selector_one: false,
+            top_sequence_starts_default: false,
         },
     )?;
     out.push(0x00);
@@ -2387,6 +2567,13 @@ fn write_big_op(
         lower.ok_or_else(|| "big operators require a lower limit in this subset".to_string())?;
     let selector = big_op_selector(kind);
     let variation = if upper.is_some() { 0x70 } else { 0x50 };
+    let needs_leading_black = body.contains_raw_tex()
+        || lower.contains_raw_tex()
+        || upper.is_some_and(Expr::contains_raw_tex);
+    if needs_leading_black {
+        writer.ensure_black_color_def(out);
+        color_black(out);
+    }
     out.extend_from_slice(&[0x03, 0x00, selector, variation, 0x00]);
     color_default(out);
     let body_state = write_line(body, out, current_size, writer)?;
@@ -2446,39 +2633,8 @@ fn write_standalone_big_op_limits(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
-    let selector = big_op_selector(kind);
-    let variation = if upper.is_some() { 0x70 } else { 0x50 };
-    let limit_size = match current_size {
-        SizeState::Full => SizeState::Sub,
-        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
-    };
-    out.extend_from_slice(&[0x03, 0x00, selector, variation, 0x00]);
-    color_default(out);
-    write_null_line(out);
-    if let Some(lower) = lower {
-        write_size(limit_size, out);
-        color_default(out);
-        let lower_state = write_line(lower, out, limit_size, writer)?;
-        if lower_state.size != limit_size {
-            write_size(limit_size, out);
-        }
-    } else {
-        write_null_line(out);
-    }
-    if let Some(upper) = upper {
-        color_default(out);
-        write_line(upper, out, limit_size, writer)?;
-    } else {
-        write_null_line(out);
-    }
-    out.push(0x0d);
-    color_black(out);
-    write_big_op_glyph(kind, out)?;
-    out.push(0x00);
-    Ok(WriteState {
-        size: limit_size,
-        color: ColorState::Black,
-    })
+    let glyph_name = bodyless_big_op_glyph_name(kind);
+    write_bodyless_big_op_template(glyph_name, lower, upper, out, current_size, writer)
 }
 
 /// Write the Sigma/Pi glyph MathType appends at the end of a big-op template.
@@ -2521,6 +2677,17 @@ fn standalone_big_op_glyph_name(kind: BigOpKind) -> &'static str {
         BigOpKind::Union => "standalone_union",
         BigOpKind::Intersection => "standalone_intersection",
         _ => big_op_glyph_name(kind),
+    }
+}
+
+/// Return the generated glyph-table key for bodyless scripted big operators.
+fn bodyless_big_op_glyph_name(kind: BigOpKind) -> &'static str {
+    match kind {
+        BigOpKind::Sum => "bodyless_sum",
+        BigOpKind::Product => "bodyless_product",
+        BigOpKind::Coproduct => "bodyless_coproduct",
+        BigOpKind::Union => "bodyless_union",
+        BigOpKind::Intersection => "bodyless_intersection",
     }
 }
 
@@ -2684,6 +2851,69 @@ fn write_sum_operator_glyph(
     write_char(ch, out, writer)
 }
 
+/// Write MathType's bodyless big-operator limits template, which shares tmSUMOP layout.
+fn write_bodyless_big_op_template(
+    glyph_name: &str,
+    sub: Option<&Expr>,
+    sup: Option<&Expr>,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    let script_size = match current_size {
+        SizeState::Full => SizeState::Sub,
+        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
+    };
+    let variation = if sup.is_some() { 0x70 } else { 0x50 };
+    out.extend_from_slice(&[0x03, 0x00, 0x16, variation, 0x00]);
+    write_null_line(out);
+    write_size(script_size, out);
+    if let Some(sub) = sub {
+        let sub_state = write_line(sub, out, script_size, writer)?;
+        restore_script_separator(sub_state, script_size, out);
+    } else {
+        write_null_line(out);
+    }
+    if let Some(sup) = sup {
+        write_line(sup, out, script_size, writer)?;
+    } else {
+        write_null_line(out);
+    }
+    out.push(0x0d);
+    color_default(out);
+    write_named_big_operator_glyph_line(glyph_name, out, writer)?;
+    out.push(0x00);
+    Ok(WriteState {
+        size: script_size,
+        color: ColorState::Black,
+    })
+}
+
+/// Write the glyph slot inside MathType's bodyless big-operator limits template.
+fn write_named_big_operator_glyph_line(
+    glyph_name: &str,
+    out: &mut Vec<u8>,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    out.extend_from_slice(&[0x01, 0x00]);
+    let glyph = encoding::big_operator_glyph(glyph_name)?;
+    if let Some(selector) = glyph.font_style_selector {
+        out.extend_from_slice(&[0x08, selector, 0x00]);
+    }
+    writer.ensure_black_color_def(out);
+    color_black(out);
+    write_styled_table_char(
+        glyph.typeface,
+        glyph.mtcode,
+        Some(glyph.font_pos),
+        glyph.explicit_font,
+        out,
+        writer,
+    );
+    out.push(0x00);
+    Ok(())
+}
+
 /// Write a script base before the script template slots are emitted.
 fn write_script_base(
     base: &Expr,
@@ -2772,6 +3002,27 @@ fn leading_space_rest(expr: &Expr) -> Option<(u8, &[Expr])> {
         Expr::Space(width) => Some((*width, &[])),
         Expr::Sequence(items) => match items.as_slice() {
             [Expr::Space(width), rest @ ..] => Some((*width, rest)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Split off top-level spacing, including command-produced nested sequences.
+fn top_leading_space_rest(expr: &Expr) -> Option<(u8, Vec<Expr>)> {
+    match expr {
+        Expr::Space(width) => Some((*width, Vec::new())),
+        Expr::Sequence(items) => match items.as_slice() {
+            [Expr::Space(width), rest @ ..] => Some((*width, rest.to_vec())),
+            [Expr::Sequence(inner), outer @ ..] => match inner.as_slice() {
+                [Expr::Space(width), inner_rest @ ..] => {
+                    let mut rest = Vec::with_capacity(inner_rest.len() + outer.len());
+                    rest.extend_from_slice(inner_rest);
+                    rest.extend_from_slice(outer);
+                    Some((*width, rest))
+                }
+                _ => None,
+            },
             _ => None,
         },
         _ => None,
@@ -2873,6 +3124,11 @@ fn write_delimiter_glyph_pair(left: char, right: char, out: &mut Vec<u8>) -> Res
         ('|', '〉') => {
             write_expanding_glyph(0xec07, out);
             write_expanding_glyph(0x232a, out);
+            Ok(())
+        }
+        ('|', '|') => {
+            write_expanding_glyph(0xec07, out);
+            write_expanding_glyph(0xec08, out);
             Ok(())
         }
         ('‖', '‖') => {

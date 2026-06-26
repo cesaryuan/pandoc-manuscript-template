@@ -12,6 +12,7 @@ pub(super) enum Category {
     MathBb,
     MathFrak,
     Special,
+    RawLiteral,
     CommandSpecific,
     CommandAlias,
     SumOperatorAlias,
@@ -31,6 +32,14 @@ pub(super) enum Selector {
         ch: char,
         typeface: u8,
         mtcode: u16,
+    },
+    VisibleCharIndex {
+        ch: char,
+        index: usize,
+    },
+    RawTextRun {
+        ch: char,
+        index: usize,
     },
     LastChar {
         ch: char,
@@ -53,6 +62,7 @@ pub(super) struct CharRecord {
     pub(super) mtcode: u16,
     pub(super) font_pos: Option<u8>,
     pub(super) explicit_font: Option<ExplicitFont>,
+    pub(super) font_style_selector: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -68,6 +78,7 @@ pub(super) fn category_name(category: Category) -> &'static str {
         Category::MathBb => "mathbb",
         Category::MathFrak => "mathfrak",
         Category::Special => "special",
+        Category::RawLiteral => "raw_literal",
         Category::CommandSpecific => "command_specific",
         Category::CommandAlias => "command_alias",
         Category::SumOperatorAlias => "sum_operator_alias",

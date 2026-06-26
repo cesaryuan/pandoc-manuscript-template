@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -14,6 +14,10 @@ mod ast;
 mod cfb;
 #[path = "../generated/mod.rs"]
 mod generated;
+#[path = "../mathtype_ansi.rs"]
+mod mathtype_ansi;
+#[path = "../mathtype_input.rs"]
+mod mathtype_input;
 #[path = "../mtef.rs"]
 mod mtef;
 #[path = "../parser.rs"]
@@ -24,6 +28,7 @@ mod raw_fallback;
 mod typeface;
 
 use ast::Expr;
+use mathtype_input::mathtype_tex_payload;
 use mtef::write_mtef;
 use parser::{normalize_latex, Parser};
 use raw_fallback::is_known_mathtype_raw_command;
@@ -33,8 +38,9 @@ fn main() -> Result<(), String> {
     let config = Config::parse(env::args().skip(1).collect())?;
     let markdown = fs::read_to_string(&config.input)
         .map_err(|err| format!("failed to read {}: {err}", config.input.display()))?;
-    let snippets = extract_tex_snippets(&markdown);
-    let math_sections = extract_math_snippet_sections(&markdown);
+    let snippets = filter_snippets(extract_tex_snippets(&markdown), &config);
+    let math_sections =
+        filter_math_snippet_sections(extract_math_snippet_sections(&markdown), &config);
     let math_snippets = math_sections.keys().cloned().collect::<Vec<_>>();
     let report = audit_snippets(&snippets);
     let math_report = audit_snippets(&math_snippets);
@@ -73,8 +79,12 @@ fn main() -> Result<(), String> {
     if let Some(compare) = &config.mathtype_compare {
         fs::create_dir_all(&compare.work_dir)
             .map_err(|err| format!("failed to create {}: {err}", compare.work_dir.display()))?;
+        fs::create_dir_all(&compare.cache_dir)
+            .map_err(|err| format!("failed to create {}: {err}", compare.cache_dir.display()))?;
+        let mut probe_session = MathTypeProbeSession::default();
         if config.view.includes_code() {
-            let compare_report = compare_snippets_with_mathtype(&snippets, compare);
+            let compare_report =
+                compare_snippets_with_mathtype(&snippets, compare, &mut probe_session);
             print_mathtype_compare_report(
                 "supported_functions_mathtype",
                 &compare_report,
@@ -82,7 +92,8 @@ fn main() -> Result<(), String> {
             );
         }
         if config.view.includes_math() {
-            let compare_report = compare_snippets_with_mathtype(&math_snippets, compare);
+            let compare_report =
+                compare_snippets_with_mathtype(&math_snippets, compare, &mut probe_session);
             print_mathtype_compare_report(
                 "supported_functions_math_mathtype",
                 &compare_report,
@@ -96,6 +107,8 @@ fn main() -> Result<(), String> {
 struct Config {
     input: PathBuf,
     limit: usize,
+    max_snippets: Option<usize>,
+    snippet_filter: Option<String>,
     view: AuditView,
     unclassified_jsonl: Option<PathBuf>,
     remaining_jsonl: Option<PathBuf>,
@@ -105,6 +118,8 @@ struct Config {
 struct MathTypeCompareConfig {
     helper: PathBuf,
     work_dir: PathBuf,
+    cache_dir: PathBuf,
+    helper_fingerprint: String,
     pre_verb: String,
     timeout_ms: u64,
 }
@@ -133,6 +148,8 @@ impl Config {
     fn parse(args: Vec<String>) -> Result<Self, String> {
         let mut input = PathBuf::from(r"docs\Supported Functions.md");
         let mut limit = 80usize;
+        let mut max_snippets = None;
+        let mut snippet_filter = None;
         let mut view = AuditView::Both;
         let mut unclassified_jsonl = None;
         let mut remaining_jsonl = None;
@@ -141,7 +158,8 @@ impl Config {
             r"..\..\src\pandoc_manuscript\mathtype\ole_helper\bin\Release\net48\MathTypeOleHelper.exe",
         );
         let mut mathtype_work_dir = PathBuf::from(r".pmt\audit-supported-functions-mathtype");
-        let mut mathtype_pre_verb = "2".to_string();
+        // Keep the default aligned with the helper workflow that avoids the extra pre-open step.
+        let mut mathtype_pre_verb = "0".to_string();
         let mut mathtype_timeout_ms = 30_000u64;
         let mut index = 0;
         while index < args.len() {
@@ -161,6 +179,24 @@ impl Config {
                     limit = raw
                         .parse::<usize>()
                         .map_err(|err| format!("invalid --limit {raw}: {err}"))?;
+                }
+                "--max-snippets" => {
+                    index += 1;
+                    let raw = args
+                        .get(index)
+                        .ok_or_else(|| "--max-snippets requires a number".to_string())?;
+                    max_snippets = Some(
+                        raw.parse::<usize>()
+                            .map_err(|err| format!("invalid --max-snippets {raw}: {err}"))?,
+                    );
+                }
+                "--snippet-filter" => {
+                    index += 1;
+                    snippet_filter = Some(
+                        args.get(index)
+                            .ok_or_else(|| "--snippet-filter requires text".to_string())?
+                            .clone(),
+                    );
                 }
                 "--view" => {
                     index += 1;
@@ -222,22 +258,30 @@ impl Config {
         Ok(Self {
             input,
             limit,
+            max_snippets,
+            snippet_filter,
             view,
             unclassified_jsonl,
             remaining_jsonl,
-            mathtype_compare: mathtype_compare.then_some(MathTypeCompareConfig {
-                helper: mathtype_helper,
-                work_dir: mathtype_work_dir,
-                pre_verb: mathtype_pre_verb,
-                timeout_ms: mathtype_timeout_ms,
-            }),
+            mathtype_compare: if mathtype_compare {
+                Some(MathTypeCompareConfig {
+                    cache_dir: mathtype_work_dir.join("cache"),
+                    helper_fingerprint: file_fingerprint(&mathtype_helper)?,
+                    helper: mathtype_helper,
+                    work_dir: mathtype_work_dir,
+                    pre_verb: mathtype_pre_verb,
+                    timeout_ms: mathtype_timeout_ms,
+                })
+            } else {
+                None
+            },
         })
     }
 }
 
 /// Return the usage text for invalid audit invocations.
 fn usage() -> &'static str {
-    "Usage: audit_supported_functions [--input <Supported Functions.md>] [--limit <N>] [--view both|code|math] [--math-only] [--code-only] [--write-unclassified-jsonl <path>] [--write-remaining-jsonl <path>] [--mathtype-compare] [--helper <exe>] [--work-dir <dir>] [--pre-verb <N>] [--timeout-ms <N>]"
+    "Usage: audit_supported_functions [--input <Supported Functions.md>] [--limit <N>] [--max-snippets <N>] [--snippet-filter <text>] [--view both|code|math] [--math-only] [--code-only] [--write-unclassified-jsonl <path>] [--write-remaining-jsonl <path>] [--mathtype-compare] [--helper <exe>] [--work-dir <dir>] [--pre-verb <N>] [--timeout-ms <N>]"
 }
 
 /// Parse a report-view selector from the CLI.
@@ -273,6 +317,7 @@ struct RawFallbackClass {
 #[derive(Default)]
 struct MathTypeCompareReport {
     total: usize,
+    cache_stats: MathTypeProbeStats,
     matched: Vec<String>,
     mismatched: Vec<MathTypeMismatch>,
     helper_error: Vec<(String, String)>,
@@ -285,6 +330,52 @@ struct MathTypeMismatch {
     mathtype_len: usize,
     rust_len: usize,
     first_diff: usize,
+}
+
+struct MathTypeCachePaths {
+    mtef: PathBuf,
+    error: PathBuf,
+}
+
+#[derive(Clone, Copy, Default)]
+struct MathTypeProbeStats {
+    memory_hits: usize,
+    disk_hits: usize,
+    misses: usize,
+    helper_invocations: usize,
+}
+
+impl MathTypeProbeStats {
+    /// Return the per-report delta from one shared probe session snapshot.
+    fn delta_since(self, earlier: Self) -> Self {
+        Self {
+            memory_hits: self.memory_hits.saturating_sub(earlier.memory_hits),
+            disk_hits: self.disk_hits.saturating_sub(earlier.disk_hits),
+            misses: self.misses.saturating_sub(earlier.misses),
+            helper_invocations: self
+                .helper_invocations
+                .saturating_sub(earlier.helper_invocations),
+        }
+    }
+}
+
+#[derive(Default)]
+struct MathTypeProbeSession {
+    memo: HashMap<String, CachedMathTypeProbe>,
+    stats: MathTypeProbeStats,
+}
+
+impl MathTypeProbeSession {
+    /// Snapshot cumulative stats so code/math views can print their own deltas.
+    fn stats_snapshot(&self) -> MathTypeProbeStats {
+        self.stats
+    }
+}
+
+#[derive(Clone)]
+enum CachedMathTypeProbe {
+    Success(Vec<u8>),
+    Error(String),
 }
 
 /// Extract unique inline-code snippets that contain TeX control sequences.
@@ -353,6 +444,34 @@ fn extract_math_snippet_sections(markdown: &str) -> BTreeMap<String, String> {
         }
     }
     snippets
+}
+
+/// Apply optional snippet filtering so compare/debug runs can stay focused.
+fn filter_snippets(mut snippets: Vec<String>, config: &Config) -> Vec<String> {
+    if let Some(filter) = &config.snippet_filter {
+        snippets.retain(|snippet| snippet.contains(filter));
+    }
+    if let Some(max) = config.max_snippets {
+        snippets.truncate(max);
+    }
+    snippets
+}
+
+/// Apply the same focus filter to math snippets while preserving section labels.
+fn filter_math_snippet_sections(
+    snippets: BTreeMap<String, String>,
+    config: &Config,
+) -> BTreeMap<String, String> {
+    let filtered = snippets.into_iter().filter(|(snippet, _)| {
+        config
+            .snippet_filter
+            .as_ref()
+            .is_none_or(|filter| snippet.contains(filter))
+    });
+    match config.max_snippets {
+        Some(max) => filtered.take(max).collect(),
+        None => filtered.collect(),
+    }
 }
 
 /// Return the active Markdown heading at each character offset.
@@ -497,7 +616,9 @@ fn audit_snippets(snippets: &[String]) -> AuditReport {
 fn compare_snippets_with_mathtype(
     snippets: &[String],
     config: &MathTypeCompareConfig,
+    probe_session: &mut MathTypeProbeSession,
 ) -> MathTypeCompareReport {
+    let stats_before = probe_session.stats_snapshot();
     let mut report = MathTypeCompareReport {
         total: snippets.len(),
         ..MathTypeCompareReport::default()
@@ -528,7 +649,7 @@ fn compare_snippets_with_mathtype(
                 continue;
             }
         };
-        let mathtype_mtef = match probe_mathtype_mtef(&normalized, config, index) {
+        let mathtype_mtef = match probe_mathtype_mtef(&normalized, config, index, probe_session) {
             Ok(bytes) => bytes,
             Err(err) => {
                 report.helper_error.push((snippet.clone(), err));
@@ -546,6 +667,7 @@ fn compare_snippets_with_mathtype(
             });
         }
     }
+    report.cache_stats = probe_session.stats_snapshot().delta_since(stats_before);
     report
 }
 
@@ -554,7 +676,27 @@ fn probe_mathtype_mtef(
     latex: &str,
     config: &MathTypeCompareConfig,
     index: usize,
+    probe_session: &mut MathTypeProbeSession,
 ) -> Result<Vec<u8>, String> {
+    let payload = mathtype_tex_payload(latex);
+    let key = cache_key(&payload, config);
+    if let Some(cached) = probe_session.memo.get(&key).cloned() {
+        probe_session.stats.memory_hits += 1;
+        return match cached {
+            CachedMathTypeProbe::Success(bytes) => Ok(bytes),
+            CachedMathTypeProbe::Error(err) => Err(err),
+        };
+    }
+    let cache_paths = mathtype_cache_paths(&key, config);
+    if let Some(cached) = read_cached_mathtype_probe(&cache_paths)? {
+        probe_session.stats.disk_hits += 1;
+        probe_session.memo.insert(key, cached.clone());
+        return match cached {
+            CachedMathTypeProbe::Success(bytes) => Ok(bytes),
+            CachedMathTypeProbe::Error(err) => Err(err),
+        };
+    }
+    probe_session.stats.misses += 1;
     let probe_dir = config
         .work_dir
         .join(format!("run-{}-{index:04}", process::id()));
@@ -562,18 +704,129 @@ fn probe_mathtype_mtef(
         .map_err(|err| format!("failed to create {}: {err}", probe_dir.display()))?;
     let tex_path = probe_dir.join("probe.tex");
     let ole_path = probe_dir.join("probe.ole.bin");
-    fs::write(&tex_path, latex)
+    fs::write(&tex_path, &payload)
         .map_err(|err| format!("failed to write {}: {err}", tex_path.display()))?;
-    run_mathtype_helper(
-        &config.helper,
-        &config.pre_verb,
-        &tex_path,
-        &ole_path,
-        config.timeout_ms,
-    )?;
-    let ole = fs::read(&ole_path)
-        .map_err(|err| format!("failed to read {}: {err}", ole_path.display()))?;
-    extract_mtef_from_ole(&ole)
+    let result = (|| {
+        probe_session.stats.helper_invocations += 1;
+        run_mathtype_helper(
+            &config.helper,
+            &config.pre_verb,
+            &tex_path,
+            &ole_path,
+            config.timeout_ms,
+        )?;
+        let ole = fs::read(&ole_path)
+            .map_err(|err| format!("failed to read {}: {err}", ole_path.display()))?;
+        extract_mtef_from_ole(&ole)
+    })();
+    match result {
+        Ok(mtef) => {
+            write_cached_mathtype_mtef(&cache_paths, &mtef)?;
+            probe_session
+                .memo
+                .insert(key, CachedMathTypeProbe::Success(mtef.clone()));
+            Ok(mtef)
+        }
+        Err(err) => {
+            write_cached_mathtype_error(&cache_paths, &err)?;
+            probe_session
+                .memo
+                .insert(key, CachedMathTypeProbe::Error(err.clone()));
+            Err(err)
+        }
+    }
+}
+
+/// Build stable cache paths from the exact helper payload and helper fingerprint.
+fn mathtype_cache_paths(key: &str, config: &MathTypeCompareConfig) -> MathTypeCachePaths {
+    let root = config.cache_dir.join(&key[..2]).join(key);
+    MathTypeCachePaths {
+        mtef: root.join("mtef.bin"),
+        error: root.join("error.txt"),
+    }
+}
+
+/// Build a stable cache key for one MathType helper invocation.
+fn cache_key(payload: &str, config: &MathTypeCompareConfig) -> String {
+    let material = format!(
+        "v1\0payload={payload}\0pre_verb={}\0helper={}",
+        config.pre_verb, config.helper_fingerprint
+    );
+    fnv1a64_hex(material.as_bytes())
+}
+
+/// Load a cached MathType probe result so repeated audits do not relaunch the helper.
+fn read_cached_mathtype_probe(
+    paths: &MathTypeCachePaths,
+) -> Result<Option<CachedMathTypeProbe>, String> {
+    match fs::read(&paths.mtef) {
+        Ok(bytes) if !bytes.is_empty() => return Ok(Some(CachedMathTypeProbe::Success(bytes))),
+        Ok(_) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => {
+            return Err(format!(
+                "failed to read cache {}: {err}",
+                paths.mtef.display()
+            ));
+        }
+    }
+    match fs::read_to_string(&paths.error) {
+        Ok(message) if !message.trim().is_empty() => Ok(Some(CachedMathTypeProbe::Error(message))),
+        Ok(_) => Ok(Some(CachedMathTypeProbe::Error(
+            "cached MathType probe failed without details".to_string(),
+        ))),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(format!(
+            "failed to read cache {}: {err}",
+            paths.error.display()
+        )),
+    }
+}
+
+/// Store one successful MathType MTEF payload for later audit runs.
+fn write_cached_mathtype_mtef(paths: &MathTypeCachePaths, mtef: &[u8]) -> Result<(), String> {
+    if let Some(parent) = paths.mtef.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    }
+    let _ = fs::remove_file(&paths.error);
+    fs::write(&paths.mtef, mtef)
+        .map_err(|err| format!("failed to write cache {}: {err}", paths.mtef.display()))
+}
+
+/// Store one helper failure so unsupported snippets do not keep reopening MathType.
+fn write_cached_mathtype_error(paths: &MathTypeCachePaths, err: &str) -> Result<(), String> {
+    if let Some(parent) = paths.error.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|cache_err| format!("failed to create {}: {cache_err}", parent.display()))?;
+    }
+    let _ = fs::remove_file(&paths.mtef);
+    fs::write(&paths.error, err).map_err(|cache_err| {
+        format!(
+            "failed to write cache {}: {cache_err}",
+            paths.error.display()
+        )
+    })
+}
+
+/// Hash one file into a stable helper fingerprint for cache invalidation.
+fn file_fingerprint(path: &Path) -> Result<String, String> {
+    let bytes =
+        fs::read(path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    Ok(fnv1a64_hex(&bytes))
+}
+
+/// Return a deterministic hex digest without pulling in an external hashing crate.
+fn fnv1a64_hex(bytes: &[u8]) -> String {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut hash = FNV_OFFSET;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    format!("{hash:016x}")
 }
 
 /// Extract MathType's Equation Native payload after the fixed OLE stream header.
@@ -594,16 +847,13 @@ fn run_mathtype_helper(
     timeout_ms: u64,
 ) -> Result<(), String> {
     let _ = fs::remove_file(ole_path);
-    let mut child = Command::new(helper)
-        .args([
-            "--method",
-            "set-data",
-            "--pre-verb",
-            pre_verb,
-            "--format",
-            "TeX Input Language",
-            "--input",
-        ])
+    let mut command = Command::new(helper);
+    command.args(["--method", "set-data"]);
+    if helper_needs_pre_verb(pre_verb) {
+        command.args(["--pre-verb", pre_verb]);
+    }
+    let mut child = command
+        .args(["--format", "TeX Input Language", "--input"])
         .arg(tex_path)
         .args(["--output"])
         .arg(ole_path)
@@ -624,6 +874,11 @@ fn run_mathtype_helper(
         ));
     }
     Ok(())
+}
+
+/// Preserve the old CLI surface where --pre-verb 0 means skipping the pre-open step.
+fn helper_needs_pre_verb(pre_verb: &str) -> bool {
+    pre_verb != "0"
 }
 
 /// Wait for the helper so one unsupported MathType input cannot hang the audit.
@@ -664,14 +919,51 @@ fn is_syntax_fragment(snippet: &str) -> bool {
     let trimmed = snippet.trim();
     is_placeholder_code_span(trimmed)
         || is_bare_incomplete_command(trimmed)
+        || is_text_mode_accent_fragment(trimmed)
+        || is_non_rendering_spacing_fragment(trimmed)
+        || trimmed.starts_with("\\@")
+        || trimmed.starts_with('@')
         || trimmed.starts_with("\\begin{") && !trimmed.contains("\\end{")
         || trimmed.starts_with("\\end{")
         || matches!(
             trimmed,
             "\\left" | "\\left." | "\\right" | "\\right." | "\\color"
         )
+        || trimmed.ends_with('\\')
+        || trimmed.ends_with('(')
+        || (trimmed.starts_with('$') ^ trimmed.ends_with('$'))
+        || (trimmed.contains('&') && !trimmed.contains("\\begin{"))
         || trimmed.ends_with("_{")
         || trimmed.contains("\\begin{") && !trimmed.contains("\\end{")
+}
+
+/// Return true for bare text-accent examples that are documented only inside \text{...}.
+fn is_text_mode_accent_fragment(trimmed: &str) -> bool {
+    [
+        "\\'{a}", "\\\"{a}", "\\.{a}", "\\={a}", "\\`{a}", "\\^{a}", "\\~{a}",
+    ]
+    .contains(&trimmed)
+}
+
+/// Return true for standalone spacing examples that do not form an inspectable visible formula.
+fn is_non_rendering_spacing_fragment(trimmed: &str) -> bool {
+    [
+        "\\!",
+        "\\,",
+        "\\:",
+        "\\;",
+        "\\>",
+        "\\<space>",
+        "\\space",
+        "\\thinspace",
+        "\\medspace",
+        "\\thickspace",
+        "\\negthinspace",
+        "\\negmedspace",
+        "\\negthickspace",
+        "\\nobreakspace",
+    ]
+    .contains(&trimmed)
 }
 
 /// Return true for code spans that document syntax placeholders, not formulas.
@@ -744,10 +1036,16 @@ fn is_documentation_fragment(snippet: &str, err: &str) -> bool {
     let trimmed = snippet.trim();
     trimmed.starts_with("\\begin{")
         || trimmed.starts_with("\\end{")
+        || trimmed.starts_with("\\@")
+        || trimmed.starts_with('@')
         || matches!(
             trimmed,
             "\\left" | "\\left." | "\\right" | "\\right." | "\\color"
         )
+        || trimmed.ends_with('\\')
+        || trimmed.ends_with('(')
+        || (trimmed.starts_with('$') ^ trimmed.ends_with('$'))
+        || (trimmed.contains('&') && !trimmed.contains("\\begin{"))
         || trimmed.ends_with('{')
         || err.contains("found None")
 }
@@ -837,6 +1135,16 @@ fn print_mathtype_compare_report(prefix: &str, report: &MathTypeCompareReport, l
     println!("{prefix}_helper_error={}", report.helper_error.len());
     println!("{prefix}_rust_error={}", report.rust_error.len());
     println!("{prefix}_skipped={}", report.skipped.len());
+    println!(
+        "{prefix}_cache_memory_hits={}",
+        report.cache_stats.memory_hits
+    );
+    println!("{prefix}_cache_disk_hits={}", report.cache_stats.disk_hits);
+    println!("{prefix}_cache_misses={}", report.cache_stats.misses);
+    println!(
+        "{prefix}_helper_invocations={}",
+        report.cache_stats.helper_invocations
+    );
     println!("{prefix}_mismatch_examples:");
     for (index, mismatch) in report.mismatched.iter().enumerate() {
         if index >= limit {

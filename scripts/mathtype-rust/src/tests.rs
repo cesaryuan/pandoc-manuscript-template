@@ -3,8 +3,8 @@ use crate::cfb::read_regular_stream;
 use crate::mtef::write_mtef;
 use crate::parser::{normalize_latex, Parser};
 use crate::typeface::{
-    EXPLICIT_FONT_NEG_1, FN_EXPAND, FN_LC_GREEK, FN_MT_EXTRA, FN_SPACE, FN_SYMBOL, FN_TEXT,
-    FN_USER1,
+    EXPLICIT_FONT_NEG_1, FN_EXPAND, FN_FUNCTION, FN_LC_GREEK, FN_MT_EXTRA, FN_SPACE, FN_SYMBOL,
+    FN_TEXT, FN_TEXT_FE, FN_USER1,
 };
 
 use std::fs;
@@ -239,6 +239,7 @@ fn layout_environments_parse_and_render_natively() {
 fn assert_matrix_kind(expr: &Expr, expected: MatrixKind) {
     match expr {
         Expr::Sequence(items) if items.len() == 1 => assert_matrix_kind(&items[0], expected),
+        Expr::Style { content, .. } => assert_matrix_kind(content, expected),
         Expr::Matrix { kind, .. } => assert_eq!(*kind, expected),
         other => panic!("expected matrix expression, found {other:?}"),
     }
@@ -412,7 +413,7 @@ fn horizontal_brackets_stay_raw_fallback() {
     assert!(
         bytes
             .windows("\\underbracket".len() * 5)
-            .any(|window| window.contains(&0x80)),
+            .any(|window: &[u8]| window.contains(&0x80)),
         "underbracket should write raw TeX CHAR records"
     );
 }
@@ -429,10 +430,31 @@ fn known_raw_xarrow_variants_stay_raw_fallback() {
     );
 }
 
+/// Keep standalone aliases on the raw path when MathType TeX Input stores the whole command as text.
+#[test]
+fn known_raw_simple_aliases_stay_raw_fallback() {
+    for latex in [
+        "\\arcctg",
+        "\\argmax",
+        "\\approxcoloncolon",
+        "\\cosec",
+        "\\dashleftarrow",
+        "\\coloneqq",
+        "\\copyright",
+        "\\hArr",
+    ] {
+        let expr = Parser::new(latex).parse().expect("raw simple alias parses");
+        assert!(
+            expr.contains_raw_tex(),
+            "MathType stores {latex} as raw text, so it should stay raw"
+        );
+    }
+}
+
 /// Ensure Supported Functions relation aliases parse through the generated table.
 #[test]
 fn supported_relation_aliases_render_natively() {
-    let latex = "\\leqq+\\geqslant+\\lessapprox+\\gtrsim+\\curlyeqprec+\\curlyeqsucc+\\ncong+\\nless+\\nparallel+\\subsetneqq+\\succnapprox+\\trianglelefteq+\\vartriangleright+\\vDash+\\not =+\\not\\in+\\not\\subset+\\not\\Rightarrow+\\dblcolon+\\coloneqq+\\colonequals+\\eqqcolon+\\equalscolon+\\eqcolon+\\minuscolon+\\coloneq+\\colonminus+\\colonapprox+\\colonsim+\\ratio+\\coloncolonequals+\\equalscoloncolon+\\coloncolonminus+\\minuscoloncolon+\\coloncolonapprox+\\coloncolonsim+\\simcoloncolon+\\approxcoloncolon";
+    let latex = "\\leqq+\\geqslant+\\lessapprox+\\gtrsim+\\curlyeqprec+\\curlyeqsucc+\\ncong+\\nless+\\nparallel+\\subsetneqq+\\succnapprox+\\trianglelefteq+\\vartriangleright+\\vDash+\\not =+\\not\\in+\\not\\subset+\\not\\Rightarrow+\\dblcolon+\\coloneqq+\\colonequals+\\eqqcolon+\\equalscolon+\\eqcolon+\\minuscolon+\\coloneq+\\colonminus+\\colonapprox+\\colonsim+\\ratio+\\coloncolonequals+\\equalscoloncolon+\\coloncolonminus+\\minuscoloncolon+\\coloncolonapprox+\\coloncolonsim+\\simcoloncolon";
     let expr = Parser::new(latex)
         .parse()
         .expect("Supported Functions relation aliases parse");
@@ -441,8 +463,8 @@ fn supported_relation_aliases_render_natively() {
     assert!(
         bytes
             .windows(5)
-            .any(|window| window == [0x02, 0x00, FN_SYMBOL, 0x66, 0x22]),
-        "leqq should render as a symbol CHAR record"
+            .any(|window| window == [0x02, 0x00, FN_TEXT_FE, 0x66, 0x22]),
+        "leqq should render through the generated command-specific table"
     );
     assert!(
         bytes
@@ -484,7 +506,7 @@ fn supported_symbol_and_text_aliases_render_natively() {
 /// Ensure common function, font-switch, and text-color aliases stay native.
 #[test]
 fn semantic_alias_commands_render_natively() {
-    let latex = "\\bf Ab0+\\sf Ab0+\\it Ab0+\\textsf{Ab0}+\\textbf{Ab0}+\\bold{Ab0}+\\pmb{\\mu}+\\mathtt{Ab0}+\\texttt{Ab0}+\\verb!x^2!+\\textcolor{blue}{F=ma}+\\text{\\textdegree \\OE \\P \\textcircled a}+\\text{\\'{a} \\`{a} \\~{a} \\={a} \\\"{a} \\H{a} \\.{a} \\v{a} \\^{a} \\u{a} \\r{a}}+\\text{\\sout{abc}}+\\arccos x+\\argmax_x f+\\ch x+\\det A+\\gcd(a,b)+\\inf A+\\cth x+\\th x+\\sinh x+\\tanh x+\\tg x+\\liminf_n x_n+\\operatornamewithlimits{rank}_n A+x\\bmod y+x\\mod y+x\\pmod y+x\\pod y+\\thinspace+\\medspace+\\thickspace+\\negthinspace+\\negmedspace+\\negthickspace+\\space+\\nobreakspace+\\ +\\bra{\\phi}+\\ket{\\psi}+\\braket{\\phi\\|\\psi}+\\braket{\\phi\\VERT\\psi}+\\Braket{\\phi\\VERT\\psi}+\\Set{x\\VERT x<5}+\\phase{-78^\\circ}+\\def\\foo{x^2}\\foo+\\gdef\\bar#1{#1^2}\\bar{y}+\\gdef\\VERT{|}+{a \\over b}+{a \\above{2pt} b+1}+\\genfrac ( ] {2pt}{1}a{a+1}+{a \\atop b}+{n \\choose k}+{n \\brace k}+{n \\brack k}+\\sum_{\\substack{0<i<m\\\\0<j<n}}x_{ij}+\\rm Ab0+\\mathrm{Ab0}+\\mathnormal{Ab0}+\\textnormal{Ab0}+\\textup{Ab0}+\\textmd{Ab0}+\\mathit{Ab0}+\\textit{Ab0}+\\emph{Ab0}+\\bm{Ab0}+\\boldsymbol{xy}+\\lt+\\gt+\\colon+\\clubs+\\hearts+\\spades+\\degree+\\left\\lt x \\right\\gt+\\langle x\\rangle+\\lbrace y\\rbrace+\\lbrack z\\rbrack+\\lVert v\\rVert+\\intop f+\\iiint f+\\oiint f+\\oiiint f+\\overleftarrow{AB}+\\overrightarrow{AB}+\\Overrightarrow{CD}+\\underleftarrow{AB}+\\underrightarrow{AB}+\\overleftrightarrow{AB}+\\underleftrightarrow{AB}+\\overleftharpoon{ac}+\\overrightharpoon{ac}+\\xleftarrow{abc}+\\xrightarrow[under]{over}+\\overline{AB}+\\underline{CD}+\\underbar{X}+\\u{a}+\\v{a}+\\widecheck{ac}+\\cancel{5}+\\bcancel{5}+\\xcancel{ABC}+\\sout{abc}+\\stackrel{!}{=}+\\overset{!}{=}+\\underset{!}{=}+\\boxed{\\pi=\\frac c d}+\\cal AB0";
+    let latex = "\\bf Ab0+\\sf Ab0+\\it Ab0+\\textsf{Ab0}+\\textbf{Ab0}+\\bold{Ab0}+\\pmb{\\mu}+\\mathtt{Ab0}+\\texttt{Ab0}+\\verb!x^2!+\\textcolor{blue}{F=ma}+\\text{\\textdegree \\OE \\P \\textcircled a}+\\text{\\'{a} \\`{a} \\~{a} \\={a} \\\"{a} \\H{a} \\.{a} \\v{a} \\^{a} \\u{a} \\r{a}}+\\text{\\sout{abc}}+\\arccos x+\\argmax_x f+\\ch x+\\det A+\\gcd(a,b)+\\inf A+\\cth x+\\th x+\\sinh x+\\tanh x+\\tg x+\\liminf_n x_n+\\operatornamewithlimits{rank}_n A+x\\bmod y+x\\mod y+x\\pmod y+x\\pod y+\\thinspace+\\medspace+\\thickspace+\\negthinspace+\\negmedspace+\\negthickspace+\\space+\\nobreakspace+\\ +\\phase{-78^\\circ}+\\def\\foo{x^2}\\foo+\\gdef\\bar#1{#1^2}\\bar{y}+\\gdef\\VERT{|}+{a \\over b}+{a \\above{2pt} b+1}+\\genfrac ( ] {2pt}{1}a{a+1}+{a \\atop b}+{n \\choose k}+{n \\brace k}+{n \\brack k}+\\sum_{\\substack{0<i<m\\\\0<j<n}}x_{ij}+\\rm Ab0+\\mathrm{Ab0}+\\mathnormal{Ab0}+\\textnormal{Ab0}+\\textup{Ab0}+\\textmd{Ab0}+\\mathit{Ab0}+\\textit{Ab0}+\\emph{Ab0}+\\bm{Ab0}+\\boldsymbol{xy}+\\lt+\\gt+\\colon+\\clubs+\\hearts+\\spades+\\degree+\\left\\lt x \\right\\gt+\\langle x\\rangle+\\lbrace y\\rbrace+\\lbrack z\\rbrack+\\lVert v\\rVert+\\intop f+\\iiint f+\\oiint f+\\oiiint f+\\overleftarrow{AB}+\\overrightarrow{AB}+\\underleftarrow{AB}+\\underrightarrow{AB}+\\overleftrightarrow{AB}+\\underleftrightarrow{AB}+\\overleftharpoon{ac}+\\overrightharpoon{ac}+\\xleftarrow{abc}+\\xrightarrow[under]{over}+\\overline{AB}+\\underline{CD}+\\underbar{X}+\\u{a}+\\v{a}+\\widecheck{ac}+\\cancel{5}+\\bcancel{5}+\\xcancel{ABC}+\\sout{abc}+\\stackrel{!}{=}+\\overset{!}{=}+\\underset{!}{=}+\\cal AB0";
     let expr = Parser::new(latex)
         .parse()
         .expect("semantic alias commands parse");
@@ -502,6 +524,37 @@ fn semantic_alias_commands_render_natively() {
     );
 }
 
+/// Keep MathType's known hybrid wrappers parseable even when they stay raw-text-prefixed.
+#[test]
+fn semantic_alias_hybrid_wrappers_preserve_raw_prefixes() {
+    let cases = [
+        "\\bra{\\phi}",
+        "\\ket{\\psi}",
+        "\\braket{\\phi\\VERT\\psi}",
+        "\\Braket{\\phi\\VERT\\psi}",
+        "\\Overrightarrow{AB}",
+        "\\Set{x\\VERT x<5}",
+        "\\boxed{\\pi=\\frac c d}",
+        "\\sum_{\\mathclap{1\\le i\\le n}}x_i",
+        "{=}\\mathllap{/\\,}",
+        "\\mathrlap{\\,/}{=}",
+    ];
+    for latex in cases {
+        let expr = Parser::new(latex)
+            .parse()
+            .expect("hybrid MathType wrapper parses");
+        assert!(
+            expr.contains_raw_tex(),
+            "hybrid MathType wrapper should preserve raw command text: {latex}"
+        );
+        let bytes = write_mtef(latex, &expr).expect("hybrid MathType wrapper renders");
+        assert!(
+            bytes.len() > 28,
+            "hybrid MathType wrapper should include body bytes: {latex}"
+        );
+    }
+}
+
 /// Ensure MathType-native spacing aliases use the probed fnSPACE records.
 #[test]
 fn spacing_aliases_render_natively() {
@@ -515,6 +568,33 @@ fn spacing_aliases_render_natively() {
                 .windows(5)
                 .any(|window| window == [0x02, 0x00, FN_SPACE, width, 0xef]),
             "spacing alias should render fnSPACE width 0x{width:02x}"
+        );
+    }
+}
+
+/// Ensure escaped punctuation and one-character spacing aliases follow MathType semantics.
+#[test]
+fn escaped_punctuation_and_spacing_render_natively() {
+    let latex = "\\#+\\%+\\&+\\:+\\;+\\>+\\ ";
+    let expr = Parser::new(latex)
+        .parse()
+        .expect("escaped punctuation and spacing parse");
+    assert_no_raw_tex(&expr);
+    let bytes = write_mtef(latex, &expr).expect("escaped punctuation and spacing render");
+    for ch in ['#', '%', '&'] {
+        assert!(
+            bytes
+                .windows(5)
+                .any(|window| window == [0x02, 0x00, FN_FUNCTION, ch as u8, 0x00]),
+            "escaped punctuation should render as function-style CHAR {ch}"
+        );
+    }
+    for width in [0x02, 0x04, 0x08] {
+        assert!(
+            bytes
+                .windows(5)
+                .any(|window| window == [0x02, 0x00, FN_SPACE, width, 0xef]),
+            "escaped spacing should render fnSPACE width 0x{width:02x}"
         );
     }
 }
@@ -539,7 +619,7 @@ fn simple_under_tilde_renders_natively() {
 /// Ensure metadata/layout wrappers keep their visible math content native.
 #[test]
 fn content_wrapper_commands_render_natively() {
-    let latex = "\\htmlId{bar}{x}+\\htmlClass{foo}{y}+\\htmlStyle{color:red;}{z}+\\htmlData{foo=a}{w}+\\colorbox{aqua}{$F=ma$}+\\fcolorbox{red}{aqua}{$E=mc^2$}+a\\raisebox{0.25em}{$b$}c+\\textrm{Ab0}+\\tt Ab0+\\sum_{\\mathclap{1\\le i\\le n}}x_i+{=}\\mathllap{/\\,}+\\mathrlap{\\,/}{=}+\\sqrt{\\smash[b]{y}}+\\left(\\vcenter{\\frac{\\frac a b}c}\\right)";
+    let latex = "\\htmlId{bar}{x}+\\htmlClass{foo}{y}+\\htmlStyle{color:red;}{z}+\\htmlData{foo=a}{w}+\\colorbox{aqua}{$F=ma$}+\\fcolorbox{red}{aqua}{$E=mc^2$}+a\\raisebox{0.25em}{$b$}c+\\textrm{Ab0}+\\tt Ab0+\\sqrt{\\smash[b]{y}}+\\left(\\vcenter{\\frac{\\frac a b}c}\\right)";
     let expr = Parser::new(latex)
         .parse()
         .expect("content wrapper commands parse");

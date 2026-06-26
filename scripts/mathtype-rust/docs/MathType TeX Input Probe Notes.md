@@ -593,10 +593,12 @@ both after `\left`/`\right` and when those commands appear as standalone
 visible delimiters. This keeps delimiter spelling aliases centralized rather
 than scattering parser-only one-offs.
 
-Supported Functions examples for `\Set` and `\Braket` display `\VERT`, while
-their code spans use `\|`. The parser maps `\VERT` to the same double-vertical
-bar character as `\Vert`/`\|`, so those examples no longer need a raw fallback
-only because the display source and code-span source differ.
+Fresh `--pre-verb 2` probes show `\VERT` is not byte-equivalent to `\Vert` or
+`\|`: MathType preserves `\VERT` itself as raw text. The same probes show
+`\bra`, `\ket`, `\braket`, `\Braket`, `\Set`, and `\boxed` keep the command
+word as raw text while still parsing their braced content into native visible
+MTEF records. Keep these wrappers on the known raw fallback path rather than
+normalizing them to delimiter or box templates too early.
 
 ## Horizontal Fence Templates
 

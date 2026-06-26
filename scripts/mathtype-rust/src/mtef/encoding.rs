@@ -64,6 +64,22 @@ fn encoded_char(table: &[EncodedChar], ch: char) -> Option<EncodedChar> {
 /// Return special CHAR entries derived from documented MathType typeface slots.
 fn derived_special_char(ch: char) -> Option<StyledChar> {
     match ch {
+        '#' | '%' | '_' => Some(StyledChar {
+            ch,
+            typeface: crate::typeface::FN_FUNCTION,
+            mtcode: ch as u16,
+            font_pos: None,
+            explicit_font: None,
+        }),
+        // Direct x~y probes hang in MathType TeX Input, but stable (~)/[~] probes show that the
+        // visible tilde glyph is stored as fnFUNCTION + 0x00a0 rather than ASCII '~'.
+        '~' => Some(StyledChar {
+            ch,
+            typeface: crate::typeface::FN_FUNCTION,
+            mtcode: 0x00a0,
+            font_pos: None,
+            explicit_font: None,
+        }),
         // MathType helper currently times out for \omicron. The lowercase
         // Greek typeface follows Symbol font positions, where omicron is `o`.
         '\u{03bf}' => Some(StyledChar {

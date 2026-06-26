@@ -95,7 +95,7 @@ impl Config {
         let mut output = PathBuf::from(r"src\generated\raw_text_tables.rs");
         let mut work_dir = PathBuf::from(r".pmt\raw-text-table-generation");
         // Reuse the same helper mode as audits so generated-table probes share one cache.
-        let mut pre_verb = "0".to_string();
+        let mut pre_verb = "2".to_string();
         let mut timeout_ms = 30_000u64;
         let mut reuse_existing = true;
         let mut index = 0usize;

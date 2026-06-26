@@ -14,8 +14,8 @@ cargo run --bin probe_mathtype_tex -- --latex "$\xleftrightarrow{abc}$"
 ```
 
 The helper path defaults to this repository's `MathTypeOleHelper.exe`. The
-probe defaults to `--pre-verb 2`, matching the more stable helper README
-recommendation; pass `--pre-verb 0` only when comparing against older runs.
+probe defaults to `--pre-verb 2`, matching the stable helper README
+recommendation. Rust probe tools now reject any `--pre-verb` value other than `2`.
 
 Before using a fresh COM result as command-specific evidence, run a simple
 helper baseline check:
@@ -651,15 +651,8 @@ explicitly.
 
 ## Probe Timeout Hygiene
 
-Helper calls that use `--pre-verb 0` can time out even for a known simple
-formula such as:
-
-```powershell
-cargo run --bin probe_mathtype_tex -- --latex "\alpha+x" --pre-verb 0 --timeout-ms 5000
-```
-
-Use `--pre-verb 2` for fresh MathType TeX Input probes and table generation.
-The Rust probe and generator default to `2` so completed helper output can be
-used as command-specific evidence. A timeout is still not evidence of
+Use `--pre-verb 2` for all fresh MathType TeX Input probes and table generation.
+The Rust probe and generator now reject any other `--pre-verb` value, so completed
+helper output stays on the validated path and can be used as command-specific evidence. A timeout is still not evidence of
 unsupported TeX; classify unsupported behavior only from completed helper
 output or saved reference OLE files.

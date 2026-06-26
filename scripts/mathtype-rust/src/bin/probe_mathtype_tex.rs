@@ -129,8 +129,8 @@ impl Options {
             r"..\..\src\pandoc_manuscript\mathtype\ole_helper\bin\Release\net48\MathTypeOleHelper.exe",
         );
         let mut work_dir = PathBuf::from(r".pmt\probe-mathtype-tex");
-        // Keep probe cache keys aligned with the no-pre-open helper path used in audits.
-        let mut pre_verb = "0".to_string();
+        // Keep probe cache keys aligned with the user-required MathType helper mode.
+        let mut pre_verb = "2".to_string();
         let mut latex = None;
         let mut input = None;
         let mut ole = None;

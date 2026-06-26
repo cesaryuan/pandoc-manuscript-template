@@ -1586,13 +1586,12 @@ internal static class Program
                         method = args[++i];
                         break;
                     case "--pre-verb":
-                        // Keep the old flag-only behavior as the default, but
-                        // also accept an explicit verb number for batch tools
-                        // and docs that already spell out "--pre-verb 2".
+                        // MathType probing in this repo is only validated with
+                        // DoVerb(2); reject other values so callers fail fast.
                         preVerb = 2;
                         if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
                         {
-                            preVerb = int.Parse(args[++i], CultureInfo.InvariantCulture);
+                            preVerb = RequirePreVerbTwo(int.Parse(args[++i], CultureInfo.InvariantCulture));
                         }
                         break;
                     case "--prefs-file":
@@ -1659,7 +1658,20 @@ internal static class Program
 
         private static string GetUsage()
         {
-            return "Usage: MathTypeOleHelper --format <clipboard format> (--input <file-or-tex-or-mtef> --output <ole.bin> | --batch-manifest <jobs.json>) [--encoding utf8|utf16le] [--binary] [--no-verb] [--method set-data|sdk-xform-ole] [--pre-verb N] [--prefs-file <eqp>] [--preview-output <wmf>] [--metadata-output <json>]";
+            return "Usage: MathTypeOleHelper --format <clipboard format> (--input <file-or-tex-or-mtef> --output <ole.bin> | --batch-manifest <jobs.json>) [--encoding utf8|utf16le] [--binary] [--no-verb] [--method set-data|sdk-xform-ole] [--pre-verb 2] [--prefs-file <eqp>] [--preview-output <wmf>] [--metadata-output <json>]";
+        }
+
+        /// <summary>
+        /// This helper only supports the pre-open verb sequence validated with MathType DoVerb(2).
+        /// </summary>
+        private static int RequirePreVerbTwo(int preVerb)
+        {
+            if (preVerb != 2)
+            {
+                throw new ArgumentException("--pre-verb only supports value 2.");
+            }
+
+            return 2;
         }
     }
 

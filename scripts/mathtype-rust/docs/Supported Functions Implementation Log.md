@@ -77,8 +77,8 @@ raw text 行为，`raw_fallback` 非零是可以接受的。
 
 ## Probe 流程
 
-新的 MathType 探针应使用 `--pre-verb 2`。`--pre-verb 0` 可能会在普通输入上超时，
-只适合用来和旧运行结果做对比。
+新的 MathType 探针应固定使用 `--pre-verb 2`。Rust 侧现在直接拒绝任何非 `2`
+的 `--pre-verb` 输入，避免旧路径再次混入新的 probe / table generation / audit。
 
 ```powershell
 cargo run --bin probe_mathtype_tex -- --check-helper --pre-verb 2 --timeout-ms 60000

@@ -158,8 +158,8 @@ impl Config {
             r"..\..\src\pandoc_manuscript\mathtype\ole_helper\bin\Release\net48\MathTypeOleHelper.exe",
         );
         let mut mathtype_work_dir = PathBuf::from(r".pmt\audit-supported-functions-mathtype");
-        // Keep the default aligned with the helper workflow that avoids the extra pre-open step.
-        let mut mathtype_pre_verb = "0".to_string();
+        // Keep the default aligned with the user-required MathType helper mode.
+        let mut mathtype_pre_verb = "2".to_string();
         let mut mathtype_timeout_ms = 30_000u64;
         let mut index = 0;
         while index < args.len() {

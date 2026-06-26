@@ -7,6 +7,8 @@ using System.Linq;
 using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
 using System.Text;
 using MTSDKDN;
 
@@ -62,7 +64,7 @@ internal static class Program
             OleCheck(OleInitialize(IntPtr.Zero), "OleInitialize");
             try
             {
-                CreateOleBin(options);
+                CreateOleBins(options, existingMathTypeProcessIds);
             }
             finally
             {
@@ -248,6 +250,71 @@ internal static class Program
         }
     }
 
+    /// <summary>
+    /// Convert either one request or a manifest batch while reusing the same helper process.
+    /// </summary>
+    private static void CreateOleBins(Options options, HashSet<int> existingMathTypeProcessIds)
+    {
+        if (options.BatchManifestPath is null)
+        {
+            CreateOleBin(options);
+            return;
+        }
+
+        foreach (var job in LoadBatchJobs(options))
+        {
+            CreateOleBin(job);
+            // Batch mode keeps one helper process alive on purpose, but
+            // MathType's OLE server windows can accumulate across jobs if we
+            // wait until process exit to clean them up.
+            CloseMathTypeProcessesOpenedByHelper(existingMathTypeProcessIds);
+        }
+    }
+
+    /// <summary>
+    /// Expand a batch manifest into per-formula options while inheriting shared CLI settings.
+    /// </summary>
+    private static IReadOnlyList<Options> LoadBatchJobs(Options options)
+    {
+        if (options.BatchManifestPath is null)
+        {
+            throw new InvalidOperationException("batch jobs require a manifest path");
+        }
+
+        using var stream = File.OpenRead(options.BatchManifestPath);
+        var serializer = new DataContractJsonSerializer(typeof(BatchJob[]));
+        var jobs = serializer.ReadObject(stream) as BatchJob[];
+        if (jobs is null || jobs.Length == 0)
+        {
+            throw new ArgumentException($"Batch manifest is empty: {options.BatchManifestPath}");
+        }
+
+        var expanded = new List<Options>(jobs.Length);
+        for (var index = 0; index < jobs.Length; index++)
+        {
+            var job = jobs[index];
+            if (string.IsNullOrWhiteSpace(job.Input))
+            {
+                throw new ArgumentException($"Batch manifest entry {index} is missing input.");
+            }
+
+            if (string.IsNullOrWhiteSpace(job.Output))
+            {
+                throw new ArgumentException($"Batch manifest entry {index} is missing output.");
+            }
+
+            expanded.Add(options.WithJob(
+                job.Input!,
+                job.Output!,
+                job.PreviewOutput,
+                job.MetadataOutput));
+        }
+        return expanded;
+    }
+
+    /// <summary>
+    /// Convert one formula request into OLE/preview outputs.
+    /// </summary>
     private static void CreateOleBin(Options options)
     {
         if (!options.Method.Equals("set-data", StringComparison.OrdinalIgnoreCase)
@@ -278,15 +345,16 @@ internal static class Program
         }
 
         Log("create storage");
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(options.OutputPath))!);
-        if (File.Exists(options.OutputPath))
+        var outputPath = options.GetRequiredOutputPath();
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
+        if (File.Exists(outputPath))
         {
-            File.Delete(options.OutputPath);
+            File.Delete(outputPath);
         }
 
         OleCheck(
             StgCreateDocfile(
-                options.OutputPath,
+                outputPath,
                 STGM_CREATE | STGM_READWRITE | STGM_SHARE_EXCLUSIVE,
                 0,
                 out var storage),
@@ -367,7 +435,7 @@ internal static class Program
             Marshal.ReleaseComObject(storage);
         }
 
-        Log($"wrote {options.OutputPath}, bytes={new FileInfo(options.OutputPath).Length}");
+        Log($"wrote {outputPath}, bytes={new FileInfo(outputPath).Length}");
     }
 
     /// <summary>
@@ -375,16 +443,18 @@ internal static class Program
     /// </summary>
     private static void CreateOleBinFromSdkMtef(Options options)
     {
-        var mtef = File.ReadAllBytes(options.InputPath);
+        var inputPath = options.GetRequiredInputPath();
+        var outputPath = options.GetRequiredOutputPath();
+        var mtef = File.ReadAllBytes(inputPath);
         if (mtef.Length == 0)
         {
-            throw new InvalidOperationException($"MTEF input is empty: {options.InputPath}");
+            throw new InvalidOperationException($"MTEF input is empty: {inputPath}");
         }
 
         var oleBytes = Convert.FromBase64String(MathTypeSDK.getOLEBase64(mtef));
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(options.OutputPath))!);
-        File.WriteAllBytes(options.OutputPath, oleBytes);
-        Log($"SDK MTEF wrote {options.OutputPath}, mtef={mtef.Length} bytes, ole={oleBytes.Length} bytes");
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
+        File.WriteAllBytes(outputPath, oleBytes);
+        Log($"SDK MTEF wrote {outputPath}, mtef={mtef.Length} bytes, ole={oleBytes.Length} bytes");
 
         if (options.PreviewOutputPath is null)
         {
@@ -717,8 +787,9 @@ internal static class Program
             throw new InvalidOperationException($"RegisterClipboardFormat failed for {options.Format}");
         }
 
+        var inputPath = options.GetRequiredInputPath();
         var bytes = options.BinaryInput
-            ? File.ReadAllBytes(options.InputPath)
+            ? File.ReadAllBytes(inputPath)
             : EncodeText(ReadTextInput(options), options.EncodingName);
         return new Payload(formatId, bytes);
     }
@@ -728,18 +799,19 @@ internal static class Program
     /// </summary>
     private static string ReadTextInput(Options options)
     {
-        if (File.Exists(options.InputPath))
+        var inputPath = options.GetRequiredInputPath();
+        if (File.Exists(inputPath))
         {
-            return File.ReadAllText(options.InputPath, Encoding.UTF8);
+            return File.ReadAllText(inputPath, Encoding.UTF8);
         }
 
         if (IsTeXInputFormat(options.Format))
         {
             Log("using literal TeX input");
-            return options.InputPath;
+            return inputPath;
         }
 
-        throw new FileNotFoundException($"Input file was not found: {options.InputPath}", options.InputPath);
+        throw new FileNotFoundException($"Input file was not found: {inputPath}", inputPath);
     }
 
     /// <summary>
@@ -1407,13 +1479,14 @@ internal static class Program
     {
         public Options(
             string format,
-            string inputPath,
-            string outputPath,
+            string? inputPath,
+            string? outputPath,
             string encodingName,
             bool binaryInput,
             bool doVerb,
             string method,
             int? preVerb,
+            string? batchManifestPath,
             string? prefsFilePath,
             string? previewOutputPath,
             string? metadataOutputPath)
@@ -1426,28 +1499,55 @@ internal static class Program
             DoVerb = doVerb;
             Method = method;
             PreVerb = preVerb;
+            BatchManifestPath = batchManifestPath;
             PrefsFilePath = prefsFilePath;
             PreviewOutputPath = previewOutputPath;
             MetadataOutputPath = metadataOutputPath;
         }
 
         public string Format { get; }
-        public string InputPath { get; }
-        public string OutputPath { get; }
+        public string? InputPath { get; }
+        public string? OutputPath { get; }
         public string EncodingName { get; }
         public bool BinaryInput { get; }
         public bool DoVerb { get; }
         public string Method { get; }
         public int? PreVerb { get; }
+        public string? BatchManifestPath { get; }
         public string? PrefsFilePath { get; }
         public string? PreviewOutputPath { get; }
         public string? MetadataOutputPath { get; }
+
+        /// <summary>
+        /// Reuse shared CLI settings for one manifest entry so a batch still follows the same conversion path.
+        /// </summary>
+        public Options WithJob(
+            string inputPath,
+            string outputPath,
+            string? previewOutputPath,
+            string? metadataOutputPath)
+        {
+            return new Options(
+                Format,
+                inputPath,
+                outputPath,
+                EncodingName,
+                BinaryInput,
+                DoVerb,
+                Method,
+                PreVerb,
+                null,
+                PrefsFilePath,
+                previewOutputPath,
+                metadataOutputPath);
+        }
 
         public static Options Parse(string[] args)
         {
             string? format = null;
             string? input = null;
             string? output = null;
+            string? batchManifest = null;
             var encoding = "utf8";
             var binary = false;
             var doVerb = true;
@@ -1470,6 +1570,9 @@ internal static class Program
                     case "--output":
                         output = args[++i];
                         break;
+                    case "--batch-manifest":
+                        batchManifest = args[++i];
+                        break;
                     case "--encoding":
                         encoding = args[++i];
                         break;
@@ -1483,7 +1586,14 @@ internal static class Program
                         method = args[++i];
                         break;
                     case "--pre-verb":
+                        // Keep the old flag-only behavior as the default, but
+                        // also accept an explicit verb number for batch tools
+                        // and docs that already spell out "--pre-verb 2".
                         preVerb = 2;
+                        if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                        {
+                            preVerb = int.Parse(args[++i], CultureInfo.InvariantCulture);
+                        }
                         break;
                     case "--prefs-file":
                         prefsFilePath = args[++i];
@@ -1499,24 +1609,77 @@ internal static class Program
                 }
             }
 
-            if (format is null || input is null || output is null)
+            if (format is null)
             {
-                throw new ArgumentException("Usage: MathTypeOleHelper --format <clipboard format> --input <file-or-tex-or-mtef> --output <ole.bin> [--encoding utf8|utf16le] [--binary] [--no-verb] [--method set-data|sdk-xform-ole] [--pre-verb N] [--prefs-file <eqp>] [--preview-output <wmf>] [--metadata-output <json>]");
+                throw new ArgumentException(GetUsage());
+            }
+
+            if (batchManifest is not null)
+            {
+                if (input is not null || output is not null || previewOutput is not null || metadataOutput is not null)
+                {
+                    throw new ArgumentException("--batch-manifest cannot be combined with --input, --output, --preview-output, or --metadata-output.");
+                }
+            }
+            else if (input is null || output is null)
+            {
+                throw new ArgumentException(GetUsage());
             }
 
             return new Options(
                 format ?? "",
-                input ?? "",
-                output ?? "",
+                input,
+                output,
                 encoding,
                 binary,
                 doVerb,
                 method,
                 preVerb,
+                batchManifest,
                 prefsFilePath,
                 previewOutput,
                 metadataOutput);
         }
+
+        /// <summary>
+        /// Batch parsing leaves input unset on the root options object, so conversion paths must ask for it explicitly.
+        /// </summary>
+        public string GetRequiredInputPath()
+        {
+            return InputPath ?? throw new InvalidOperationException("input path is required for conversion");
+        }
+
+        /// <summary>
+        /// Batch parsing leaves output unset on the root options object, so conversion paths must ask for it explicitly.
+        /// </summary>
+        public string GetRequiredOutputPath()
+        {
+            return OutputPath ?? throw new InvalidOperationException("output path is required for conversion");
+        }
+
+        private static string GetUsage()
+        {
+            return "Usage: MathTypeOleHelper --format <clipboard format> (--input <file-or-tex-or-mtef> --output <ole.bin> | --batch-manifest <jobs.json>) [--encoding utf8|utf16le] [--binary] [--no-verb] [--method set-data|sdk-xform-ole] [--pre-verb N] [--prefs-file <eqp>] [--preview-output <wmf>] [--metadata-output <json>]";
+        }
+    }
+
+    [DataContract]
+    private sealed class BatchJob
+    {
+        /// <summary>
+        /// One manifest entry describes one formula conversion request inside a shared helper process.
+        /// </summary>
+        [DataMember(Name = "input")]
+        public string? Input { get; set; }
+
+        [DataMember(Name = "output")]
+        public string? Output { get; set; }
+
+        [DataMember(Name = "previewOutput")]
+        public string? PreviewOutput { get; set; }
+
+        [DataMember(Name = "metadataOutput")]
+        public string? MetadataOutput { get; set; }
     }
 
     private sealed class Payload

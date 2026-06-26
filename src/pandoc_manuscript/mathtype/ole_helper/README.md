@@ -31,7 +31,7 @@ $helper = "src\pandoc_manuscript\mathtype\ole_helper\bin\Release\net48\MathTypeO
 ## Usage
 
 ```text
-MathTypeOleHelper --format <clipboard format> --input <file-or-tex-or-mtef> --output <ole.bin> [--encoding utf8|utf16le] [--binary] [--no-verb] [--method set-data|sdk-xform-ole] [--pre-verb N] [--prefs-file <eqp>] [--preview-output <wmf>] [--metadata-output <json>]
+MathTypeOleHelper --format <clipboard format> (--input <file-or-tex-or-mtef> --output <ole.bin> | --batch-manifest <jobs.json>) [--encoding utf8|utf16le] [--binary] [--no-verb] [--method set-data|sdk-xform-ole] [--pre-verb N] [--prefs-file <eqp>] [--preview-output <wmf>] [--metadata-output <json>]
 ```
 
 参数说明：
@@ -40,6 +40,7 @@ MathTypeOleHelper --format <clipboard format> --input <file-or-tex-or-mtef> --ou
 - `--format <name>`: Windows clipboard format 名称。`set-data` 常用 `"TeX Input Language"`；`sdk-xform-ole --binary` 建议写 `"MathType EF"`。
 - `--input <value>`: 输入。可以是文件路径，也可以是 literal TeX 文本；`--binary` 时必须是文件路径。
 - `--output <ole.bin>`: 输出 MathType OLE `.bin`。
+- `--batch-manifest <jobs.json>`: 批量模式入口。JSON 中为每条公式单独提供 `input`、`output`，并可选 `previewOutput`、`metadataOutput`。
 - `--encoding <name>`: 文本输入编码，可选 `utf8` 或 `utf16le`。默认 `utf8`。
 - `--binary`: 按二进制文件读取 `--input`。`sdk-xform-ole` 必须使用这个参数。
 - `--no-verb`: 跳过最终的 `DoVerb(2)`。
@@ -47,6 +48,49 @@ MathTypeOleHelper --format <clipboard format> --input <file-or-tex-or-mtef> --ou
 - `--prefs-file <eqp>`: 应用 MathType `.eqp` 偏好文件。`set-data` 会应用到新建公式；`sdk-xform-ole` 会应用到 WMF 预览 transform。
 - `--preview-output <wmf>`: 额外输出 WMF 预览。
 - `--metadata-output <json>`: 额外输出 WMF 尺寸和 MathType baseline metadata。只有同时写出预览时才会写 metadata。
+
+## Batch Mode
+
+`--batch-manifest` 用来一次性处理多条公式，避免每条公式都单独启动一个 helper 进程。
+批量模式下，`--format`、`--method`、`--encoding`、`--binary`、`--no-verb`、`--pre-verb`
+和 `--prefs-file` 这些共享参数仍然从命令行传入；每条任务自己的输入输出路径写在
+manifest 里。
+
+manifest 示例：
+
+```json
+[
+  {
+    "input": "scripts/mathtype-rust/samples/generated/eq_029.tex",
+    "output": ".pmt/eq_029.ole.bin",
+    "previewOutput": ".pmt/eq_029.wmf",
+    "metadataOutput": ".pmt/eq_029.json"
+  },
+  {
+    "input": "scripts/mathtype-rust/samples/generated/eq_030.tex",
+    "output": ".pmt/eq_030.ole.bin"
+  }
+]
+```
+
+调用示例：
+
+```powershell
+& $helper `
+  --method set-data `
+  --pre-verb 2 `
+  --format "TeX Input Language" `
+  --batch-manifest .pmt\mathtype-batch.json `
+  --encoding utf16le `
+  --no-verb
+```
+
+注意：
+
+- 批量模式下不要再同时传 `--input`、`--output`、`--preview-output`、`--metadata-output`。
+- manifest 每条任务都必须有 `input` 和 `output`。
+- `previewOutput` / `metadataOutput` 是逐条任务可选的，不是全局参数。
+- helper 会在每条批量任务结束后主动回收本次拉起的 MathType 窗口，避免窗口越积越多。
 
 ## set-data
 

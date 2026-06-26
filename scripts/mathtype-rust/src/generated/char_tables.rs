@@ -66,6 +66,12 @@ pub(crate) struct TexCommandText {
     pub(crate) text: &'static str,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct RawLiteralBytes {
+    pub(crate) ch: char,
+    pub(crate) bytes: &'static [u8],
+}
+
 pub(crate) const MATHCAL_CHARS: &[EncodedChar] = &[
     EncodedChar { ch: 'A', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0xf100, font_pos: Some(0x41) },
     EncodedChar { ch: 'B', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x212c, font_pos: Some(0x42) },
@@ -177,6 +183,16 @@ pub(crate) const MATHFRAK_CHARS: &[EncodedChar] = &[
     EncodedChar { ch: 'x', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0xf031, font_pos: Some(0x78) },
     EncodedChar { ch: 'y', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0xf032, font_pos: Some(0x79) },
     EncodedChar { ch: 'z', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0xf033, font_pos: Some(0x7a) },
+    EncodedChar { ch: '0', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x0030, font_pos: Some(0x30) },
+    EncodedChar { ch: '1', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x0031, font_pos: Some(0x31) },
+    EncodedChar { ch: '2', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x0032, font_pos: Some(0x32) },
+    EncodedChar { ch: '3', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x0033, font_pos: Some(0x33) },
+    EncodedChar { ch: '4', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x0034, font_pos: Some(0x34) },
+    EncodedChar { ch: '5', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x0035, font_pos: Some(0x35) },
+    EncodedChar { ch: '6', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x0036, font_pos: Some(0x36) },
+    EncodedChar { ch: '7', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x0037, font_pos: Some(0x37) },
+    EncodedChar { ch: '8', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x0038, font_pos: Some(0x38) },
+    EncodedChar { ch: '9', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x0039, font_pos: Some(0x39) },
 ];
 
 pub(crate) const SPECIAL_CHARS: &[StyledChar] = &[
@@ -441,6 +457,18 @@ pub(crate) const COMMAND_SPECIFIC_CHARS: &[CommandStyledChar] = &[
     CommandStyledChar { command: "curlyeqprec", ch: '\u{22de}', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x22de, font_pos: Some(0xb2), explicit_font: Some(ExplicitFont::EuclidMathTwo) },
     CommandStyledChar { command: "curlyeqsucc", ch: '\u{22df}', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x22df, font_pos: Some(0xb3), explicit_font: Some(ExplicitFont::EuclidMathTwo) },
     CommandStyledChar { command: "daleth", ch: '\u{2138}', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x2138, font_pos: Some(0xfd), explicit_font: Some(ExplicitFont::EuclidMathOne) },
+    CommandStyledChar { command: "int", ch: '\u{222b}', typeface: FN_SYMBOL, mtcode: 0x222b, font_pos: Some(0xf2), explicit_font: None },
+    CommandStyledChar { command: "oint", ch: '\u{222e}', typeface: FN_TEXT_FE, mtcode: 0x222e, font_pos: None, explicit_font: None },
+    CommandStyledChar { command: "iint", ch: '\u{222c}', typeface: FN_TEXT_FE, mtcode: 0x222c, font_pos: None, explicit_font: None },
+    CommandStyledChar { command: "iiint", ch: '\u{222d}', typeface: FN_MT_EXTRA, mtcode: 0xfffd, font_pos: Some(0x6e), explicit_font: None },
+    CommandStyledChar { command: "langle", ch: '\u{3008}', typeface: FN_SYMBOL, mtcode: 0x2329, font_pos: Some(0xe1), explicit_font: None },
+    CommandStyledChar { command: "lang", ch: '\u{3008}', typeface: FN_SYMBOL, mtcode: 0x2329, font_pos: Some(0xe1), explicit_font: None },
+    CommandStyledChar { command: "rangle", ch: '\u{3009}', typeface: FN_SYMBOL, mtcode: 0x232a, font_pos: Some(0xf1), explicit_font: None },
+    CommandStyledChar { command: "rang", ch: '\u{3009}', typeface: FN_SYMBOL, mtcode: 0x232a, font_pos: Some(0xf1), explicit_font: None },
+    CommandStyledChar { command: "lceil", ch: '\u{2308}', typeface: FN_MT_EXTRA, mtcode: 0xfffd, font_pos: Some(0x6e), explicit_font: None },
+    CommandStyledChar { command: "rceil", ch: '\u{2309}', typeface: FN_MT_EXTRA, mtcode: 0xfffd, font_pos: Some(0x6e), explicit_font: None },
+    CommandStyledChar { command: "lfloor", ch: '\u{230a}', typeface: FN_MT_EXTRA, mtcode: 0xfffd, font_pos: Some(0x6e), explicit_font: None },
+    CommandStyledChar { command: "rfloor", ch: '\u{230b}', typeface: FN_MT_EXTRA, mtcode: 0xfffd, font_pos: Some(0x6e), explicit_font: None },
     CommandStyledChar { command: "diagdown", ch: '\u{2572}', typeface: FN_TEXT_FE, mtcode: 0x2572, font_pos: None, explicit_font: None },
     CommandStyledChar { command: "diagup", ch: '\u{2571}', typeface: FN_TEXT_FE, mtcode: 0x2571, font_pos: None, explicit_font: None },
     CommandStyledChar { command: "diamonds", ch: '\u{2662}', typeface: FN_MT_EXTRA, mtcode: 0xfffd, font_pos: Some(0x6e), explicit_font: None },
@@ -1136,6 +1164,10 @@ pub(crate) const TEX_COMMAND_TEXTS: &[TexCommandText] = &[
     TexCommandText { command: "yen", text: "\u{00a5}" },
 ];
 
+pub(crate) const RAW_LITERAL_BYTES: &[RawLiteralBytes] = &[
+    RawLiteralBytes { ch: '\u{2295}', bytes: &[0xa8, 0x6e] },
+];
+
 pub(crate) const BIG_SYMBOL_COMMAND_CHARS: &[TexCommandChar] = &[
     TexCommandChar { command: "bigoplus", ch: '\u{2295}' },
     TexCommandChar { command: "bigotimes", ch: '\u{2297}' },
@@ -1179,6 +1211,7 @@ pub(crate) const OPERATOR_CHARS: &[EncodedChar] = &[
     EncodedChar { ch: '=', typeface: FN_SYMBOL, mtcode: 0x003d, font_pos: Some(0x3d) },
     EncodedChar { ch: '<', typeface: FN_SYMBOL, mtcode: 0x003c, font_pos: Some(0x3c) },
     EncodedChar { ch: '>', typeface: FN_SYMBOL, mtcode: 0x003e, font_pos: Some(0x3e) },
+    EncodedChar { ch: '~', typeface: FN_FUNCTION, mtcode: 0x00a0, font_pos: None },
     EncodedChar { ch: '*', typeface: FN_FUNCTION, mtcode: 0x002a, font_pos: None },
 ];
 

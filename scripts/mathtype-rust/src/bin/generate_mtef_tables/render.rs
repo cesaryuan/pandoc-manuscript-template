@@ -79,6 +79,12 @@ pub(super) fn render_tables(
          pub(crate) struct TexCommandText {\n\
          \x20   pub(crate) command: &'static str,\n\
          \x20   pub(crate) text: &'static str,\n\
+         }\n\
+         \n\
+         #[derive(Clone, Copy, Debug, Eq, PartialEq)]\n\
+         pub(crate) struct RawLiteralBytes {\n\
+         \x20   pub(crate) ch: char,\n\
+         \x20   pub(crate) bytes: &'static [u8],\n\
          }\n\n",
     );
 

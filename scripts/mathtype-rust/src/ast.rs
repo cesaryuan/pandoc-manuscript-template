@@ -198,9 +198,9 @@ pub(crate) enum StyleKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FontKind {
     Bold,
+    RomanText,
     MathCal,
     MathSf,
-    MathTt,
     MathBb,
     MathScr,
     MathFrak,
@@ -276,8 +276,6 @@ pub(crate) enum IntegralKind {
     Double,
     Triple,
     Contour,
-    ContourDouble,
-    ContourTriple,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

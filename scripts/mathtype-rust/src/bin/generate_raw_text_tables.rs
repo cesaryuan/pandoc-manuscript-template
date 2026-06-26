@@ -106,7 +106,7 @@ impl Config {
                     helper = PathBuf::from(
                         args.get(index)
                             .ok_or_else(|| "--helper requires a path".to_string())?,
-                    );
+                    )?;
                 }
                 "--output" => {
                     index += 1;
@@ -131,10 +131,10 @@ impl Config {
                 }
                 "--pre-verb" => {
                     index += 1;
-                    pre_verb = args
-                        .get(index)
-                        .ok_or_else(|| "--pre-verb requires an OLE verb number".to_string())?
-                        .clone();
+                    pre_verb = require_pre_verb_two_arg(
+                        args.get(index)
+                            .ok_or_else(|| "--pre-verb requires an OLE verb number".to_string())?,
+                    )?;
                 }
                 "--timeout-ms" => {
                     index += 1;
@@ -166,7 +166,7 @@ impl Config {
 
 /// Return usage for invalid generator invocations.
 fn usage() -> &'static str {
-    "Usage: generate_raw_text_tables [--helper <exe>] [--cache-dir <dir>] [--output <raw_text_tables.rs>] [--work-dir <dir>] [--pre-verb <N>] [--timeout-ms <N>] [--no-reuse]"
+    "Usage: generate_raw_text_tables [--helper <exe>] [--cache-dir <dir>] [--output <raw_text_tables.rs>] [--work-dir <dir>] [--pre-verb 2] [--timeout-ms <N>] [--no-reuse]"
 }
 
 enum OverrideSpec {
@@ -318,7 +318,8 @@ fn mathtype_cache_path(payload: &str, config: &Config) -> PathBuf {
 fn cache_key(payload: &str, config: &Config) -> String {
     let material = format!(
         "v1\0payload={payload}\0pre_verb={}\0helper={}",
-        config.pre_verb, config.helper_fingerprint
+        config.pre_verb.as_str(),
+        config.helper_fingerprint
     );
     fnv1a64_hex(material.as_bytes())
 }
@@ -521,9 +522,7 @@ fn run_mathtype_helper(
     let _ = fs::remove_file(ole_path);
     let mut command = Command::new(helper);
     command.args(["--method", "set-data"]);
-    if pre_verb != "0" {
-        command.args(["--pre-verb", pre_verb]);
-    }
+    command.args(["--pre-verb", pre_verb]);
     let mut child = command
         .args(["--format", "TeX Input Language", "--input"])
         .arg(tex_path)
@@ -541,6 +540,15 @@ fn run_mathtype_helper(
         ));
     }
     Ok(())
+}
+
+/// Reject unsupported helper verbs so generated-table cache keys stay tied to the validated MathType path.
+fn require_pre_verb_two_arg(pre_verb: &str) -> Result<String, String> {
+    if pre_verb == "2" {
+        Ok("2".to_string())
+    } else {
+        Err("--pre-verb only supports value 2.".to_string())
+    }
 }
 
 /// Wait for the helper without allowing one probe to hang forever.

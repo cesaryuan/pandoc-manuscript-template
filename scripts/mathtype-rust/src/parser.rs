@@ -45,6 +45,18 @@ pub(crate) struct Parser {
 struct MacroDefinition {
     params: usize,
     replacement: String,
+    render_mode: MacroRenderMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LimitModifier {
+    Limits,
+    NoLimits,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MacroRenderMode {
+    RawOnly,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -145,7 +157,9 @@ impl Parser {
                 return Ok(with_leading_raw_space(expanded, had_leading_ws));
             }
         }
-        if should_force_raw_simple_command(&command) && self.raw_simple_command_is_standalone() {
+        // MathType keeps some zero-argument aliases as raw source text even when scripts or
+        // neighboring atoms follow, so preserve the command token before normal parsing.
+        if should_force_raw_simple_command(&command) {
             return Ok(with_leading_raw_space(
                 Expr::RawTex(format!("\\{command}")),
                 had_leading_ws,
@@ -222,12 +236,7 @@ impl Parser {
             "oint" => Ok(Expr::Integral {
                 kind: IntegralKind::Contour,
             }),
-            "oiint" => Ok(Expr::Integral {
-                kind: IntegralKind::ContourDouble,
-            }),
-            "oiiint" => Ok(Expr::Integral {
-                kind: IntegralKind::ContourTriple,
-            }),
+            "oiint" | "oiiint" => Ok(Expr::RawTex(format!("\\{command}"))),
             "binom" | "dbinom" | "tbinom" => {
                 let upper = self.parse_required_group("binomial upper")?;
                 let lower = self.parse_required_group("binomial lower")?;
@@ -266,11 +275,20 @@ impl Parser {
                 self.parse_html_wrapper_content(command.as_str())
             }
             "textcolor" => {
-                let name = self.parse_raw_group("text color name")?;
-                Ok(Expr::Color {
-                    name,
-                    content: Box::new(self.parse_required_group("textcolor content")?),
-                })
+                let color_name = self.parse_raw_group("text color name")?;
+                let content = self.parse_visible_wrapper_group("textcolor content")?;
+                let mut args = Vec::with_capacity(2);
+                let raw_prefix = if let Some(rest) = color_name.strip_prefix('#') {
+                    if !rest.is_empty() {
+                        args.push(self.parse_visible_wrapper_text(rest)?);
+                    }
+                    "\\textcolor#".to_string()
+                } else {
+                    args.push(self.parse_visible_wrapper_text(&color_name)?);
+                    "\\textcolor".to_string()
+                };
+                args.push(content);
+                Ok(raw_prefix_sequence_with_raw(raw_prefix, args))
             }
             "colorbox" => self.parse_color_box_content(false),
             "fcolorbox" => self.parse_color_box_content(true),
@@ -281,10 +299,23 @@ impl Parser {
                     content: Box::new(self.parse_switch_content("colored content")?),
                 })
             }
-            "operatorname" | "operatornamewithlimits" => {
-                self.consume_optional_star();
-                Ok(Expr::FunctionName(self.parse_raw_group("operator name")?))
+            "operatorname" => {
+                let starred = self.consume_optional_star();
+                if starred {
+                    let name = self.parse_visible_wrapper_group("operator name")?;
+                    Ok(Expr::Sequence(vec![
+                        Expr::FunctionName("*".to_string()),
+                        name,
+                    ]))
+                } else {
+                    let raw = self.parse_raw_group("operator name")?;
+                    Ok(Expr::FunctionName(raw))
+                }
             }
+            "operatornamewithlimits" => Ok(raw_prefix_expr(
+                "operatornamewithlimits",
+                self.parse_visible_wrapper_group("operator name")?,
+            )),
             "displaystyle" | "textstyle" | "scriptstyle" | "scriptscriptstyle" => Ok(Expr::Style {
                 kind: style_command_kind(command.as_str()),
                 content: Box::new(self.parse_switch_content("style switch content")?),
@@ -335,9 +366,14 @@ impl Parser {
             )),
             "rm" => Ok(self.parse_switch_content("rm content")?),
             "it" => Ok(self.parse_switch_content("it content")?),
-            "mathrm" | "mathnormal" | "textnormal" | "textup" | "textmd" | "textrm" => {
-                self.parse_required_group("roman content")
-            }
+            "mathrm" | "textrm" => Ok(Expr::Font {
+                kind: FontKind::RomanText,
+                content: Box::new(self.parse_required_group("roman content")?),
+            }),
+            "mathnormal" | "textnormal" | "textup" | "textmd" => Ok(raw_prefix_expr(
+                command.as_str(),
+                self.parse_required_group("roman content")?,
+            )),
             "mathit" | "textit" | "emph" => self.parse_required_group("italic content"),
             "bf" => Ok(Expr::Font {
                 kind: FontKind::Bold,
@@ -347,17 +383,21 @@ impl Parser {
                 kind: FontKind::MathSf,
                 content: Box::new(self.parse_switch_content("sf content")?),
             }),
-            "mathbf" | "textbf" | "bm" | "boldsymbol" | "bold" => Ok(Expr::Font {
+            "mathbf" | "textbf" | "boldsymbol" | "bold" => Ok(Expr::Font {
                 kind: FontKind::Bold,
                 content: Box::new(self.parse_required_group("mathbf content")?),
             }),
+            "bm" => Ok(raw_prefix_expr(
+                "bm",
+                self.parse_required_group("bm content")?,
+            )),
             "pmb" => {
                 self.skip_ws();
                 if self.peek() == Some('{') {
-                    Ok(Expr::Font {
-                        kind: FontKind::Bold,
-                        content: Box::new(self.parse_required_group("pmb content")?),
-                    })
+                    Ok(raw_prefix_expr(
+                        "pmb",
+                        self.parse_required_group("pmb content")?,
+                    ))
                 } else {
                     Ok(Expr::RawTex("\\pmb".to_string()))
                 }
@@ -371,14 +411,14 @@ impl Parser {
                 kind: FontKind::MathSf,
                 content: Box::new(self.parse_required_group("mathsf content")?),
             }),
-            "mathtt" | "texttt" => Ok(Expr::Font {
-                kind: FontKind::MathTt,
-                content: Box::new(self.parse_required_group("mathtt content")?),
-            }),
-            "tt" => Ok(Expr::Font {
-                kind: FontKind::MathTt,
-                content: Box::new(self.parse_switch_content("tt content")?),
-            }),
+            "mathtt" | "texttt" => Ok(raw_prefix_expr(
+                command.as_str(),
+                self.parse_required_group("mathtt content")?,
+            )),
+            "tt" => Ok(raw_prefix_expr(
+                "tt",
+                self.parse_switch_content("tt content")?,
+            )),
             "mathbb" | "Bbb" => Ok(Expr::Font {
                 kind: FontKind::MathBb,
                 content: Box::new(self.parse_required_group("mathbb content")?),
@@ -487,36 +527,23 @@ impl Parser {
                 under: false,
                 content: Box::new(self.parse_required_group("overleftarrow content")?),
             }),
-            "underleftarrow" => Ok(Expr::ArrowAccent {
-                kind: ArrowAccentKind::Left,
-                under: true,
-                content: Box::new(self.parse_required_group("underleftarrow content")?),
-            }),
-            "underrightarrow" => Ok(Expr::ArrowAccent {
-                kind: ArrowAccentKind::Right,
-                under: true,
-                content: Box::new(self.parse_required_group("underrightarrow content")?),
-            }),
+            "underleftarrow" | "underrightarrow" => Ok(raw_prefix_expr(
+                command.as_str(),
+                self.parse_required_group("under-arrow content")?,
+            )),
             "overleftrightarrow" => Ok(Expr::ArrowAccent {
                 kind: ArrowAccentKind::LeftRight,
                 under: false,
                 content: Box::new(self.parse_required_group("overleftrightarrow content")?),
             }),
-            "underleftrightarrow" => Ok(Expr::ArrowAccent {
-                kind: ArrowAccentKind::LeftRight,
-                under: true,
-                content: Box::new(self.parse_required_group("underleftrightarrow content")?),
-            }),
-            "overleftharpoon" => Ok(Expr::ArrowAccent {
-                kind: ArrowAccentKind::LeftHarpoon,
-                under: false,
-                content: Box::new(self.parse_required_group("overleftharpoon content")?),
-            }),
-            "overrightharpoon" => Ok(Expr::ArrowAccent {
-                kind: ArrowAccentKind::RightHarpoon,
-                under: false,
-                content: Box::new(self.parse_required_group("overrightharpoon content")?),
-            }),
+            "underleftrightarrow" => Ok(raw_prefix_expr(
+                command.as_str(),
+                self.parse_required_group("underleftrightarrow content")?,
+            )),
+            "overleftharpoon" | "overrightharpoon" => Ok(raw_prefix_expr(
+                command.as_str(),
+                self.parse_required_group("harpoon accent content")?,
+            )),
             "overbrace" => Ok(Expr::Brace {
                 kind: BraceKind::Over,
                 content: Box::new(self.parse_required_group("overbrace content")?),
@@ -558,14 +585,23 @@ impl Parser {
             "hspace" => self.parse_hspace_content(),
             "hline" | "hdashline" => Ok(Expr::Sequence(Vec::new())),
             "cline" => self.parse_cline_content(),
-            "phase" => Ok(Expr::Sequence(vec![
-                Expr::Char('∠'),
+            "phase" => Ok(raw_prefix_expr(
+                command.as_str(),
                 self.parse_required_group("phase angle")?,
-            ])),
+            )),
             "raisebox" => self.parse_raisebox_content(),
             "smash" => {
                 let _ignored_position = self.parse_optional_bracket_group()?;
                 self.parse_required_group("smash content")
+            }
+            _ if raw_hybrid_xarrow_command(&command) => {
+                let under = self.parse_optional_bracket_group()?;
+                let label = self.parse_required_group("arrow label")?;
+                let mut args = vec![label];
+                if let Some(under) = under {
+                    args.push(under);
+                }
+                Ok(raw_prefix_sequence(command.as_str(), args))
             }
             _ if xarrow_command_kind(&command).is_some() => {
                 let under = self.parse_optional_bracket_group()?;
@@ -641,18 +677,6 @@ impl Parser {
         raw
     }
 
-    /// Return true when a raw-only alias stands alone instead of feeding scripts or grouped content.
-    fn raw_simple_command_is_standalone(&self) -> bool {
-        let mut pos = self.pos;
-        while self.chars.get(pos).is_some_and(|ch| ch.is_whitespace()) {
-            pos += 1;
-        }
-        matches!(
-            self.chars.get(pos),
-            None | Some('}') | Some(']') | Some(')') | Some('&') | Some('\\')
-        )
-    }
-
     /// Parse \utilde when it can be represented by documented character embellishments.
     fn parse_under_tilde_content(&mut self) -> Result<Expr, String> {
         let raw = self.parse_raw_group("utilde content")?;
@@ -674,13 +698,14 @@ impl Parser {
         let params = self.parse_macro_parameter_count()?;
         let replacement = self.parse_raw_group("macro replacement")?;
         self.macros.insert(
-            name,
+            name.clone(),
             MacroDefinition {
                 params,
-                replacement,
+                replacement: replacement.clone(),
+                render_mode: MacroRenderMode::RawOnly,
             },
         );
-        Ok(Expr::Sequence(Vec::new()))
+        self.render_macro_definition(command, &name, params, &replacement)
     }
 
     /// Expand a previously defined simple macro command, if one is in scope.
@@ -688,21 +713,11 @@ impl Parser {
         let Some(definition) = self.macros.get(command).cloned() else {
             return Ok(None);
         };
-        if self.expansion_depth >= 16 {
-            return Ok(Some(Expr::RawTex(format!("\\{command}"))));
-        }
-        let expanded = match definition.params {
-            0 => definition.replacement,
-            1 => {
-                let argument = match self.parse_raw_group("macro argument") {
-                    Ok(argument) => argument,
-                    Err(_) => return Ok(Some(Expr::RawTex(format!("\\{command}")))),
-                };
-                definition.replacement.replace("#1", &argument)
+        match definition.render_mode {
+            MacroRenderMode::RawOnly => {
+                self.render_raw_macro_invocation(command, definition.params)
             }
-            _ => return Ok(Some(Expr::RawTex(format!("\\{command}")))),
-        };
-        Ok(Some(self.parse_macro_replacement(&expanded)?))
+        }
     }
 
     /// Parse a replacement string with the current macro scope and depth limit.
@@ -723,6 +738,49 @@ impl Parser {
             ));
         }
         Ok(expr)
+    }
+
+    /// Render one raw-only macro definition the way MathType TeX Input exposes it.
+    fn render_macro_definition(
+        &self,
+        command: &str,
+        name: &str,
+        params: usize,
+        replacement: &str,
+    ) -> Result<Expr, String> {
+        let mut args = Vec::new();
+        let raw_prefix = match params {
+            0 => format!("\\{command}\\{name}"),
+            1 => {
+                args.push(Expr::Char('1'));
+                format!("\\{command}\\{name}#")
+            }
+            _ => return Ok(Expr::RawTex(format!("\\{command}"))),
+        };
+        args.extend(render_raw_only_macro_replacement(replacement, self)?);
+        Ok(raw_prefix_sequence_with_raw(raw_prefix, args))
+    }
+
+    /// Render one raw-only macro invocation without expanding it into native MathType structures.
+    fn render_raw_macro_invocation(
+        &mut self,
+        command: &str,
+        params: usize,
+    ) -> Result<Option<Expr>, String> {
+        match params {
+            0 => Ok(Some(Expr::RawTex(format!("\\{command}")))),
+            1 => {
+                let argument = match self.parse_raw_group("macro argument") {
+                    Ok(argument) => argument,
+                    Err(_) => return Ok(Some(Expr::RawTex(format!("\\{command}")))),
+                };
+                Ok(Some(raw_prefix_expr(
+                    command,
+                    self.parse_visible_wrapper_text(&argument)?,
+                )))
+            }
+            _ => Ok(Some(Expr::RawTex(format!("\\{command}")))),
+        }
     }
 
     /// Parse the control-word name after \def or \gdef.
@@ -817,15 +875,11 @@ impl Parser {
             self.pos = start;
             return Ok(Expr::RawTex("\\verb".to_string()));
         }
-        let content = self.chars[start..self.pos]
-            .iter()
-            .map(|ch| Expr::Char(*ch))
-            .collect();
+        let content = self.chars[start..self.pos].iter().collect::<String>();
         self.pos += 1;
-        Ok(Expr::Font {
-            kind: FontKind::MathTt,
-            content: Box::new(Expr::Sequence(content)),
-        })
+        let visible =
+            self.parse_visible_wrapper_text(&format!("{delimiter}{content}{delimiter}"))?;
+        Ok(raw_prefix_expr("verb", visible))
     }
 
     /// Parse \not followed by a relation when Unicode has a stable negated form.
@@ -895,21 +949,23 @@ impl Parser {
     /// Parse an atom followed by optional subscript/superscript records.
     fn parse_atom_with_scripts(&mut self) -> Result<Expr, String> {
         let mut atom = self.parse_atom()?;
+        let mut limit_modifier = None;
         loop {
             let consumed_ws = self.consume_ws();
-            if self.consume_limits_modifier() {
+            if let Some(modifier) = self.consume_limits_modifier() {
+                limit_modifier = Some(modifier);
                 continue;
             }
             match self.peek() {
                 Some('_') => {
                     self.pos += 1;
                     let sub = self.parse_script_arg()?;
-                    atom = merge_script(atom, Some(sub), None);
+                    atom = merge_script(atom, Some(sub), None, limit_modifier.take());
                 }
                 Some('^') => {
                     self.pos += 1;
                     let sup = self.parse_script_arg()?;
-                    atom = merge_script(atom, None, Some(sup));
+                    atom = merge_script(atom, None, Some(sup), limit_modifier.take());
                 }
                 _ => {
                     if consumed_ws {
@@ -1265,22 +1321,28 @@ impl Parser {
         self.next().ok_or_else(|| format!("expected {label}"))
     }
 
-    /// Consume \limits or \nolimits before scripts; layout is decided by writer templates.
-    fn consume_limits_modifier(&mut self) -> bool {
-        for command in ["limits", "nolimits"] {
+    /// Consume \limits or \nolimits before scripts so limit-style functions keep the hint.
+    fn consume_limits_modifier(&mut self) -> Option<LimitModifier> {
+        for (command, modifier) in [
+            ("limits", LimitModifier::Limits),
+            ("nolimits", LimitModifier::NoLimits),
+        ] {
             if self.starts_command(command) {
                 self.pos += 1 + command.len();
-                return true;
+                return Some(modifier);
             }
         }
-        false
+        None
     }
 
     /// Consume an optional star used by commands such as \operatorname*.
-    fn consume_optional_star(&mut self) {
+    fn consume_optional_star(&mut self) -> bool {
         self.skip_ws();
         if self.peek() == Some('*') {
             self.pos += 1;
+            true
+        } else {
+            false
         }
     }
 
@@ -1321,19 +1383,25 @@ impl Parser {
         Ok(Some(self.parse_sequence(Some(']'))?))
     }
 
-    /// Strip KaTeX-only HTML attributes while keeping the math content visible.
+    /// Keep HTML wrapper attributes visible because MathType emits them after the raw command name.
     fn parse_html_wrapper_content(&mut self, command: &str) -> Result<Expr, String> {
-        let _ignored_attribute = self.parse_raw_group(&format!("{command} attribute"))?;
-        self.parse_required_group(&format!("{command} content"))
+        let attribute = self.parse_visible_wrapper_group(&format!("{command} attribute"))?;
+        let content = self.parse_visible_wrapper_group(&format!("{command} content"))?;
+        Ok(raw_prefix_sequence(command, vec![attribute, content]))
     }
 
-    /// Keep color-box contents visible while ignoring unsupported box styling.
+    /// Keep color-box arguments visible because MathType preserves them after the raw command name.
     fn parse_color_box_content(&mut self, has_frame: bool) -> Result<Expr, String> {
+        let mut args = Vec::with_capacity(3);
         if has_frame {
-            let _ignored_frame_color = self.parse_raw_group("fcolorbox frame color")?;
+            args.push(self.parse_visible_wrapper_group("fcolorbox frame color")?);
         }
-        let _ignored_background = self.parse_raw_group("colorbox background color")?;
-        self.parse_required_math_group("colorbox content")
+        args.push(self.parse_visible_wrapper_group("colorbox background color")?);
+        args.push(self.parse_visible_wrapper_group("colorbox content")?);
+        Ok(raw_prefix_sequence(
+            if has_frame { "fcolorbox" } else { "colorbox" },
+            args,
+        ))
     }
 
     /// Keep raisebox contents visible while ignoring TeX-only box metrics.
@@ -1361,6 +1429,17 @@ impl Parser {
     fn parse_required_math_group(&mut self, label: &str) -> Result<Expr, String> {
         let content = self.parse_raw_group(label)?;
         Parser::new(&content).parse()
+    }
+
+    /// Parse one raw wrapper group as visible content so MathType-style hybrid wrappers can reuse it.
+    fn parse_visible_wrapper_group(&mut self, label: &str) -> Result<Expr, String> {
+        let content = self.parse_raw_group(label)?;
+        self.parse_visible_wrapper_text(&content)
+    }
+
+    /// Parse one raw wrapper fragment so unsupported wrapper arguments stay visible in MathType order.
+    fn parse_visible_wrapper_text(&self, content: &str) -> Result<Expr, String> {
+        self.parse_macro_replacement(content)
     }
 
     /// Parse an optional raw bracket argument such as raisebox height/depth.
@@ -1679,6 +1758,55 @@ fn raw_prefix_expr(command: &str, operand: Expr) -> Expr {
     Expr::Sequence(vec![Expr::RawTex(format!("\\{command}")), operand])
 }
 
+/// Preserve a raw command name while rendering each consumed argument as visible follow-up content.
+fn raw_prefix_sequence(command: &str, args: Vec<Expr>) -> Expr {
+    let mut items = Vec::with_capacity(args.len() + 1);
+    items.push(Expr::RawTex(format!("\\{command}")));
+    items.extend(args);
+    Expr::Sequence(items)
+}
+
+/// Preserve a precomputed raw prefix while rendering each consumed argument as visible follow-up content.
+fn raw_prefix_sequence_with_raw(raw_prefix: String, args: Vec<Expr>) -> Expr {
+    let mut items = Vec::with_capacity(args.len() + 1);
+    items.push(Expr::RawTex(raw_prefix));
+    items.extend(args);
+    Expr::Sequence(items)
+}
+
+/// Split a raw-only macro replacement so MathType-style parameter markers keep their raw `#` bytes.
+fn render_raw_only_macro_replacement(
+    replacement: &str,
+    parser: &Parser,
+) -> Result<Vec<Expr>, String> {
+    let chars = replacement.chars().collect::<Vec<_>>();
+    let mut args = Vec::new();
+    let mut start = 0usize;
+    let mut index = 0usize;
+    while index + 1 < chars.len() {
+        if chars[index] == '#' && chars[index + 1] == '1' {
+            if start < index {
+                let chunk = chars[start..index].iter().collect::<String>();
+                if !chunk.is_empty() {
+                    args.push(parser.parse_visible_wrapper_text(&chunk)?);
+                }
+            }
+            args.push(Expr::RawTex("#".to_string()));
+            start = index + 1;
+            index += 2;
+            continue;
+        }
+        index += 1;
+    }
+    if start < chars.len() {
+        let chunk = chars[start..].iter().collect::<String>();
+        if !chunk.is_empty() {
+            args.push(parser.parse_visible_wrapper_text(&chunk)?);
+        }
+    }
+    Ok(args)
+}
+
 /// Return true when MathType keeps one following source-space inside the raw command run.
 fn raw_command_preserves_trailing_space(command: &str) -> bool {
     matches!(command, "allowbreak")
@@ -1792,6 +1920,22 @@ fn xarrow_command_kind(command: &str) -> Option<XArrowKind> {
     }
 }
 
+/// Return true for x-arrow variants that MathType keeps as raw command text plus visible labels.
+fn raw_hybrid_xarrow_command(command: &str) -> bool {
+    matches!(
+        command,
+        "xLeftarrow"
+            | "xRightarrow"
+            | "xhookleftarrow"
+            | "xhookrightarrow"
+            | "xtwoheadleftarrow"
+            | "xtwoheadrightarrow"
+            | "xmapsto"
+            | "xlongequal"
+            | "xtofrom"
+    )
+}
+
 /// Return the MathType logical-size style represented by a TeX style switch.
 fn style_command_kind(command: &str) -> StyleKind {
     match command {
@@ -1812,7 +1956,12 @@ fn blackboard_letter(ch: char) -> Expr {
 }
 
 /// Preserve MathType's postfix script template shape by merging repeated scripts.
-fn merge_script(base: Expr, sub: Option<Expr>, sup: Option<Expr>) -> Expr {
+fn merge_script(
+    base: Expr,
+    sub: Option<Expr>,
+    sup: Option<Expr>,
+    limit_modifier: Option<LimitModifier>,
+) -> Expr {
     match base {
         Expr::BigOp {
             kind,
@@ -1842,6 +1991,16 @@ fn merge_script(base: Expr, sub: Option<Expr>, sup: Option<Expr>) -> Expr {
             upper: sup.map(Box::new).or(upper),
             body,
         },
+        Expr::FunctionName(name)
+            if matches!(name.as_str(), "lim" | "sup")
+                && limit_modifier == Some(LimitModifier::NoLimits) =>
+        {
+            Expr::Script {
+                base: Box::new(Expr::FunctionName(name)),
+                sub: sub.map(Box::new),
+                sup: sup.map(Box::new),
+            }
+        }
         Expr::FunctionName(name) if matches!(name.as_str(), "lim" | "sup") => Expr::Limit {
             name,
             lower: sub.map(Box::new),

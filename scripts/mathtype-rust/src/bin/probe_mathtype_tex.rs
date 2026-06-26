@@ -147,7 +147,7 @@ impl Options {
                     helper = PathBuf::from(
                         args.get(index)
                             .ok_or_else(|| "--helper requires a path".to_string())?,
-                    );
+                    )?;
                 }
                 "--work-dir" => {
                     index += 1;
@@ -158,10 +158,10 @@ impl Options {
                 }
                 "--pre-verb" => {
                     index += 1;
-                    pre_verb = args
-                        .get(index)
-                        .ok_or_else(|| "--pre-verb requires an OLE verb number".to_string())?
-                        .clone();
+                    pre_verb = require_pre_verb_two_arg(
+                        args.get(index)
+                            .ok_or_else(|| "--pre-verb requires an OLE verb number".to_string())?,
+                    )?;
                 }
                 "--latex" => {
                     index += 1;
@@ -243,7 +243,7 @@ impl Options {
 
 /// Return the CLI usage string for invalid probe invocations.
 fn usage() -> &'static str {
-    "Usage: probe_mathtype_tex (--check-helper | --latex <tex> | --input <file> | --ole <ole.bin> | --mtef <mtef.bin>) [--helper <exe>] [--work-dir <dir>] [--pre-verb <N>] [--dump-mtef <path>] [--timeout-ms <N>]"
+    "Usage: probe_mathtype_tex (--check-helper | --latex <tex> | --input <file> | --ole <ole.bin> | --mtef <mtef.bin>) [--helper <exe>] [--work-dir <dir>] [--pre-verb 2] [--dump-mtef <path>] [--timeout-ms <N>]"
 }
 
 /// Invoke the existing COM helper to let MathType encode one probe formula.
@@ -257,9 +257,7 @@ fn run_mathtype_helper(
     let _ = fs::remove_file(ole_path);
     let mut command = Command::new(helper);
     command.args(["--method", "set-data"]);
-    if helper_needs_pre_verb(pre_verb) {
-        command.args(["--pre-verb", pre_verb]);
-    }
+    command.args(["--pre-verb", pre_verb]);
     let mut child = command
         .args(["--format", "TeX Input Language", "--input"])
         .arg(tex_path)
@@ -284,9 +282,13 @@ fn run_mathtype_helper(
     Ok(())
 }
 
-/// Preserve the old CLI surface where --pre-verb 0 means skipping the pre-open step.
-fn helper_needs_pre_verb(pre_verb: &str) -> bool {
-    pre_verb != "0"
+/// Reject unsupported helper verbs so probe behavior always matches the validated MathType path.
+fn require_pre_verb_two_arg(pre_verb: &str) -> Result<String, String> {
+    if pre_verb == "2" {
+        Ok("2".to_string())
+    } else {
+        Err("--pre-verb only supports value 2.".to_string())
+    }
 }
 
 /// Wait for MathType's COM helper without allowing unsupported probes to hang.

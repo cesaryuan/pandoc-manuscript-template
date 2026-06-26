@@ -169,7 +169,7 @@ impl Config {
                     input = PathBuf::from(
                         args.get(index)
                             .ok_or_else(|| "--input requires a path".to_string())?,
-                    );
+                    )?;
                 }
                 "--limit" => {
                     index += 1;
@@ -224,10 +224,10 @@ impl Config {
                 }
                 "--pre-verb" => {
                     index += 1;
-                    mathtype_pre_verb = args
-                        .get(index)
-                        .ok_or_else(|| "--pre-verb requires an OLE verb number".to_string())?
-                        .clone();
+                    mathtype_pre_verb = require_pre_verb_two_arg(
+                        args.get(index)
+                            .ok_or_else(|| "--pre-verb requires an OLE verb number".to_string())?,
+                    )?;
                 }
                 "--timeout-ms" => {
                     index += 1;
@@ -281,7 +281,7 @@ impl Config {
 
 /// Return the usage text for invalid audit invocations.
 fn usage() -> &'static str {
-    "Usage: audit_supported_functions [--input <Supported Functions.md>] [--limit <N>] [--max-snippets <N>] [--snippet-filter <text>] [--view both|code|math] [--math-only] [--code-only] [--write-unclassified-jsonl <path>] [--write-remaining-jsonl <path>] [--mathtype-compare] [--helper <exe>] [--work-dir <dir>] [--pre-verb <N>] [--timeout-ms <N>]"
+    "Usage: audit_supported_functions [--input <Supported Functions.md>] [--limit <N>] [--max-snippets <N>] [--snippet-filter <text>] [--view both|code|math] [--math-only] [--code-only] [--write-unclassified-jsonl <path>] [--write-remaining-jsonl <path>] [--mathtype-compare] [--helper <exe>] [--work-dir <dir>] [--pre-verb 2] [--timeout-ms <N>]"
 }
 
 /// Parse a report-view selector from the CLI.
@@ -750,7 +750,8 @@ fn mathtype_cache_paths(key: &str, config: &MathTypeCompareConfig) -> MathTypeCa
 fn cache_key(payload: &str, config: &MathTypeCompareConfig) -> String {
     let material = format!(
         "v1\0payload={payload}\0pre_verb={}\0helper={}",
-        config.pre_verb, config.helper_fingerprint
+        config.pre_verb.as_str(),
+        config.helper_fingerprint
     );
     fnv1a64_hex(material.as_bytes())
 }
@@ -849,9 +850,7 @@ fn run_mathtype_helper(
     let _ = fs::remove_file(ole_path);
     let mut command = Command::new(helper);
     command.args(["--method", "set-data"]);
-    if helper_needs_pre_verb(pre_verb) {
-        command.args(["--pre-verb", pre_verb]);
-    }
+    command.args(["--pre-verb", pre_verb]);
     let mut child = command
         .args(["--format", "TeX Input Language", "--input"])
         .arg(tex_path)
@@ -876,9 +875,13 @@ fn run_mathtype_helper(
     Ok(())
 }
 
-/// Preserve the old CLI surface where --pre-verb 0 means skipping the pre-open step.
-fn helper_needs_pre_verb(pre_verb: &str) -> bool {
-    pre_verb != "0"
+/// Reject unsupported helper verbs so audit cache keys stay tied to the validated MathType path.
+fn require_pre_verb_two_arg(pre_verb: &str) -> Result<String, String> {
+    if pre_verb == "2" {
+        Ok("2".to_string())
+    } else {
+        Err("--pre-verb only supports value 2.".to_string())
+    }
 }
 
 /// Wait for the helper so one unsupported MathType input cannot hang the audit.

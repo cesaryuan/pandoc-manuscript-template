@@ -233,7 +233,7 @@ impl Config {
                     helper = PathBuf::from(
                         args.get(index)
                             .ok_or_else(|| "--helper requires a path".to_string())?,
-                    );
+                    )?;
                 }
                 "--output" => {
                     index += 1;
@@ -252,10 +252,10 @@ impl Config {
                 }
                 "--pre-verb" => {
                     index += 1;
-                    pre_verb = args
-                        .get(index)
-                        .ok_or_else(|| "--pre-verb requires an OLE verb number".to_string())?
-                        .clone();
+                    pre_verb = require_pre_verb_two_arg(
+                        args.get(index)
+                            .ok_or_else(|| "--pre-verb requires an OLE verb number".to_string())?,
+                    )?;
                 }
                 "--reuse-existing" => reuse_existing = true,
                 "--existing-only" => {
@@ -566,6 +566,20 @@ fn build_targets(
         let leaked = Box::leak(format!("$\\mathfrak{{{ch}}}$").into_boxed_str());
         targets.push(Target {
             name: Box::leak(format!("mathfrak_lc_{ch}").into_boxed_str()),
+            category: Category::MathFrak,
+            formula: leaked,
+            selector: Selector::FontPos {
+                ch,
+                typeface: EXPLICIT_FONT_NEG_1,
+                font_pos: ch as u8,
+            },
+        });
+    }
+
+    for ch in '0'..='9' {
+        let leaked = Box::leak(format!("$\\mathfrak{{{ch}}}$").into_boxed_str());
+        targets.push(Target {
+            name: Box::leak(format!("mathfrak_digit_{ch}").into_boxed_str()),
             category: Category::MathFrak,
             formula: leaked,
             selector: Selector::FontPos {
@@ -925,6 +939,20 @@ fn generated_command_specific_targets() -> &'static [(char, &'static str, &'stat
         ('\u{22de}', r"$\curlyeqprec$", "command_curlyeqprec"),
         ('\u{22df}', r"$\curlyeqsucc$", "command_curlyeqsucc"),
         ('\u{2138}', r"$\daleth$", "command_daleth"),
+        ('\u{222b}', r"$\int$", "command_int"),
+        ('\u{222e}', r"$\oint$", "command_oint"),
+        ('\u{222c}', r"$\iint$", "command_iint"),
+        ('\u{222d}', r"$\iiint$", "command_iiint"),
+        // Standalone delimiter aliases can map to MathType font slots that differ from the
+        // plain Unicode fence character, so learn them through command-aware probes.
+        ('\u{3008}', r"$\langle$", "command_langle"),
+        ('\u{3008}', r"$\lang$", "command_lang"),
+        ('\u{3009}', r"$\rangle$", "command_rangle"),
+        ('\u{3009}', r"$\rang$", "command_rang"),
+        ('\u{2308}', r"$\lceil$", "command_lceil"),
+        ('\u{2309}', r"$\rceil$", "command_rceil"),
+        ('\u{230a}', r"$\lfloor$", "command_lfloor"),
+        ('\u{230b}', r"$\rfloor$", "command_rfloor"),
     ]
 }
 
@@ -1330,9 +1358,7 @@ fn run_mathtype_helper(
     let _ = fs::remove_file(ole_path);
     let mut command = Command::new(helper);
     command.args(["--method", "set-data"]);
-    if helper_needs_pre_verb(pre_verb) {
-        command.args(["--pre-verb", pre_verb]);
-    }
+    command.args(["--pre-verb", pre_verb]);
     let mut child = command
         .args(["--format", "TeX Input Language", "--input"])
         .arg(tex_path)
@@ -1358,9 +1384,13 @@ fn run_mathtype_helper(
     Ok(())
 }
 
-/// Preserve the old CLI surface where --pre-verb 0 means skipping the pre-open step.
-fn helper_needs_pre_verb(pre_verb: &str) -> bool {
-    pre_verb != "0"
+/// Reject unsupported helper verbs so generated probes always use the validated MathType path.
+fn require_pre_verb_two_arg(pre_verb: &str) -> Result<String, String> {
+    if pre_verb == "2" {
+        Ok("2".to_string())
+    } else {
+        Err("--pre-verb only supports value 2.".to_string())
+    }
 }
 
 /// Wait for MathType's COM helper and kill it if one probe hangs.

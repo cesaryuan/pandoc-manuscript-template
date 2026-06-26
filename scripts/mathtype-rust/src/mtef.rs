@@ -3,7 +3,7 @@ use crate::generated::char_tables::ExplicitFont;
 use crate::mathtype_ansi::encode_mathtype_source;
 use crate::typeface::{
     EXPLICIT_FONT_NEG_1, EXPLICIT_FONT_NEG_2, FN_EXPAND, FN_FUNCTION, FN_MT_EXTRA, FN_NUMBER,
-    FN_SPACE, FN_SYMBOL, FN_TEXT, FN_USER1, FN_VARIABLE, FN_VECTOR,
+    FN_SPACE, FN_SYMBOL, FN_TEXT, FN_VARIABLE, FN_VECTOR,
 };
 
 #[path = "mtef/encoding.rs"]
@@ -13,7 +13,7 @@ mod records;
 
 use records::{
     color_black, color_default, write_expanding_glyph, write_null_line, write_size,
-    write_table_char, write_u16, write_unsigned,
+    write_table_char, write_table_char_with_embellishments, write_u16, write_unsigned,
 };
 
 const MTEF_FIXED_DEFS: &[u8] = &[
@@ -68,6 +68,11 @@ const EUCLID_FRAKTUR_AFTER_ONE_DEFS: &[u8] = &[
     0x08, 0x07, 0x00,
 ];
 
+const ARIAL_DEFS: &[u8] = &[0x11, 0x05, b'A', b'r', b'i', b'a', b'l', 0x00, 0x08, 0x06, 0x00];
+
+const ARIAL_AFTER_ONE_DEFS: &[u8] =
+    &[0x11, 0x06, b'A', b'r', b'i', b'a', b'l', 0x00, 0x08, 0x07, 0x00];
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SizeState {
     Full,
@@ -91,14 +96,19 @@ struct MtefWriter {
     euclid_math_one_defined: bool,
     euclid_math_two_defined: bool,
     euclid_fraktur_defined: bool,
+    sans_serif_defined: bool,
     euclid_math_one_typeface: u8,
     euclid_math_two_typeface: u8,
     euclid_fraktur_typeface: u8,
+    sans_serif_typeface: u8,
     black_color_defined: bool,
+    sans_serif_group_active: bool,
     big_symbol_line_marker_pending: bool,
     suppress_next_pile_color_default: bool,
+    suppress_next_stackrel_color_default: bool,
     emit_top_fenced_matrix_color: bool,
     suppress_next_style_restore: bool,
+    suppress_next_limit_restore: bool,
     emit_top_color_selector_one: bool,
     top_sequence_starts_default: bool,
 }
@@ -153,6 +163,21 @@ impl MtefWriter {
             self.euclid_fraktur_defined = true;
         }
     }
+
+    /// Emit Arial once for native \mathsf output and remember which explicit slot it used.
+    fn ensure_sans_serif(&mut self, out: &mut Vec<u8>) {
+        if !self.sans_serif_defined {
+            if self.euclid_math_one_defined || self.euclid_math_two_defined || self.euclid_fraktur_defined
+            {
+                out.extend_from_slice(ARIAL_AFTER_ONE_DEFS);
+                self.sans_serif_typeface = EXPLICIT_FONT_NEG_2;
+            } else {
+                out.extend_from_slice(ARIAL_DEFS);
+                self.sans_serif_typeface = EXPLICIT_FONT_NEG_1;
+            }
+            self.sans_serif_defined = true;
+        }
+    }
 }
 
 /// Build the MTEF stream, including MathType's TeX-source future record.
@@ -194,14 +219,19 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
         euclid_math_one_defined: false,
         euclid_math_two_defined: false,
         euclid_fraktur_defined: false,
+        sans_serif_defined: false,
         euclid_math_one_typeface: EXPLICIT_FONT_NEG_1,
         euclid_math_two_typeface: EXPLICIT_FONT_NEG_1,
         euclid_fraktur_typeface: EXPLICIT_FONT_NEG_1,
+        sans_serif_typeface: EXPLICIT_FONT_NEG_1,
         black_color_defined: false,
+        sans_serif_group_active: false,
         big_symbol_line_marker_pending: false,
         suppress_next_pile_color_default: false,
+        suppress_next_stackrel_color_default: false,
         emit_top_fenced_matrix_color: false,
         suppress_next_style_restore: false,
+        suppress_next_limit_restore: false,
         emit_top_color_selector_one: false,
         top_sequence_starts_default: false,
     };
@@ -227,6 +257,8 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
         if starts_with_big_symbol_script {
             out.push(0x0d);
             writer.big_symbol_line_marker_pending = true;
+        } else if expr_starts_with_standalone_integral(expr) {
+            out.push(0x0d);
         } else if expr_starts_with_standalone_big_glyph(expr) {
             out.push(0x0d);
         }
@@ -249,9 +281,7 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
             return Ok(());
         }
         if !expr_starts_with_top_matrix(expr)
-            && !expr_starts_with_raw_tex(expr)
-            && !expr_starts_with_explicit_accent_template(expr)
-            && !expr_starts_with_sum_operator_script_base(expr)
+            && !expr_starts_with_self_opening(expr)
             && !starts_with_bodyless_big_op_script
             && !expr_starts_with_slotless_big_op(expr)
             && !starts_with_top_pile_template
@@ -262,8 +292,10 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
             color_black(out);
         }
         writer.suppress_next_pile_color_default = starts_with_top_pile_template;
+        writer.suppress_next_stackrel_color_default = expr_starts_with_stackrel(expr);
         writer.emit_top_fenced_matrix_color = starts_with_top_fenced_matrix;
         writer.suppress_next_style_restore = starts_with_top_style;
+        writer.suppress_next_limit_restore = expr_is_standalone_limit(expr);
         writer.emit_top_color_selector_one = starts_with_top_color;
         writer.top_sequence_starts_default =
             expr_starts_with_sum_operator_script_base(expr) || starts_with_bodyless_big_op_script;
@@ -277,7 +309,12 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
 fn expr_starts_with_top_matrix(expr: &Expr) -> bool {
     match expr {
         Expr::Environment {
-            kind: EnvironmentKind::Align | EnvironmentKind::Aligned | EnvironmentKind::Split,
+            kind:
+                EnvironmentKind::Align
+                | EnvironmentKind::Aligned
+                | EnvironmentKind::AlignAt
+                | EnvironmentKind::AlignedAt
+                | EnvironmentKind::Split,
             ..
         } => true,
         Expr::Limit { .. } => true,
@@ -590,6 +627,8 @@ fn write_expr(
                 }
                 if state.color != ColorState::Black
                     && !(index == 0 && start_default)
+                    && !expr_starts_with_line_font_def(item)
+                    && !expr_starts_with_empty_base_superscript(item)
                     && !expr_sets_own_color(item)
                 {
                     if expr_starts_with_euclid_math_one(item) {
@@ -611,6 +650,10 @@ fn write_expr(
                 }
                 if state.color == ColorState::Black && expr_starts_with_bodyless_big_op_script(item)
                 {
+                    color_default(out);
+                    state.color = ColorState::Default;
+                }
+                if index > 0 && state.color == ColorState::Black && expr_starts_with_limit(item) {
                     color_default(out);
                     state.color = ColorState::Default;
                 }
@@ -682,7 +725,7 @@ fn write_expr(
             }
         }
         Expr::FunctionName(name) => {
-            write_function_name(name, out)?;
+            write_function_name(name, out, writer)?;
             WriteState {
                 size: current_size,
                 color: ColorState::Black,
@@ -747,7 +790,7 @@ fn write_expr(
             writer,
         )?,
         Expr::Integral { kind } => {
-            write_integral(*kind, out)?;
+            write_integral(*kind, out, writer)?;
             WriteState {
                 size: current_size,
                 color: ColorState::Black,
@@ -856,18 +899,37 @@ fn expr_sets_own_color(expr: &Expr) -> bool {
     }
 }
 
+#[derive(Clone, Copy)]
+struct ResolvedCharStyle {
+    typeface: u8,
+    mtcode: u16,
+    font_pos: Option<u8>,
+    explicit_font: Option<ExplicitFont>,
+}
+
 /// Write one MTEF CHAR record using MathType's simple font/style choices.
 fn write_char(ch: char, out: &mut Vec<u8>, writer: &mut MtefWriter) -> Result<(), String> {
+    let style = resolve_char_style(ch)?;
+    write_styled_table_char(
+        style.typeface,
+        style.mtcode,
+        style.font_pos,
+        style.explicit_font,
+        out,
+        writer,
+    );
+    Ok(())
+}
+
+/// Resolve one visible character into the same MathType CHAR style used by both plain and accented output.
+fn resolve_char_style(ch: char) -> Result<ResolvedCharStyle, String> {
     if let Some(special) = encoding::special_char(ch) {
-        write_styled_table_char(
-            special.typeface,
-            special.mtcode,
-            special.font_pos,
-            special.explicit_font,
-            out,
-            writer,
-        );
-        return Ok(());
+        return Ok(ResolvedCharStyle {
+            typeface: special.typeface,
+            mtcode: special.mtcode,
+            font_pos: special.font_pos,
+            explicit_font: special.explicit_font,
+        });
     }
 
     let code = ch as u32;
@@ -878,21 +940,20 @@ fn write_char(ch: char, out: &mut Vec<u8>, writer: &mut MtefWriter) -> Result<()
     }
 
     if let Some(operator) = encoding::operator_char(ch) {
-        write_table_char(operator.typeface, operator.mtcode, operator.font_pos, out);
-    } else if is_function_char(ch) {
-        out.push(0x02);
-        out.push(0x00);
-        out.push(FN_FUNCTION);
-        write_u16(code as u16, out);
-    } else if is_math_symbol_char(ch) {
-        out.push(0x02);
-        out.push(0x00);
-        out.push(FN_SYMBOL);
-        write_u16(code as u16, out);
-    } else {
-        out.push(0x02);
-        out.push(0x00);
-        out.push(if ch.is_ascii_digit() {
+        return Ok(ResolvedCharStyle {
+            typeface: operator.typeface,
+            mtcode: operator.mtcode,
+            font_pos: operator.font_pos,
+            explicit_font: None,
+        });
+    }
+
+    Ok(ResolvedCharStyle {
+        typeface: if is_function_char(ch) {
+            FN_FUNCTION
+        } else if is_math_symbol_char(ch) {
+            FN_SYMBOL
+        } else if ch.is_ascii_digit() {
             FN_NUMBER
         } else if ch == '?' {
             // MathType falls back to a visible punctuation glyph when TeX Input cannot map
@@ -900,10 +961,11 @@ fn write_char(ch: char, out: &mut Vec<u8>, writer: &mut MtefWriter) -> Result<()
             FN_FUNCTION
         } else {
             FN_VARIABLE
-        });
-        write_u16(code as u16, out);
-    }
-    Ok(())
+        },
+        mtcode: code as u16,
+        font_pos: None,
+        explicit_font: None,
+    })
 }
 
 /// Write a source-command-specific CHAR record when Unicode alone is ambiguous.
@@ -954,6 +1016,41 @@ fn write_styled_table_char(
     }
 }
 
+/// Write one generated CHAR entry with attached EMBELL records, defining explicit Euclid fonts on demand.
+fn write_styled_table_char_with_embellishments(
+    typeface: u8,
+    mtcode: u16,
+    font_pos: Option<u8>,
+    explicit_font: Option<ExplicitFont>,
+    embellishments: &[u8],
+    out: &mut Vec<u8>,
+    writer: &mut MtefWriter,
+) {
+    match explicit_font {
+        Some(ExplicitFont::EuclidMathOne) => {
+            writer.ensure_euclid_math_one(out);
+            write_table_char_with_embellishments(
+                writer.euclid_math_one_typeface,
+                mtcode,
+                font_pos,
+                embellishments,
+                out,
+            );
+        }
+        Some(ExplicitFont::EuclidMathTwo) => {
+            writer.ensure_euclid_math_two(out);
+            write_table_char_with_embellishments(
+                writer.euclid_math_two_typeface,
+                mtcode,
+                font_pos,
+                embellishments,
+                out,
+            );
+        }
+        _ => write_table_char_with_embellishments(typeface, mtcode, font_pos, embellishments, out),
+    }
+}
+
 /// Write MathType's fnSPACE character used for spacing commands.
 fn write_space(width: u8, out: &mut Vec<u8>) {
     color_default(out);
@@ -961,7 +1058,19 @@ fn write_space(width: u8, out: &mut Vec<u8>) {
 }
 
 /// Write a function-name sequence, marking the first character as function start.
-fn write_function_name(name: &str, out: &mut Vec<u8>) -> Result<(), String> {
+fn write_function_name(name: &str, out: &mut Vec<u8>, writer: &mut MtefWriter) -> Result<(), String> {
+    if let Some((head, tail)) = split_lim_family_function_name(name) {
+        write_function_name_chars(head, out)?;
+        writer.ensure_black_color_def(out);
+        color_black(out);
+        write_function_name_chars(tail, out)?;
+        return Ok(());
+    }
+    write_function_name_chars(name, out)
+}
+
+/// Write one plain function-name run without any MathType family-specific splitting.
+fn write_function_name_chars(name: &str, out: &mut Vec<u8>) -> Result<(), String> {
     for (index, ch) in name.chars().enumerate() {
         let code = ch as u32;
         if code > u16::MAX as u32 {
@@ -973,6 +1082,17 @@ fn write_function_name(name: &str, out: &mut Vec<u8>) -> Result<(), String> {
         write_u16(code as u16, out);
     }
     Ok(())
+}
+
+/// Return the MathType-specific split for non-template limit-family names.
+fn split_lim_family_function_name(name: &str) -> Option<(&'static str, &'static str)> {
+    match name {
+        "liminf" => Some(("lim", "inf")),
+        "limsup" => Some(("lim", "sup")),
+        "injlim" => Some(("lim", "inj")),
+        "projlim" => Some(("lim", "proj")),
+        _ => None,
+    }
 }
 
 /// Write plain text characters with MathType's text style.
@@ -999,7 +1119,11 @@ fn write_style_expr(
     if suppress_restore {
         writer.suppress_next_style_restore = false;
     }
-    if changed_size {
+    if suppress_restore && !expr_starts_with_self_opening(content) {
+        writer.ensure_black_color_def(out);
+        color_black(out);
+    }
+    if changed_size && !suppress_restore {
         write_size(target_size, out);
     }
     let state = write_expr(content, out, target_size, writer)?;
@@ -1042,7 +1166,6 @@ fn write_limit(
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
     let lower = lower.ok_or_else(|| format!("\\{name} requires a lower limit in this subset"))?;
-    color_default(out);
     out.extend_from_slice(&[0x03, 0x00, 0x17, 0x10, 0x00]);
     let main = Expr::FunctionName(name.to_string());
     let main_state = write_line(&main, out, current_size, writer)?;
@@ -1065,13 +1188,26 @@ fn write_limit(
         write_null_line(out);
     }
     out.push(0x00);
-    if current_size != limit_size {
-        write_size(current_size, out);
+    let suppress_restore = writer.suppress_next_limit_restore;
+    if suppress_restore {
+        writer.suppress_next_limit_restore = false;
+    } else {
+        if current_size != limit_size {
+            write_size(current_size, out);
+        }
+        color_black(out);
     }
-    color_black(out);
     Ok(WriteState {
-        size: current_size,
-        color: ColorState::Black,
+        size: if suppress_restore {
+            limit_size
+        } else {
+            current_size
+        },
+        color: if suppress_restore {
+            ColorState::Default
+        } else {
+            ColorState::Black
+        },
     })
 }
 
@@ -1174,17 +1310,14 @@ fn integral_variation(kind: IntegralKind, has_limits: bool) -> u8 {
 fn integral_count(kind: IntegralKind) -> u8 {
     match kind {
         IntegralKind::Single | IntegralKind::Contour => 1,
-        IntegralKind::Double | IntegralKind::ContourDouble => 2,
-        IntegralKind::Triple | IntegralKind::ContourTriple => 3,
+        IntegralKind::Double => 2,
+        IntegralKind::Triple => 3,
     }
 }
 
 /// Return true for contour integral variants that add MathType's loop glyph.
 fn integral_has_loop(kind: IntegralKind) -> bool {
-    matches!(
-        kind,
-        IntegralKind::Contour | IntegralKind::ContourDouble | IntegralKind::ContourTriple
-    )
+    matches!(kind, IntegralKind::Contour)
 }
 
 /// Write the integral glyph MathType appends at the end of integral templates.
@@ -1211,11 +1344,16 @@ fn write_named_big_operator_glyph(name: &str, out: &mut Vec<u8>) -> Result<(), S
             euclid_math_two_typeface: EXPLICIT_FONT_NEG_1,
             euclid_fraktur_defined: false,
             euclid_fraktur_typeface: EXPLICIT_FONT_NEG_1,
+            sans_serif_defined: false,
+            sans_serif_typeface: EXPLICIT_FONT_NEG_1,
             black_color_defined: false,
+            sans_serif_group_active: false,
             big_symbol_line_marker_pending: false,
             suppress_next_pile_color_default: false,
+            suppress_next_stackrel_color_default: false,
             emit_top_fenced_matrix_color: false,
             suppress_next_style_restore: false,
+            suppress_next_limit_restore: false,
             emit_top_color_selector_one: false,
             top_sequence_starts_default: false,
         },
@@ -1224,7 +1362,24 @@ fn write_named_big_operator_glyph(name: &str, out: &mut Vec<u8>) -> Result<(), S
 }
 
 /// Write a standalone integral glyph when no template body follows.
-fn write_integral(kind: IntegralKind, out: &mut Vec<u8>) -> Result<(), String> {
+fn write_integral(
+    kind: IntegralKind,
+    out: &mut Vec<u8>,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    if let Some(command) = standalone_integral_command(kind) {
+        let symbol = encoding::command_specific_char(command)
+            .ok_or_else(|| format!("missing generated standalone integral symbol: \\{command}"))?;
+        write_styled_table_char(
+            symbol.typeface,
+            symbol.mtcode,
+            symbol.font_pos,
+            symbol.explicit_font,
+            out,
+            writer,
+        );
+        return Ok(());
+    }
     if integral_has_loop(kind) {
         write_named_big_operator_glyph("contour_loop", out)?;
     }
@@ -1232,6 +1387,16 @@ fn write_integral(kind: IntegralKind, out: &mut Vec<u8>) -> Result<(), String> {
         write_integral_glyph(out)?;
     }
     Ok(())
+}
+
+/// Return the source command whose standalone integral glyph is generated from MathType probes.
+fn standalone_integral_command(kind: IntegralKind) -> Option<&'static str> {
+    match kind {
+        IntegralKind::Single => Some("int"),
+        IntegralKind::Contour => Some("oint"),
+        IntegralKind::Double => Some("iint"),
+        IntegralKind::Triple => Some("iiint"),
+    }
 }
 
 /// Write MathType's two-row pile, optionally wrapped in a delimiter pair.
@@ -1371,7 +1536,12 @@ fn write_stackrel(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
-    color_default(out);
+    let suppress_initial_color = writer.suppress_next_stackrel_color_default;
+    if suppress_initial_color {
+        writer.suppress_next_stackrel_color_default = false;
+    } else {
+        color_default(out);
+    }
     out.extend_from_slice(&[0x03, 0x00, 0x17, 0x20, 0x00]);
     let lower_state = write_line(lower, out, current_size, writer)?;
     let stack_size = match current_size {
@@ -1526,18 +1696,20 @@ fn write_environment(
     writer: &mut MtefWriter,
 ) -> Result<(), String> {
     match kind {
-        EnvironmentKind::Align | EnvironmentKind::AlignAt => {
-            write_align_matrix_record(rows, out, current_size, writer)
-        }
+        EnvironmentKind::Align => write_align_matrix_record(rows, out, current_size, writer),
+        EnvironmentKind::AlignAt => write_align_matrix_record(rows, out, current_size, writer),
         EnvironmentKind::Split => {
             write_environment_fallback("split", "&", "\\end", rows, out, current_size, writer)
         }
         EnvironmentKind::Aligned => {
-            write_environment_fallback("aligned", "nn&", "nn\\end", rows, out, current_size, writer)
+            write_environment_fallback("aligned", "&", "\\end", rows, out, current_size, writer)
         }
         EnvironmentKind::AlignedAt => write_align_matrix_record(rows, out, current_size, writer),
-        EnvironmentKind::Gather | EnvironmentKind::Gathered => {
-            write_environment_fallback("gather", " \\\\", " \\end", rows, out, current_size, writer)
+        EnvironmentKind::Gather => {
+            write_environment_fallback("gather", "", "\\end", rows, out, current_size, writer)
+        }
+        EnvironmentKind::Gathered => {
+            write_environment_fallback("gathered", "", "\\end", rows, out, current_size, writer)
         }
         EnvironmentKind::Cases => write_left_fenced_matrix(rows, out, current_size, writer),
         EnvironmentKind::RightCases => write_right_fenced_matrix(rows, out, current_size, writer),
@@ -1907,7 +2079,20 @@ fn write_font_expr(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
-    match expr {
+    if kind == FontKind::MathSf && expr_starts_with_font_wrapper(expr) {
+        writer.ensure_black_color_def(out);
+        color_black(out);
+        return write_expr(expr, out, current_size, writer);
+    }
+    let opened_sans_serif_group =
+        kind == FontKind::MathSf && !writer.sans_serif_group_active;
+    if opened_sans_serif_group {
+        writer.ensure_sans_serif(out);
+        writer.ensure_black_color_def(out);
+        color_black(out);
+        writer.sans_serif_group_active = true;
+    }
+    let result = match expr {
         Expr::Sequence(items) => {
             let mut state = WriteState {
                 size: current_size,
@@ -1934,6 +2119,20 @@ fn write_font_expr(
             })
         }
         other => write_expr(other, out, current_size, writer),
+    };
+    if opened_sans_serif_group {
+        writer.sans_serif_group_active = false;
+    }
+    result
+}
+
+/// Return true when nested content already chooses its own math-font wrapper.
+fn expr_starts_with_font_wrapper(expr: &Expr) -> bool {
+    match expr {
+        Expr::Font { .. } => true,
+        Expr::Style { content, .. } => expr_starts_with_font_wrapper(content),
+        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_font_wrapper),
+        _ => false,
     }
 }
 
@@ -1954,6 +2153,9 @@ fn write_font_char(
             out.push(0x00);
             out.push(FN_VECTOR);
             write_u16(code as u16, out);
+        }
+        FontKind::RomanText => {
+            write_table_char(FN_TEXT, code as u16, None, out);
         }
         FontKind::MathCal => {
             let Ok(entry) = encoding::mathcal_char(ch) else {
@@ -1994,17 +2196,8 @@ fn write_font_char(
             }
         }
         FontKind::MathSf => {
-            out.extend_from_slice(&[
-                0x11, 0x05, b'A', b'r', b'i', b'a', b'l', 0x00, 0x08, 0x06, 0x00,
-            ]);
-            color_black(out);
-            out.push(0x02);
-            out.push(0x00);
-            out.push(EXPLICIT_FONT_NEG_1);
-            write_u16(code as u16, out);
-        }
-        FontKind::MathTt => {
-            write_table_char(FN_USER1, code as u16, None, out);
+            writer.ensure_sans_serif(out);
+            write_table_char(writer.sans_serif_typeface, code as u16, None, out);
         }
         FontKind::MathBb => {
             let Ok(entry) = encoding::mathbb_char(ch) else {
@@ -2085,7 +2278,7 @@ fn write_accent_expr(
                 | AccentKind::UnderTilde,
                 None,
             ) => {
-                write_embellished_char(ch, &[kind], out)?;
+                write_embellished_char(ch, &[kind], out, writer)?;
                 return Ok(WriteState {
                     size: current_size,
                     color: ColorState::Black,
@@ -2102,10 +2295,10 @@ fn write_accent_expr(
         }
     }
     if kind == AccentKind::UnderTilde {
-        return write_under_tilde_run(expr, out, current_size);
+        return write_under_tilde_run(expr, out, current_size, writer);
     }
     if let Some(ch) = widehat_bar_char(expr) {
-        write_embellished_char(ch, &[AccentKind::Bar, AccentKind::Hat], out)?;
+        write_embellished_char(ch, &[AccentKind::Bar, AccentKind::Hat], out, writer)?;
         return Ok(WriteState {
             size: current_size,
             color: ColorState::Black,
@@ -2122,11 +2315,12 @@ fn write_under_tilde_run(
     expr: &Expr,
     out: &mut Vec<u8>,
     current_size: SizeState,
+    writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
     let chars = simple_char_run(expr)
         .ok_or_else(|| "\\utilde currently supports only simple character runs".to_string())?;
     for ch in chars {
-        write_embellished_char(ch, &[AccentKind::UnderTilde], out)?;
+        write_embellished_char(ch, &[AccentKind::UnderTilde], out, writer)?;
     }
     Ok(WriteState {
         size: current_size,
@@ -2160,7 +2354,7 @@ fn write_arrow_accent_template(
 ) -> Result<WriteState, String> {
     if kind == ArrowAccentKind::Right && !under {
         if let Some((None, ch)) = single_font_char(expr) {
-            write_embellished_char_with_code(ch, 0x0b, out)?;
+            write_embellished_char_with_code(ch, 0x0b, out, writer)?;
             return Ok(WriteState {
                 size: current_size,
                 color: ColorState::Black,
@@ -2284,14 +2478,19 @@ fn write_hat_template_for_bold_char(ch: char, out: &mut Vec<u8>) -> Result<(), S
             euclid_math_one_defined: true,
             euclid_math_two_defined: true,
             euclid_fraktur_defined: false,
+            sans_serif_defined: false,
             euclid_math_one_typeface: EXPLICIT_FONT_NEG_1,
             euclid_math_two_typeface: EXPLICIT_FONT_NEG_2,
             euclid_fraktur_typeface: EXPLICIT_FONT_NEG_1,
+            sans_serif_typeface: EXPLICIT_FONT_NEG_1,
             black_color_defined: true,
+            sans_serif_group_active: false,
             big_symbol_line_marker_pending: false,
             suppress_next_pile_color_default: false,
+            suppress_next_stackrel_color_default: false,
             emit_top_fenced_matrix_color: false,
             suppress_next_style_restore: false,
+            suppress_next_limit_restore: false,
             emit_top_color_selector_one: false,
             top_sequence_starts_default: false,
         },
@@ -2389,12 +2588,17 @@ fn write_explicit_accent_line(kind: AccentKind, out: &mut Vec<u8>) {
 }
 
 /// Write a CHAR record with one or more embellishments attached.
-fn write_embellished_char(ch: char, kinds: &[AccentKind], out: &mut Vec<u8>) -> Result<(), String> {
+fn write_embellished_char(
+    ch: char,
+    kinds: &[AccentKind],
+    out: &mut Vec<u8>,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
     let codes = kinds
         .iter()
         .map(|kind| embellishment_code(*kind))
         .collect::<Vec<_>>();
-    write_embellished_char_codes(ch, &codes, out)
+    write_embellished_char_codes(ch, &codes, out, writer)
 }
 
 /// Write a CHAR record with one explicitly probed EMBELL subtype attached.
@@ -2402,8 +2606,9 @@ fn write_embellished_char_with_code(
     ch: char,
     embellishment: u8,
     out: &mut Vec<u8>,
+    writer: &mut MtefWriter,
 ) -> Result<(), String> {
-    write_embellished_char_codes(ch, &[embellishment], out)
+    write_embellished_char_codes(ch, &[embellishment], out, writer)
 }
 
 /// Write a CHAR record with one or more raw EMBELL subtype bytes attached.
@@ -2411,23 +2616,18 @@ fn write_embellished_char_codes(
     ch: char,
     embellishments: &[u8],
     out: &mut Vec<u8>,
+    writer: &mut MtefWriter,
 ) -> Result<(), String> {
-    let code = ch as u32;
-    if code > u16::MAX as u32 {
-        return Err(format!("embellished character is outside BMP: {ch}"));
-    }
-    out.push(0x02);
-    out.push(0x01);
-    out.push(if ch.is_ascii_digit() {
-        FN_NUMBER
-    } else {
-        FN_VARIABLE
-    });
-    write_u16(code as u16, out);
-    for embellishment in embellishments {
-        out.extend_from_slice(&[0x06, 0x00, *embellishment]);
-    }
-    out.push(0x00);
+    let style = resolve_char_style(ch)?;
+    write_styled_table_char_with_embellishments(
+        style.typeface,
+        style.mtcode,
+        style.font_pos,
+        style.explicit_font,
+        embellishments,
+        out,
+        writer,
+    );
     Ok(())
 }
 
@@ -2435,7 +2635,7 @@ fn write_embellished_char_codes(
 fn is_function_char(ch: char) -> bool {
     matches!(
         ch,
-        '(' | ')' | '[' | ']' | '{' | '}' | '|' | ',' | '.' | ':' | ';' | '/'
+        '!' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | ',' | '.' | ':' | ';' | '/'
     )
 }
 
@@ -2731,7 +2931,9 @@ fn write_script(
     } else if base_state.size != current_size {
         write_size(current_size, out);
     }
-    color_default(out);
+    if !expr_is_empty_sequence(base) {
+        color_default(out);
+    }
     let selector = match (sub.is_some(), sup.is_some()) {
         (true, false) => 0x1b,
         (false, true) => 0x1c,
@@ -2977,23 +3179,118 @@ fn write_line(
     if expr_starts_with_big_symbol_script_base(expr) {
         out.push(0x0d);
         writer.big_symbol_line_marker_pending = true;
+    } else if expr_is_standalone_limit(expr) {
+        // Standalone \lim/\sup probes keep the template's internal size/color state visible
+        // through the end of the LINE instead of restoring it for a following sibling.
+        writer.suppress_next_limit_restore = true;
+    } else if expr_starts_with_standalone_integral(expr) {
+        out.push(0x0d);
     } else if expr_starts_with_standalone_big_glyph(expr) {
         out.push(0x0d);
     }
     if starts_with_euclid_math_one || starts_with_euclid_math_two || starts_with_euclid_fraktur {
         writer.ensure_black_color_def(out);
         color_black(out);
-    } else if !expr_starts_with_line_font_def(expr)
-        && !expr_starts_with_raw_tex(expr)
-        && !expr_starts_with_explicit_accent_template(expr)
-        && !expr_starts_with_sum_operator_script_base(expr)
-    {
+    } else if !expr_starts_with_self_opening(expr) {
         writer.ensure_black_color_def(out);
         color_black(out);
     }
+    writer.suppress_next_stackrel_color_default = expr_starts_with_stackrel(expr);
     let final_state = write_expr(expr, out, current_size, writer)?;
     out.push(0x00);
     Ok(final_state)
+}
+
+/// Return true when a LINE starts with a layout object that already controls its own opening.
+fn expr_starts_with_line_layout_object(expr: &Expr) -> bool {
+    match expr {
+        Expr::Matrix { .. }
+        | Expr::Environment { .. }
+        | Expr::Stackrel { .. }
+        | Expr::Underset { .. }
+        | Expr::XArrow { .. } => true,
+        Expr::Style { content, .. } => expr_starts_with_line_layout_object(content),
+        Expr::Sequence(items) => items
+            .first()
+            .is_some_and(expr_starts_with_line_layout_object),
+        _ => false,
+    }
+}
+
+/// Return true when the first visible node is a stackrel-like template.
+fn expr_starts_with_stackrel(expr: &Expr) -> bool {
+    match expr {
+        Expr::Stackrel { .. } => true,
+        Expr::Style { content, .. } => expr_starts_with_stackrel(content),
+        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_stackrel),
+        _ => false,
+    }
+}
+
+/// Return true when an item starts with MathType's empty-base superscript template form.
+fn expr_starts_with_empty_base_superscript(expr: &Expr) -> bool {
+    match expr {
+        Expr::Script { base, sub, sup } => {
+            sub.is_none() && sup.is_some() && expr_is_empty_sequence(base)
+        }
+        Expr::Style { content, .. } => expr_starts_with_empty_base_superscript(content),
+        Expr::Sequence(items) => items
+            .first()
+            .is_some_and(expr_starts_with_empty_base_superscript),
+        _ => false,
+    }
+}
+
+/// Return true when the first visible node writes its own line-opening state bytes.
+fn expr_starts_with_self_opening(expr: &Expr) -> bool {
+    expr_starts_with_line_layout_object(expr)
+        || expr_starts_with_line_font_def(expr)
+        || expr_starts_with_split_function_name(expr)
+        || expr_starts_with_raw_tex(expr)
+        || expr_starts_with_explicit_accent_template(expr)
+        || expr_starts_with_sum_operator_script_base(expr)
+}
+
+/// Return true when a LINE contains only one bare integral sign without operands or limits.
+fn expr_starts_with_standalone_integral(expr: &Expr) -> bool {
+    match expr {
+        Expr::Integral { .. } => true,
+        Expr::Style { content, .. } => expr_starts_with_standalone_integral(content),
+        Expr::Sequence(items) => items.len() == 1 && expr_starts_with_standalone_integral(&items[0]),
+        _ => false,
+    }
+}
+
+/// Return true when the next sequence item begins with MathType's tmLIM template family.
+fn expr_starts_with_limit(expr: &Expr) -> bool {
+    match expr {
+        Expr::Limit { .. } => true,
+        Expr::Style { content, .. } => expr_starts_with_limit(content),
+        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_limit),
+        _ => false,
+    }
+}
+
+/// Return true when a function name owns its own mid-run black selector ordering.
+fn expr_starts_with_split_function_name(expr: &Expr) -> bool {
+    match expr {
+        Expr::FunctionName(name) => split_lim_family_function_name(name).is_some(),
+        Expr::Style { content, .. } => expr_starts_with_split_function_name(content),
+        Expr::Sequence(items) => items
+            .first()
+            .is_some_and(expr_starts_with_split_function_name),
+        _ => false,
+    }
+}
+
+/// Return true when the whole LINE consists of one limit template and no following siblings.
+fn expr_is_standalone_limit(expr: &Expr) -> bool {
+    match expr {
+        Expr::Limit { .. } => true,
+        Expr::Style { content, .. } => expr_is_standalone_limit(content),
+        Expr::Sequence(items) => items.len() == 1 && expr_is_standalone_limit(&items[0]),
+        _ => false,
+    }
 }
 
 /// Split off a leading spacing command that MathType writes before line color.

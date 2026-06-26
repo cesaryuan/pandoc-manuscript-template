@@ -17,6 +17,31 @@ pub(super) fn write_table_char(typeface: u8, mtcode: u16, font_pos: Option<u8>, 
     }
 }
 
+/// Write one CHAR record followed by EMBELL records, preserving MathType's font-position bit.
+pub(super) fn write_table_char_with_embellishments(
+    typeface: u8,
+    mtcode: u16,
+    font_pos: Option<u8>,
+    embellishments: &[u8],
+    out: &mut Vec<u8>,
+) {
+    debug_assert!(
+        !embellishments.is_empty(),
+        "embellished CHAR records must carry at least one EMBELL subtype"
+    );
+    out.push(0x02);
+    out.push(if font_pos.is_some() { 0x05 } else { 0x01 });
+    out.push(typeface);
+    write_u16(mtcode, out);
+    if let Some(font_pos) = font_pos {
+        out.push(font_pos);
+    }
+    for embellishment in embellishments {
+        out.extend_from_slice(&[0x06, 0x00, *embellishment]);
+    }
+    out.push(0x00);
+}
+
 /// Write one fnEXPAND delimiter/accent glyph by MathType code.
 pub(super) fn write_expanding_glyph(code: u16, out: &mut Vec<u8>) {
     out.push(0x02);

@@ -64,7 +64,7 @@ fn encoded_char(table: &[EncodedChar], ch: char) -> Option<EncodedChar> {
 /// Return special CHAR entries derived from documented MathType typeface slots.
 fn derived_special_char(ch: char) -> Option<StyledChar> {
     match ch {
-        '#' | '%' | '_' => Some(StyledChar {
+        '$' | '#' | '%' | '_' => Some(StyledChar {
             ch,
             typeface: crate::typeface::FN_FUNCTION,
             mtcode: ch as u16,

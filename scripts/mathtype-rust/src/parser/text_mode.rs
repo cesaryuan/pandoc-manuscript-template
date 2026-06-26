@@ -1,4 +1,4 @@
-use crate::ast::{Expr, StrikeKind};
+use crate::ast::Expr;
 
 /// Parse the supported command subset that MathType accepts inside \text{...}.
 pub(super) fn parse_content(raw: &str) -> Expr {
@@ -33,41 +33,36 @@ pub(super) fn parse_content(raw: &str) -> Expr {
         };
 
         if command == "textcircled" {
-            if let Some(ch) = take_text_circled_char(&chars, &mut pos).and_then(circled_char) {
-                text.push(ch);
-                continue;
-            }
             flush_text(&mut text, &mut items);
             items.push(Expr::RawTex("\\textcircled".to_string()));
+            if let Some(ch) = take_text_circled_char(&chars, &mut pos) {
+                items.push(Expr::Text(ch.to_string()));
+            }
             continue;
         }
 
         if command == "sout" {
             if let Some(group) = take_text_group(&chars, &mut pos) {
                 flush_text(&mut text, &mut items);
-                items.push(Expr::Strike {
-                    kind: StrikeKind::Horizontal,
-                    content: Box::new(parse_content(&group)),
-                });
+                items.push(Expr::RawTex("\\sout".to_string()));
+                items.push(parse_content(&group));
                 continue;
             }
         }
 
-        if let Some(mark) = text_accent_combining_mark(&command) {
-            if let Some((argument, raw_suffix)) = take_text_accent_argument(&chars, &mut pos) {
-                if let Some(argument_text) = plain_text_content(&argument) {
-                    text.push_str(&argument_text);
-                    text.push(mark);
-                    continue;
-                }
+        if is_text_accent_command(&command) {
+            if let Some(argument) = take_text_accent_expr(&chars, &mut pos) {
                 flush_text(&mut text, &mut items);
-                items.push(Expr::RawTex(format!("\\{command}{raw_suffix}")));
+                items.push(text_accent_expr(&command, argument));
                 continue;
             }
         }
 
-        if let Some(ch) = text_command_char(&command) {
+        if let Some(ch) = text_literal_char(&command) {
             text.push(ch);
+        } else if let Some(expr) = text_direct_expr(&command) {
+            flush_text(&mut text, &mut items);
+            items.push(expr);
         } else {
             flush_text(&mut text, &mut items);
             items.push(Expr::RawTex(format!("\\{command}")));
@@ -96,19 +91,17 @@ fn take_text_circled_char(chars: &[char], pos: &mut usize) -> Option<char> {
 }
 
 /// Consume the argument form used by text-mode accent commands such as \'{a}.
-fn take_text_accent_argument(chars: &[char], pos: &mut usize) -> Option<(String, String)> {
+fn take_text_accent_expr(chars: &[char], pos: &mut usize) -> Option<Expr> {
     while *pos < chars.len() && chars[*pos].is_whitespace() {
         *pos += 1;
     }
     if chars.get(*pos) == Some(&'{') {
         let group = take_text_group(chars, pos)?;
-        let raw_suffix = format!("{{{group}}}");
-        return Some((group, raw_suffix));
+        return Some(parse_content(&group));
     }
     let ch = chars.get(*pos).copied()?;
     *pos += 1;
-    let argument = ch.to_string();
-    Some((argument.clone(), argument))
+    Some(Expr::Text(ch.to_string()))
 }
 
 /// Consume a balanced text-mode group after a command such as \sout.
@@ -140,17 +133,6 @@ fn take_text_group(chars: &[char], pos: &mut usize) -> Option<String> {
     None
 }
 
-/// Return the Unicode enclosed alphanumeric form for \textcircled.
-fn circled_char(ch: char) -> Option<char> {
-    match ch {
-        'A'..='Z' => char::from_u32(0x24b6 + (ch as u32 - 'A' as u32)),
-        'a'..='z' => char::from_u32(0x24d0 + (ch as u32 - 'a' as u32)),
-        '0' => Some('\u{24ea}'),
-        '1'..='9' => char::from_u32(0x2460 + (ch as u32 - '1' as u32)),
-        _ => None,
-    }
-}
-
 /// Move accumulated text into the expression list without creating empty runs.
 fn flush_text(text: &mut String, items: &mut Vec<Expr>) {
     if !text.is_empty() {
@@ -167,84 +149,69 @@ fn sequence_or_single(mut items: Vec<Expr>) -> Expr {
     }
 }
 
-/// Return plain text from a text-mode accent argument when no layout is needed.
-fn plain_text_content(raw: &str) -> Option<String> {
-    match parse_content(raw) {
-        Expr::Text(text) => Some(text),
-        Expr::Sequence(items) => {
-            let mut text = String::new();
-            for item in items {
-                match item {
-                    Expr::Text(item_text) => text.push_str(&item_text),
-                    _ => return None,
-                }
-            }
-            Some(text)
-        }
-        _ => None,
+/// Return true when a text-mode command consumes one accent argument.
+fn is_text_accent_command(command: &str) -> bool {
+    matches!(command, "'" | "`" | "^" | "~" | "=" | "u" | "." | "\"" | "r" | "H" | "v")
+}
+
+/// Preserve MathType's text-mode accent command while keeping the visible argument native.
+fn text_accent_expr(command: &str, argument: Expr) -> Expr {
+    match command {
+        "'" => Expr::Sequence(vec![
+            Expr::RawTex("\\".to_string()),
+            text_empty_base_superscript(Expr::CommandSymbol {
+                command: "prime".to_string(),
+                ch: '\u{2032}',
+            }),
+            argument,
+        ]),
+        "^" => Expr::Sequence(vec![
+            Expr::RawTex("\\".to_string()),
+            text_empty_base_superscript(argument),
+        ]),
+        "\"" => raw_backslash_sequence(Expr::RawTex("\"".to_string()), argument),
+        "." => raw_backslash_sequence(Expr::Char('.'), argument),
+        "=" => raw_backslash_sequence(Expr::Text("=".to_string()), argument),
+        "~" => raw_backslash_sequence(Expr::Char('~'), argument),
+        _ => Expr::Sequence(vec![Expr::RawTex(format!("\\{command}")), argument]),
     }
 }
 
-/// Return the Unicode combining mark for LaTeX text-mode accent commands.
-fn text_accent_combining_mark(command: &str) -> Option<char> {
-    Some(match command {
-        "'" => '\u{0301}',
-        "`" => '\u{0300}',
-        "^" => '\u{0302}',
-        "~" => '\u{0303}',
-        "=" => '\u{0304}',
-        "u" => '\u{0306}',
-        "." => '\u{0307}',
-        "\"" => '\u{0308}',
-        "r" => '\u{030a}',
-        "H" => '\u{030b}',
-        "v" => '\u{030c}',
-        _ => return None,
-    })
+/// Preserve one raw backslash prefix before a visible accent marker and its argument.
+fn raw_backslash_sequence(marker: Expr, argument: Expr) -> Expr {
+    Expr::Sequence(vec![Expr::RawTex("\\".to_string()), marker, argument])
 }
 
-/// Return a text-mode command's literal character when MathType need not see TeX.
-fn text_command_char(command: &str) -> Option<char> {
+/// Build the empty-base superscript shape MathType uses for text-mode accent forms.
+fn text_empty_base_superscript(sup: Expr) -> Expr {
+    Expr::Script {
+        base: Box::new(Expr::Sequence(Vec::new())),
+        sub: None,
+        sup: Some(Box::new(sup)),
+    }
+}
+
+/// Return a text-mode command's literal escape character when MathType need not see TeX.
+fn text_literal_char(command: &str) -> Option<char> {
     Some(match command {
         "%" => '%',
         "#" => '#',
         "&" => '&',
-        "_" | "textunderscore" => '_',
-        "$" | "textdollar" => '$',
-        "{" | "textbraceleft" => '{',
-        "}" | "textbraceright" => '}',
-        "textendash" => '\u{2013}',
-        "textemdash" => '\u{2014}',
-        "textasciitilde" => '~',
-        "textasciicircum" => '^',
-        "textellipsis" => '\u{2026}',
-        "textquoteleft" => '\u{2018}',
-        "textquoteright" => '\u{2019}',
-        "textquotedblleft" => '\u{201c}',
-        "textquotedblright" => '\u{201d}',
-        "textless" => '<',
-        "textgreater" => '>',
-        "textbar" => '|',
-        "textbardbl" => '\u{2016}',
-        "textbackslash" => '\\',
-        "textsterling" => '\u{00a3}',
-        "textdegree" => '\u{00b0}',
-        "textregistered" => '\u{00ae}',
-        "textdagger" => '\u{2020}',
-        "textdaggerdbl" => '\u{2021}',
-        "P" => '\u{00b6}',
-        "S" | "sect" => '\u{00a7}',
-        "OE" => '\u{0152}',
-        "oe" => '\u{0153}',
-        "O" => '\u{00d8}',
-        "o" => '\u{00f8}',
-        "ss" => '\u{00df}',
-        "AA" => '\u{00c5}',
-        "aa" => '\u{00e5}',
-        "AE" => '\u{00c6}',
-        "ae" => '\u{00e6}',
-        "i" => '\u{0131}',
-        "j" => '\u{0237}',
+        "_" => '_',
+        "$" => '$',
+        "{" => '{',
+        "}" => '}',
+        _ => return None,
+    })
+}
+
+/// Return one text-mode command that MathType emits directly as a visible expression.
+fn text_direct_expr(command: &str) -> Option<Expr> {
+    Some(match command {
+        "AA" => Expr::Char('\u{00c5}'),
+        "O" => Expr::Char('\u{2205}'),
+        "P" => Expr::Char('\u{00b6}'),
+        "S" | "sect" => Expr::Char('\u{00a7}'),
         _ => return None,
     })
 }

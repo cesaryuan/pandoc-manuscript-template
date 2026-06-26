@@ -413,11 +413,6 @@ fn collect_raw_commands(expr: &Expr, commands: &mut BTreeMap<String, ()>) {
             content,
             annotation,
             ..
-        }
-        | Expr::Bracket {
-            content,
-            annotation,
-            ..
         } => {
             collect_raw_commands(content, commands);
             if let Some(annotation) = annotation {

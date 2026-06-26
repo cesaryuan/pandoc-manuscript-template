@@ -4,9 +4,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use std::process::{self, Command};
+use std::thread;
+use std::time::{Duration, Instant};
 
 #[path = "../ast.rs"]
 mod ast;
+#[path = "../cfb.rs"]
+mod cfb;
 #[path = "../generated/mod.rs"]
 mod generated;
 #[path = "../mtef.rs"]
@@ -65,6 +70,26 @@ fn main() -> Result<(), String> {
         write_remaining_jsonl(path, &math_raw_class.unclassified, &math_sections)?;
         println!("wrote_remaining_jsonl={}", path.display());
     }
+    if let Some(compare) = &config.mathtype_compare {
+        fs::create_dir_all(&compare.work_dir)
+            .map_err(|err| format!("failed to create {}: {err}", compare.work_dir.display()))?;
+        if config.view.includes_code() {
+            let compare_report = compare_snippets_with_mathtype(&snippets, compare);
+            print_mathtype_compare_report(
+                "supported_functions_mathtype",
+                &compare_report,
+                config.limit,
+            );
+        }
+        if config.view.includes_math() {
+            let compare_report = compare_snippets_with_mathtype(&math_snippets, compare);
+            print_mathtype_compare_report(
+                "supported_functions_math_mathtype",
+                &compare_report,
+                config.limit,
+            );
+        }
+    }
     Ok(())
 }
 
@@ -74,6 +99,14 @@ struct Config {
     view: AuditView,
     unclassified_jsonl: Option<PathBuf>,
     remaining_jsonl: Option<PathBuf>,
+    mathtype_compare: Option<MathTypeCompareConfig>,
+}
+
+struct MathTypeCompareConfig {
+    helper: PathBuf,
+    work_dir: PathBuf,
+    pre_verb: String,
+    timeout_ms: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -103,6 +136,13 @@ impl Config {
         let mut view = AuditView::Both;
         let mut unclassified_jsonl = None;
         let mut remaining_jsonl = None;
+        let mut mathtype_compare = false;
+        let mut mathtype_helper = PathBuf::from(
+            r"..\..\src\pandoc_manuscript\mathtype\ole_helper\bin\Release\net48\MathTypeOleHelper.exe",
+        );
+        let mut mathtype_work_dir = PathBuf::from(r".pmt\audit-supported-functions-mathtype");
+        let mut mathtype_pre_verb = "2".to_string();
+        let mut mathtype_timeout_ms = 30_000u64;
         let mut index = 0;
         while index < args.len() {
             match args[index].as_str() {
@@ -131,6 +171,37 @@ impl Config {
                 }
                 "--math-only" => view = AuditView::Math,
                 "--code-only" => view = AuditView::Code,
+                "--mathtype-compare" => mathtype_compare = true,
+                "--helper" => {
+                    index += 1;
+                    mathtype_helper = PathBuf::from(
+                        args.get(index)
+                            .ok_or_else(|| "--helper requires a path".to_string())?,
+                    );
+                }
+                "--work-dir" => {
+                    index += 1;
+                    mathtype_work_dir = PathBuf::from(
+                        args.get(index)
+                            .ok_or_else(|| "--work-dir requires a path".to_string())?,
+                    );
+                }
+                "--pre-verb" => {
+                    index += 1;
+                    mathtype_pre_verb = args
+                        .get(index)
+                        .ok_or_else(|| "--pre-verb requires an OLE verb number".to_string())?
+                        .clone();
+                }
+                "--timeout-ms" => {
+                    index += 1;
+                    let raw = args
+                        .get(index)
+                        .ok_or_else(|| "--timeout-ms requires a number".to_string())?;
+                    mathtype_timeout_ms = raw
+                        .parse::<u64>()
+                        .map_err(|err| format!("invalid --timeout-ms {raw}: {err}"))?;
+                }
                 "--write-unclassified-jsonl" => {
                     index += 1;
                     unclassified_jsonl = Some(PathBuf::from(args.get(index).ok_or_else(|| {
@@ -154,13 +225,19 @@ impl Config {
             view,
             unclassified_jsonl,
             remaining_jsonl,
+            mathtype_compare: mathtype_compare.then_some(MathTypeCompareConfig {
+                helper: mathtype_helper,
+                work_dir: mathtype_work_dir,
+                pre_verb: mathtype_pre_verb,
+                timeout_ms: mathtype_timeout_ms,
+            }),
         })
     }
 }
 
 /// Return the usage text for invalid audit invocations.
 fn usage() -> &'static str {
-    "Usage: audit_supported_functions [--input <Supported Functions.md>] [--limit <N>] [--view both|code|math] [--math-only] [--code-only] [--write-unclassified-jsonl <path>] [--write-remaining-jsonl <path>]"
+    "Usage: audit_supported_functions [--input <Supported Functions.md>] [--limit <N>] [--view both|code|math] [--math-only] [--code-only] [--write-unclassified-jsonl <path>] [--write-remaining-jsonl <path>] [--mathtype-compare] [--helper <exe>] [--work-dir <dir>] [--pre-verb <N>] [--timeout-ms <N>]"
 }
 
 /// Parse a report-view selector from the CLI.
@@ -191,6 +268,23 @@ struct AuditReport {
 struct RawFallbackClass {
     known: Vec<String>,
     unclassified: Vec<String>,
+}
+
+#[derive(Default)]
+struct MathTypeCompareReport {
+    total: usize,
+    matched: Vec<String>,
+    mismatched: Vec<MathTypeMismatch>,
+    helper_error: Vec<(String, String)>,
+    rust_error: Vec<(String, String)>,
+    skipped: Vec<(String, String)>,
+}
+
+struct MathTypeMismatch {
+    snippet: String,
+    mathtype_len: usize,
+    rust_len: usize,
+    first_diff: usize,
 }
 
 /// Extract unique inline-code snippets that contain TeX control sequences.
@@ -399,6 +493,172 @@ fn audit_snippets(snippets: &[String]) -> AuditReport {
     report
 }
 
+/// Compare renderable snippets against live MathType output through the COM helper.
+fn compare_snippets_with_mathtype(
+    snippets: &[String],
+    config: &MathTypeCompareConfig,
+) -> MathTypeCompareReport {
+    let mut report = MathTypeCompareReport {
+        total: snippets.len(),
+        ..MathTypeCompareReport::default()
+    };
+    for (index, snippet) in snippets.iter().enumerate() {
+        if is_syntax_fragment(snippet) {
+            report
+                .skipped
+                .push((snippet.clone(), "syntax fragment".to_string()));
+            continue;
+        }
+        let normalized = normalize_latex(snippet);
+        let expr = match Parser::new(&normalized).parse() {
+            Ok(expr) => expr,
+            Err(err) if is_documentation_fragment(snippet, &err) => {
+                report.skipped.push((snippet.clone(), err));
+                continue;
+            }
+            Err(err) => {
+                report.rust_error.push((snippet.clone(), err));
+                continue;
+            }
+        };
+        let rust_mtef = match write_mtef(&normalized, &expr) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                report.rust_error.push((snippet.clone(), err));
+                continue;
+            }
+        };
+        let mathtype_mtef = match probe_mathtype_mtef(&normalized, config, index) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                report.helper_error.push((snippet.clone(), err));
+                continue;
+            }
+        };
+        if rust_mtef == mathtype_mtef {
+            report.matched.push(snippet.clone());
+        } else {
+            report.mismatched.push(MathTypeMismatch {
+                snippet: snippet.clone(),
+                mathtype_len: mathtype_mtef.len(),
+                rust_len: rust_mtef.len(),
+                first_diff: first_diff(&mathtype_mtef, &rust_mtef),
+            });
+        }
+    }
+    report
+}
+
+/// Encode one formula with MathType and return the native MTEF payload.
+fn probe_mathtype_mtef(
+    latex: &str,
+    config: &MathTypeCompareConfig,
+    index: usize,
+) -> Result<Vec<u8>, String> {
+    let probe_dir = config
+        .work_dir
+        .join(format!("run-{}-{index:04}", process::id()));
+    fs::create_dir_all(&probe_dir)
+        .map_err(|err| format!("failed to create {}: {err}", probe_dir.display()))?;
+    let tex_path = probe_dir.join("probe.tex");
+    let ole_path = probe_dir.join("probe.ole.bin");
+    fs::write(&tex_path, latex)
+        .map_err(|err| format!("failed to write {}: {err}", tex_path.display()))?;
+    run_mathtype_helper(
+        &config.helper,
+        &config.pre_verb,
+        &tex_path,
+        &ole_path,
+        config.timeout_ms,
+    )?;
+    let ole = fs::read(&ole_path)
+        .map_err(|err| format!("failed to read {}: {err}", ole_path.display()))?;
+    extract_mtef_from_ole(&ole)
+}
+
+/// Extract MathType's Equation Native payload after the fixed OLE stream header.
+fn extract_mtef_from_ole(ole: &[u8]) -> Result<Vec<u8>, String> {
+    let equation_native = cfb::read_regular_stream(ole, "Equation Native")?;
+    Ok(equation_native
+        .get(28..)
+        .ok_or_else(|| "Equation Native stream is shorter than the native header".to_string())?
+        .to_vec())
+}
+
+/// Invoke the existing MathType COM helper for one TeX input file.
+fn run_mathtype_helper(
+    helper: &PathBuf,
+    pre_verb: &str,
+    tex_path: &PathBuf,
+    ole_path: &PathBuf,
+    timeout_ms: u64,
+) -> Result<(), String> {
+    let _ = fs::remove_file(ole_path);
+    let mut child = Command::new(helper)
+        .args([
+            "--method",
+            "set-data",
+            "--pre-verb",
+            pre_verb,
+            "--format",
+            "TeX Input Language",
+            "--input",
+        ])
+        .arg(tex_path)
+        .args(["--output"])
+        .arg(ole_path)
+        .args(["--encoding", "utf16le", "--no-verb"])
+        .spawn()
+        .map_err(|err| format!("failed to run {}: {err}", helper.display()))?;
+    let status =
+        wait_with_timeout(&mut child, Duration::from_millis(timeout_ms)).map_err(|err| {
+            let _ = fs::remove_file(ole_path);
+            err
+        })?;
+    if !status.success() {
+        let _ = fs::remove_file(ole_path);
+        return Err(format!(
+            "{} failed for {} with status {status}",
+            helper.display(),
+            tex_path.display()
+        ));
+    }
+    Ok(())
+}
+
+/// Wait for the helper so one unsupported MathType input cannot hang the audit.
+fn wait_with_timeout(
+    child: &mut std::process::Child,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus, String> {
+    let start = Instant::now();
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|err| format!("failed while waiting for helper: {err}"))?
+        {
+            return Ok(status);
+        }
+        if start.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "MathType helper timed out after {} ms",
+                timeout.as_millis()
+            ));
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Return the first byte offset that differs between two MTEF payloads.
+fn first_diff(left: &[u8], right: &[u8]) -> usize {
+    left.iter()
+        .zip(right.iter())
+        .position(|(left, right)| left != right)
+        .unwrap_or_else(|| left.len().min(right.len()))
+}
+
 /// Return true for documentation fragments that are not standalone formulas.
 fn is_syntax_fragment(snippet: &str) -> bool {
     let trimmed = snippet.trim();
@@ -569,6 +829,51 @@ fn print_report(prefix: &str, report: &AuditReport, limit: usize) {
     );
 }
 
+/// Print live-MathType comparison totals and representative failures.
+fn print_mathtype_compare_report(prefix: &str, report: &MathTypeCompareReport, limit: usize) {
+    println!("{prefix}_snippets={}", report.total);
+    println!("{prefix}_matched={}", report.matched.len());
+    println!("{prefix}_mismatched={}", report.mismatched.len());
+    println!("{prefix}_helper_error={}", report.helper_error.len());
+    println!("{prefix}_rust_error={}", report.rust_error.len());
+    println!("{prefix}_skipped={}", report.skipped.len());
+    println!("{prefix}_mismatch_examples:");
+    for (index, mismatch) in report.mismatched.iter().enumerate() {
+        if index >= limit {
+            println!("  ... {} more", report.mismatched.len() - limit);
+            break;
+        }
+        println!(
+            "  - {} => mathtype_len={}, rust_len={}, first_diff={}",
+            mismatch.snippet, mismatch.mathtype_len, mismatch.rust_len, mismatch.first_diff
+        );
+    }
+    print_list(
+        &format!("{prefix}_helper_error_examples"),
+        report
+            .helper_error
+            .iter()
+            .map(|(snippet, err)| (snippet, Some(err))),
+        limit,
+    );
+    print_list(
+        &format!("{prefix}_rust_error_examples"),
+        report
+            .rust_error
+            .iter()
+            .map(|(snippet, err)| (snippet, Some(err))),
+        limit,
+    );
+    print_list(
+        &format!("{prefix}_skipped_examples"),
+        report
+            .skipped
+            .iter()
+            .map(|(snippet, err)| (snippet, Some(err))),
+        limit,
+    );
+}
+
 /// Split raw fallback into documented MathType behavior and still-unclassified gaps.
 fn classify_raw_fallbacks(snippets: &[String]) -> RawFallbackClass {
     let mut known = Vec::new();
@@ -682,11 +987,6 @@ fn collect_raw_commands(expr: &Expr, commands: &mut Vec<String>) {
                 .for_each(|expr| collect_raw_commands(expr, commands));
         }
         Expr::Brace {
-            content,
-            annotation,
-            ..
-        }
-        | Expr::Bracket {
             content,
             annotation,
             ..

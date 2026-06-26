@@ -78,11 +78,6 @@ pub(crate) enum Expr {
         content: Box<Expr>,
         annotation: Option<Box<Expr>>,
     },
-    Bracket {
-        kind: BracketKind,
-        content: Box<Expr>,
-        annotation: Option<Box<Expr>>,
-    },
     Stackrel {
         upper: Box<Expr>,
         lower: Box<Expr>,
@@ -169,11 +164,6 @@ impl Expr {
                     || upper.as_deref().is_some_and(Expr::contains_raw_tex)
             }
             Expr::Brace {
-                content,
-                annotation,
-                ..
-            }
-            | Expr::Bracket {
                 content,
                 annotation,
                 ..
@@ -292,12 +282,6 @@ pub(crate) enum IntegralKind {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BraceKind {
-    Over,
-    Under,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BracketKind {
     Over,
     Under,
 }

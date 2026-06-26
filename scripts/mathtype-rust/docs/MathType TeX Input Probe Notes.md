@@ -212,7 +212,10 @@ cargo run --bin generate_mtef_tables -- --only mathfrak_ --output .pmt\mathfrak-
 The 52 `\mathfrak` targets must be extracted from MathType output rather than
 calculated from a single formula. For example, `\mathfrak{I}` uses
 `FN_SYMBOL`, `mtcode=0x2111`, and `font_pos=0xc1`, while most letters use the
-explicit Euclid Math One font slot.
+explicit Euclid Fraktur font slot. This matters when `\mathfrak` appears before
+other explicit-font families: MathType assigns Euclid Fraktur to the first
+negative typeface slot, and later explicit fonts such as Euclid Math One move to
+the next slot.
 
 Fresh `--pre-verb 2` probes show that legacy `\frak{...}` and KaTeX
 `\mathsfit{...}` are not MathType TeX Input font commands. MathType stores the
@@ -249,11 +252,11 @@ inline-code-span view, useful for command-level coverage. The
 `supported_functions_math_*` view extracts complete `$...$` and `$$...$$`
 formulas from the same document, which catches structural support for examples
 that the code spans split into pieces, such as environments and nested
-row-stack formulas. In the current checkout, the code-span view reports 862
-native-rendered snippets, 82 raw-fallback snippets, zero unclassified raw
+row-stack formulas. In the current checkout, the code-span view reports 858
+native-rendered snippets, 86 raw-fallback snippets, zero unclassified raw
 fallbacks, 100 syntax fragments, and zero parse/render errors. Many code-span
 items are documentation fragments or placeholder syntax rather than complete
-formulas. The complete-formula view reports 856 native-rendered formulas, 64
+formulas. The complete-formula view reports 852 native-rendered formulas, 68
 raw-fallback formulas, and zero parse, syntax, or render errors. All raw
 fallbacks in both views are classified as known MathType raw text behavior.
 
@@ -598,12 +601,12 @@ only because the display source and code-span source differ.
 ## Horizontal Fence Templates
 
 `\overbrace` and `\underbrace` use MathType's `tmHBRACE` selector (`0x18`),
-with variation `0x01` for top and `0x00` for bottom. `\overbracket` and
-`\underbracket` use the sibling `tmHBRACK` selector (`0x19`) with the same
-top/bottom variation bit. Both AST variants share the same optional annotation
-slot handling, so `\overbracket{a+b}^{\text{note}}` and
-`\underbracket{a+b}_{\text{note}}` stay native instead of becoming scripted
-raw TeX fallback.
+with variation `0x01` for top and `0x00` for bottom. Fresh `--pre-verb 2`
+probes show `\overbracket` and `\underbracket` are different: MathType stores
+the command word as raw text, parses the grouped content normally, and then
+applies any following script to that visible content. Keep them on the known
+raw fallback path rather than mapping them to the `tmHBRACK` selector by
+assumption.
 
 The MTEF template table does not list separate selectors for KaTeX's
 `\overgroup`, `\undergroup`, `\overlinesegment`, or `\underlinesegment`.

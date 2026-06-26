@@ -510,16 +510,13 @@ impl Parser {
                 content: Box::new(self.parse_required_group("underbrace content")?),
                 annotation: None,
             }),
-            "overbracket" => Ok(Expr::Bracket {
-                kind: BracketKind::Over,
-                content: Box::new(self.parse_required_group("overbracket content")?),
-                annotation: None,
-            }),
-            "underbracket" => Ok(Expr::Bracket {
-                kind: BracketKind::Under,
-                content: Box::new(self.parse_required_group("underbracket content")?),
-                annotation: None,
-            }),
+            "overbracket" | "underbracket" => {
+                let content = self.parse_required_group("bracket content")?;
+                Ok(Expr::Sequence(vec![
+                    Expr::RawTex(format!("\\{command}")),
+                    content,
+                ]))
+            }
             "stackrel" | "overset" => {
                 let upper = self.parse_required_group("stackrel upper")?;
                 let lower = self.parse_required_group("stackrel lower")?;
@@ -1735,19 +1732,6 @@ fn merge_script(base: Expr, sub: Option<Expr>, sup: Option<Expr>) -> Expr {
             || (kind == BraceKind::Over && sup.is_some()) =>
         {
             Expr::Brace {
-                kind,
-                content,
-                annotation: sub.or(sup).map(Box::new).or(annotation),
-            }
-        }
-        Expr::Bracket {
-            kind,
-            content,
-            annotation,
-        } if (kind == BracketKind::Under && sub.is_some())
-            || (kind == BracketKind::Over && sup.is_some()) =>
-        {
-            Expr::Bracket {
                 kind,
                 content,
                 annotation: sub.or(sup).map(Box::new).or(annotation),

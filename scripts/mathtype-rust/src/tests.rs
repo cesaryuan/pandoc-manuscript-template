@@ -362,38 +362,55 @@ fn supported_xarrow_variants_render_natively() {
     );
 }
 
-/// Ensure horizontal bracket accents use MathType's tmHBRACK template natively.
+/// Ensure single-character \vec uses MathType's EMBELL form for any plain letter.
 #[test]
-fn horizontal_brackets_render_natively() {
+fn single_character_vec_uses_embellishment_for_any_plain_letter() {
+    for latex in ["\\vec{x}", "\\vec{a}", "\\vec{z}"] {
+        let expr = Parser::new(latex).parse().expect("single-char vec parses");
+        assert_no_raw_tex(&expr);
+        let bytes = write_mtef(latex, &expr).expect("single-char vec renders");
+        assert!(
+            bytes.windows(3).any(|window| window == [0x06, 0x00, 0x0b]),
+            "{latex} should use MathType's vector EMBELL subtype"
+        );
+        assert!(
+            !bytes
+                .windows(5)
+                .any(|window| window == [0x03, 0x00, 0x1f, 0x02, 0x00]),
+            "{latex} should not fall back to the multi-character tmVEC template"
+        );
+    }
+
+    let latex = "\\overrightarrow{xy}";
+    let expr = Parser::new(latex)
+        .parse()
+        .expect("multi-char overrightarrow parses");
+    let bytes = write_mtef(latex, &expr).expect("multi-char overrightarrow renders");
+    assert!(
+        bytes
+            .windows(5)
+            .any(|window| window == [0x03, 0x00, 0x1f, 0x02, 0x00]),
+        "multi-character right-arrow accents should still use tmVEC"
+    );
+}
+
+/// Ensure horizontal bracket accents follow MathType's raw TeX fallback behavior.
+#[test]
+fn horizontal_brackets_stay_raw_fallback() {
     let latex = "\\overbracket{AB}^{\\text{note}}+\\underbracket{CD}_{\\text{note}}";
     let expr = Parser::new(latex)
         .parse()
         .expect("horizontal brackets parse");
-    assert_no_raw_tex(&expr);
+    assert!(
+        expr.contains_raw_tex(),
+        "horizontal brackets should stay raw"
+    );
     let bytes = write_mtef(latex, &expr).expect("horizontal brackets render");
     assert!(
         bytes
-            .windows(5)
-            .any(|window| window == [0x03, 0x00, 0x19, 0x01, 0x00]),
-        "overbracket should use the tmHBRACK top template"
-    );
-    assert!(
-        bytes
-            .windows(5)
-            .any(|window| window == [0x03, 0x00, 0x19, 0x00, 0x00]),
-        "underbracket should use the tmHBRACK bottom template"
-    );
-    assert!(
-        bytes
-            .windows(5)
-            .any(|window| window == [0x02, 0x00, FN_EXPAND, 0xb4, 0x23]),
-        "overbracket should append the top-square-bracket expanding glyph"
-    );
-    assert!(
-        bytes
-            .windows(5)
-            .any(|window| window == [0x02, 0x00, FN_EXPAND, 0xb5, 0x23]),
-        "underbracket should append the bottom-square-bracket expanding glyph"
+            .windows("\\underbracket".len() * 5)
+            .any(|window| window.contains(&0x80)),
+        "underbracket should write raw TeX CHAR records"
     );
 }
 
@@ -662,11 +679,6 @@ fn assert_no_raw_tex(expr: &Expr) {
             upper.as_deref().into_iter().for_each(assert_no_raw_tex);
         }
         Expr::Brace {
-            content,
-            annotation,
-            ..
-        }
-        | Expr::Bracket {
             content,
             annotation,
             ..

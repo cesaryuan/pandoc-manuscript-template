@@ -24,16 +24,16 @@ MathType TeX Input 相关能力时参考。
 修正 `--pre-verb 2` 探针路径后，本地 audit 已经达到干净的分类状态：
 
 ```text
-supported_functions_native_render=862
-supported_functions_raw_fallback=82
-supported_functions_known_mathtype_raw_fallback=82
+supported_functions_native_render=858
+supported_functions_raw_fallback=86
+supported_functions_known_mathtype_raw_fallback=86
 supported_functions_unclassified_raw_fallback=0
 supported_functions_syntax_fragment=100
 supported_functions_parse_error=0
 
-supported_functions_math_native_render=856
-supported_functions_math_raw_fallback=64
-supported_functions_math_known_mathtype_raw_fallback=64
+supported_functions_math_native_render=852
+supported_functions_math_raw_fallback=68
+supported_functions_math_known_mathtype_raw_fallback=68
 supported_functions_math_unclassified_raw_fallback=0
 supported_functions_math_parse_error=0
 ```
@@ -52,6 +52,17 @@ cargo run --bin audit_supported_functions -- --math-only --limit 20
 cargo run --bin audit_supported_functions -- --math-only --write-unclassified-jsonl .pmt\probe-manifests\supported-math-unclassified.jsonl
 cargo run --bin audit_supported_functions -- --math-only --write-remaining-jsonl .pmt\probe-manifests\supported-math-remaining.jsonl
 ```
+
+如果需要确认当前 writer 是否和本机 MathType 完全一致，可以显式打开 live compare：
+
+```powershell
+cargo run --bin audit_supported_functions -- --math-only --mathtype-compare --limit 20 --timeout-ms 60000
+```
+
+这个模式会保留原来的覆盖统计，同时对可解析、可写出的公式调用 MathType helper，
+抽取 OLE 里的 `Equation Native` MTEF payload，再和 Rust writer 逐字节比较。
+因此它能区分“覆盖到了”和“字节级等价”。helper 失败、Rust 写出失败、字节不一致
+会分别统计，避免把 MathType COM 问题误当成 parser 覆盖问题。
 
 指标含义：
 
@@ -90,7 +101,7 @@ MathType 不支持某个输入。只有已经完成的 helper 输出，或已保
 - 可见多字符关系写法对应的命令序列别名。
 - writer 需要命令特定记录的 sum/operator 命令表。
 
-`\mathfrak` 表很好地说明了为什么需要生成。大多数字母使用显式 Euclid Math One
+`\mathfrak` 表很好地说明了为什么需要生成。大多数字母使用显式 Euclid Fraktur
 槽位，但 `\mathfrak{I}` 和 `\mathfrak{R}` 使用特殊的 Symbol-font CHAR 记录。
 这一类应该保持 probe/generated，而不是从某个公式里推导。
 

@@ -55,6 +55,18 @@ const EUCLID_MATH_TWO_AFTER_ONE_DEFS: &[u8] = &[
     0x07, 0x00,
 ];
 
+const EUCLID_FRAKTUR_DEFS: &[u8] = &[
+    0x13, b'E', b'u', b'c', b'l', b'i', b'd', b'F', b'r', b'a', b'k', b't', b'u', b'r', 0x00, 0x11,
+    0x07, b'E', b'u', b'c', b'l', b'i', b'd', b' ', b'F', b'r', b'a', b'k', b't', b'u', b'r', 0x00,
+    0x08, 0x06, 0x00,
+];
+
+const EUCLID_FRAKTUR_AFTER_ONE_DEFS: &[u8] = &[
+    0x13, b'E', b'u', b'c', b'l', b'i', b'd', b'F', b'r', b'a', b'k', b't', b'u', b'r', 0x00, 0x11,
+    0x08, b'E', b'u', b'c', b'l', b'i', b'd', b' ', b'F', b'r', b'a', b'k', b't', b'u', b'r', 0x00,
+    0x08, 0x07, 0x00,
+];
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SizeState {
     Full,
@@ -77,8 +89,10 @@ struct WriteState {
 struct MtefWriter {
     euclid_math_one_defined: bool,
     euclid_math_two_defined: bool,
+    euclid_fraktur_defined: bool,
     euclid_math_one_typeface: u8,
     euclid_math_two_typeface: u8,
+    euclid_fraktur_typeface: u8,
     black_color_defined: bool,
     big_symbol_line_marker_pending: bool,
 }
@@ -95,7 +109,7 @@ impl MtefWriter {
     /// Emit Euclid Math One once, at the position where MathType first needs it.
     fn ensure_euclid_math_one(&mut self, out: &mut Vec<u8>) {
         if !self.euclid_math_one_defined {
-            if self.euclid_math_two_defined {
+            if self.euclid_math_two_defined || self.euclid_fraktur_defined {
                 out.extend_from_slice(EUCLID_MATH_ONE_AFTER_TWO_DEFS);
                 self.euclid_math_one_typeface = EXPLICIT_FONT_NEG_2;
             } else {
@@ -109,7 +123,7 @@ impl MtefWriter {
     /// Emit Euclid Math Two once for blackboard characters such as \mathbb{I}.
     fn ensure_euclid_math_two(&mut self, out: &mut Vec<u8>) {
         if !self.euclid_math_two_defined {
-            if self.euclid_math_one_defined {
+            if self.euclid_math_one_defined || self.euclid_fraktur_defined {
                 out.extend_from_slice(EUCLID_MATH_TWO_AFTER_ONE_DEFS);
                 self.euclid_math_two_typeface = EXPLICIT_FONT_NEG_2;
             } else {
@@ -117,6 +131,20 @@ impl MtefWriter {
                 self.euclid_math_two_typeface = EXPLICIT_FONT_NEG_1;
             }
             self.euclid_math_two_defined = true;
+        }
+    }
+
+    /// Emit Euclid Fraktur once for MathType's native \mathfrak character table.
+    fn ensure_euclid_fraktur(&mut self, out: &mut Vec<u8>) {
+        if !self.euclid_fraktur_defined {
+            if self.euclid_math_one_defined || self.euclid_math_two_defined {
+                out.extend_from_slice(EUCLID_FRAKTUR_AFTER_ONE_DEFS);
+                self.euclid_fraktur_typeface = EXPLICIT_FONT_NEG_2;
+            } else {
+                out.extend_from_slice(EUCLID_FRAKTUR_DEFS);
+                self.euclid_fraktur_typeface = EXPLICIT_FONT_NEG_1;
+            }
+            self.euclid_fraktur_defined = true;
         }
     }
 }
@@ -157,8 +185,10 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
     let mut writer = MtefWriter {
         euclid_math_one_defined: false,
         euclid_math_two_defined: false,
+        euclid_fraktur_defined: false,
         euclid_math_one_typeface: EXPLICIT_FONT_NEG_1,
         euclid_math_two_typeface: EXPLICIT_FONT_NEG_1,
+        euclid_fraktur_typeface: EXPLICIT_FONT_NEG_1,
         black_color_defined: false,
         big_symbol_line_marker_pending: false,
     };
@@ -199,11 +229,29 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
 fn expr_starts_with_top_matrix(expr: &Expr) -> bool {
     match expr {
         Expr::Environment {
-            kind: EnvironmentKind::Align | EnvironmentKind::Aligned,
+            kind: EnvironmentKind::Align | EnvironmentKind::Aligned | EnvironmentKind::Split,
             ..
         } => true,
+        Expr::Limit { .. } => true,
+        Expr::Underset { .. } => true,
+        Expr::Matrix { .. } => true,
         Expr::Style { content, .. } => expr_starts_with_top_matrix(content),
-        Expr::Sequence(items) if items.len() == 1 => expr_starts_with_top_matrix(&items[0]),
+        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_top_matrix),
+        _ => false,
+    }
+}
+
+/// Return true when MathType starts this environment as raw TeX fallback text.
+fn expr_starts_with_environment_fallback(expr: &Expr) -> bool {
+    match expr {
+        Expr::Environment {
+            kind: EnvironmentKind::Aligned | EnvironmentKind::Split,
+            ..
+        } => true,
+        Expr::Style { content, .. } => expr_starts_with_environment_fallback(content),
+        Expr::Sequence(items) => items
+            .first()
+            .is_some_and(expr_starts_with_environment_fallback),
         _ => false,
     }
 }
@@ -214,6 +262,7 @@ fn expr_starts_with_raw_tex(expr: &Expr) -> bool {
         Expr::RawTex(_) => true,
         Expr::Style { content, .. } => expr_starts_with_raw_tex(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_raw_tex),
+        Expr::Script { base, .. } => expr_starts_with_raw_tex(base),
         _ => false,
     }
 }
@@ -305,6 +354,24 @@ fn expr_starts_with_euclid_math_two(expr: &Expr) -> bool {
     }
 }
 
+/// Return true when MathType emits Euclid Fraktur before selecting line color.
+fn expr_starts_with_euclid_fraktur(expr: &Expr) -> bool {
+    match expr {
+        Expr::Font {
+            kind: FontKind::MathFrak,
+            content,
+        } => single_font_char(content).is_some_and(|(_, ch)| {
+            encoding::mathfrak_char(ch).is_ok_and(|entry| {
+                entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
+            })
+        }),
+        Expr::Style { content, .. } => expr_starts_with_euclid_fraktur(content),
+        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_euclid_fraktur),
+        Expr::Script { base, .. } => expr_starts_with_euclid_fraktur(base),
+        _ => false,
+    }
+}
+
 /// Return true for algorithm-indent formulas that contain only spacing commands.
 fn expr_is_only_spaces(expr: &Expr) -> bool {
     match expr {
@@ -345,6 +412,11 @@ fn write_expr(
             };
             for (index, item) in items.iter().enumerate() {
                 if state.size != current_size && !matches!(item, Expr::Integral { .. }) {
+                    if expr_starts_with_euclid_math_one(item) {
+                        writer.ensure_euclid_math_one(out);
+                    } else if expr_starts_with_euclid_math_two(item) {
+                        writer.ensure_euclid_math_two(out);
+                    }
                     write_size(current_size, out);
                     state.size = current_size;
                 }
@@ -359,12 +431,26 @@ fn write_expr(
                     }
                 }
                 if state.color != ColorState::Black && !expr_sets_own_color(item) {
+                    if expr_starts_with_euclid_fraktur(item) {
+                        writer.ensure_euclid_fraktur(out);
+                    }
                     writer.ensure_black_color_def(out);
                     color_black(out);
                     state.color = ColorState::Black;
                 }
                 if state.color == ColorState::Black
                     && expr_starts_with_sum_operator_script_base(item)
+                {
+                    color_default(out);
+                    state.color = ColorState::Default;
+                }
+                if index > 0 && state.color == ColorState::Black && expr_starts_with_raw_tex(item) {
+                    color_default(out);
+                    state.color = ColorState::Default;
+                }
+                if index > 0
+                    && state.color == ColorState::Black
+                    && expr_starts_with_environment_fallback(item)
                 {
                     color_default(out);
                     state.color = ColorState::Default;
@@ -516,18 +602,6 @@ fn write_expr(
             content,
             annotation,
         } => write_brace_template(
-            *kind,
-            content,
-            annotation.as_deref(),
-            out,
-            current_size,
-            writer,
-        )?,
-        Expr::Bracket {
-            kind,
-            content,
-            annotation,
-        } => write_bracket_template(
             *kind,
             content,
             annotation.as_deref(),
@@ -1032,35 +1106,6 @@ fn write_brace_template(
     )
 }
 
-/// Write MathType's overbracket/underbracket template with an optional annotation slot.
-fn write_bracket_template(
-    kind: BracketKind,
-    content: &Expr,
-    annotation: Option<&Expr>,
-    out: &mut Vec<u8>,
-    current_size: SizeState,
-    writer: &mut MtefWriter,
-) -> Result<WriteState, String> {
-    let variation = match kind {
-        BracketKind::Over => 0x01,
-        BracketKind::Under => 0x00,
-    };
-    let glyph = match kind {
-        BracketKind::Over => 0x23b4,
-        BracketKind::Under => 0x23b5,
-    };
-    write_horizontal_fence_template(
-        0x19,
-        variation,
-        glyph,
-        content,
-        annotation,
-        out,
-        current_size,
-        writer,
-    )
-}
-
 /// Write a horizontal brace/bracket HFence template described by MathType's selector table.
 fn write_horizontal_fence_template(
     selector: u8,
@@ -1142,7 +1187,6 @@ fn write_underset(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
-    color_default(out);
     out.extend_from_slice(&[0x03, 0x00, 0x17, 0x10, 0x00]);
     let base_state = write_line(base, out, current_size, writer)?;
     let stack_size = match current_size {
@@ -1254,7 +1298,7 @@ fn write_matrix(
         MatrixKind::Barred => Some(('|', '|', 0x04)),
         MatrixKind::DoubleBarred => Some(('‖', '‖', 0x05)),
     }) else {
-        write_matrix_record(rows, out, current_size, writer)?;
+        write_plain_matrix_record(rows, out, current_size, writer)?;
         return Ok(());
     };
     write_fenced_matrix(selector, left, right, rows, out, current_size, writer)?;
@@ -1270,10 +1314,15 @@ fn write_environment(
     writer: &mut MtefWriter,
 ) -> Result<(), String> {
     match kind {
-        EnvironmentKind::Align | EnvironmentKind::AlignAt | EnvironmentKind::Split => {
+        EnvironmentKind::Align | EnvironmentKind::AlignAt => {
             write_align_matrix_record(rows, out, current_size, writer)
         }
-        EnvironmentKind::Aligned => write_aligned_fallback(rows, out, current_size, writer),
+        EnvironmentKind::Split => {
+            write_environment_fallback("split", "&", "\\end", rows, out, current_size, writer)
+        }
+        EnvironmentKind::Aligned => {
+            write_environment_fallback("aligned", "nn&", "nn\\end", rows, out, current_size, writer)
+        }
         EnvironmentKind::AlignedAt => write_align_matrix_record(rows, out, current_size, writer),
         EnvironmentKind::Gather | EnvironmentKind::Gathered => {
             write_matrix_record(rows, out, current_size, writer)
@@ -1283,8 +1332,11 @@ fn write_environment(
     }
 }
 
-/// Emulate MathType TeX Input's fallback for unsupported aligned environments.
-fn write_aligned_fallback(
+/// Emulate MathType TeX Input's fallback for unsupported alignment environments.
+fn write_environment_fallback(
+    name: &str,
+    separator: &str,
+    end_command: &str,
     rows: &[Vec<Expr>],
     out: &mut Vec<u8>,
     current_size: SizeState,
@@ -1293,7 +1345,7 @@ fn write_aligned_fallback(
     write_raw_tex_text("\\begin", out)?;
     writer.ensure_black_color_def(out);
     color_black(out);
-    for ch in "aligned".chars() {
+    for ch in name.chars() {
         write_char(ch, out, writer)?;
     }
     let mut state = WriteState {
@@ -1306,22 +1358,39 @@ fn write_aligned_fallback(
                 continue;
             }
             let mut after_raw_separator = false;
-            if row_index > 0 || cell_index > 0 {
+            if cell_index > 0 {
                 if state.size != current_size {
                     write_size(current_size, out);
                     state.size = current_size;
                 }
-                let first_alignment_separator = row_index == 0 && cell_index == 1;
-                if state.color != ColorState::Default && !first_alignment_separator {
+                if state.color != ColorState::Default {
                     color_default(out);
                 }
-                write_raw_tex_text("nn&", out)?;
+                write_raw_tex_text(separator, out)?;
                 after_raw_separator = true;
                 if !expr_starts_with_space(cell) {
                     color_black(out);
                 }
             }
-            state = if after_raw_separator && expr_starts_with_space(cell) {
+            if !after_raw_separator
+                && row_index > 0
+                && state.color != ColorState::Default
+                && expr_starts_with_environment_fallback(cell)
+            {
+                color_default(out);
+                state.color = ColorState::Default;
+            }
+            state = if name == "split" && !after_raw_separator {
+                if let Some(nested_state) =
+                    write_nested_aligned_fallback(cell, out, current_size, writer)?
+                {
+                    nested_state
+                } else if expr_starts_with_space(cell) {
+                    write_fallback_cell_after_default_space(cell, out, current_size, writer)?
+                } else {
+                    write_expr(cell, out, current_size, writer)?
+                }
+            } else if after_raw_separator && expr_starts_with_space(cell) {
                 write_fallback_cell_after_default_space(cell, out, current_size, writer)?
             } else {
                 write_expr(cell, out, current_size, writer)?
@@ -1332,12 +1401,36 @@ fn write_aligned_fallback(
         write_size(current_size, out);
     }
     color_default(out);
-    write_raw_tex_text("nn\\end", out)?;
+    write_raw_tex_text(end_command, out)?;
     color_black(out);
-    for ch in "aligned".chars() {
+    for ch in name.chars() {
         write_char(ch, out, writer)?;
     }
     Ok(())
+}
+
+/// Write nested aligned environments inside split using MathType's split fallback separators.
+fn write_nested_aligned_fallback(
+    expr: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<Option<WriteState>, String> {
+    let Expr::Sequence(items) = expr else {
+        return Ok(None);
+    };
+    let [Expr::Environment {
+        kind: EnvironmentKind::Aligned,
+        rows,
+    }] = items.as_slice()
+    else {
+        return Ok(None);
+    };
+    write_environment_fallback("aligned", "&", "\\end", rows, out, current_size, writer)?;
+    Ok(Some(WriteState {
+        size: current_size,
+        color: ColorState::Black,
+    }))
 }
 
 /// Return true when a fallback cell starts with TeX spacing such as \quad.
@@ -1424,7 +1517,7 @@ fn write_left_fenced_matrix(
 ) -> Result<(), String> {
     out.extend_from_slice(&[0x03, 0x00, 0x02, 0x01, 0x00]);
     color_default(out);
-    write_matrix_slot_line(rows, out, current_size, writer, MatrixHeaderStyle::Plain)?;
+    write_matrix_slot_line(rows, out, current_size, writer, MatrixHeaderStyle::Cases)?;
     write_delimiter_glyph('{', out)?;
     out.push(0x00);
     Ok(())
@@ -1439,7 +1532,7 @@ fn write_right_fenced_matrix(
 ) -> Result<(), String> {
     out.extend_from_slice(&[0x03, 0x00, 0x02, 0x02, 0x00]);
     color_default(out);
-    write_matrix_slot_line(rows, out, current_size, writer, MatrixHeaderStyle::Plain)?;
+    write_matrix_slot_line(rows, out, current_size, writer, MatrixHeaderStyle::Cases)?;
     write_delimiter_glyph('}', out)?;
     out.push(0x00);
     Ok(())
@@ -1466,12 +1559,24 @@ fn write_matrix_slot_line(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MatrixHeaderStyle {
+    Cases,
     Plain,
     Fenced,
 }
 
 /// Write MathType's MATRIX record and one LINE object for each cell.
 fn write_matrix_record(
+    rows: &[Vec<Expr>],
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    write_matrix_record_with_header(rows, out, current_size, writer, MatrixHeaderStyle::Cases)?;
+    Ok(())
+}
+
+/// Write standalone matrix/array environments using MathType's centered columns.
+fn write_plain_matrix_record(
     rows: &[Vec<Expr>],
     out: &mut Vec<u8>,
     current_size: SizeState,
@@ -1495,7 +1600,8 @@ fn write_matrix_record_with_header(
         u8::try_from(col_count).map_err(|_| "matrix has too many columns".to_string())?;
 
     let column_style = match header_style {
-        MatrixHeaderStyle::Plain => 0x00,
+        MatrixHeaderStyle::Cases => 0x00,
+        MatrixHeaderStyle::Plain => 0x01,
         MatrixHeaderStyle::Fenced => 0x01,
     };
     out.extend_from_slice(&[0x05, 0x00, 0x01, column_style, 0x01, row_count, col_count]);
@@ -1510,7 +1616,7 @@ fn write_matrix_record_with_header(
     };
     for row in rows {
         for col_index in 0..col_count as usize {
-            if header_style == MatrixHeaderStyle::Plain
+            if header_style != MatrixHeaderStyle::Fenced
                 && cell_ordinal > 0
                 && !previous_cell_was_empty
             {
@@ -1660,7 +1766,13 @@ fn write_font_char(
                 return write_non_alpha_font_char(kind, ch, out, writer);
             };
             if entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1 {
-                write_math_one_font_char(entry, out, writer);
+                writer.ensure_euclid_fraktur(out);
+                write_table_char(
+                    writer.euclid_fraktur_typeface,
+                    entry.mtcode,
+                    entry.font_pos,
+                    out,
+                );
             } else {
                 write_table_char(entry.typeface, entry.mtcode, entry.font_pos, out);
             }
@@ -1830,6 +1942,15 @@ fn write_arrow_accent_template(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    if kind == ArrowAccentKind::Right && !under {
+        if let Some((None, ch)) = single_font_char(expr) {
+            write_embellished_char_with_code(ch, 0x0b, out)?;
+            return Ok(WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            });
+        }
+    }
     out.extend_from_slice(&[0x03, 0x00, 0x1f, arrow_accent_variation(kind, under), 0x00]);
     color_default(out);
     let line_state = write_line(expr, out, current_size, writer)?;
@@ -1936,8 +2057,10 @@ fn write_hat_template_for_bold_char(ch: char, out: &mut Vec<u8>) -> Result<(), S
         &mut MtefWriter {
             euclid_math_one_defined: true,
             euclid_math_two_defined: true,
+            euclid_fraktur_defined: false,
             euclid_math_one_typeface: EXPLICIT_FONT_NEG_1,
             euclid_math_two_typeface: EXPLICIT_FONT_NEG_2,
+            euclid_fraktur_typeface: EXPLICIT_FONT_NEG_1,
             black_color_defined: true,
             big_symbol_line_marker_pending: false,
         },
@@ -2036,6 +2159,28 @@ fn write_explicit_accent_line(kind: AccentKind, out: &mut Vec<u8>) {
 
 /// Write a CHAR record with one or more embellishments attached.
 fn write_embellished_char(ch: char, kinds: &[AccentKind], out: &mut Vec<u8>) -> Result<(), String> {
+    let codes = kinds
+        .iter()
+        .map(|kind| embellishment_code(*kind))
+        .collect::<Vec<_>>();
+    write_embellished_char_codes(ch, &codes, out)
+}
+
+/// Write a CHAR record with one explicitly probed EMBELL subtype attached.
+fn write_embellished_char_with_code(
+    ch: char,
+    embellishment: u8,
+    out: &mut Vec<u8>,
+) -> Result<(), String> {
+    write_embellished_char_codes(ch, &[embellishment], out)
+}
+
+/// Write a CHAR record with one or more raw EMBELL subtype bytes attached.
+fn write_embellished_char_codes(
+    ch: char,
+    embellishments: &[u8],
+    out: &mut Vec<u8>,
+) -> Result<(), String> {
     let code = ch as u32;
     if code > u16::MAX as u32 {
         return Err(format!("embellished character is outside BMP: {ch}"));
@@ -2048,8 +2193,8 @@ fn write_embellished_char(ch: char, kinds: &[AccentKind], out: &mut Vec<u8>) -> 
         FN_VARIABLE
     });
     write_u16(code as u16, out);
-    for kind in kinds {
-        out.extend_from_slice(&[0x06, 0x00, embellishment_code(*kind)]);
+    for embellishment in embellishments {
+        out.extend_from_slice(&[0x06, 0x00, *embellishment]);
     }
     out.push(0x00);
     Ok(())
@@ -2507,16 +2652,19 @@ fn write_line(
     }
     let starts_with_euclid_math_one = expr_starts_with_euclid_math_one(expr);
     let starts_with_euclid_math_two = expr_starts_with_euclid_math_two(expr);
+    let starts_with_euclid_fraktur = expr_starts_with_euclid_fraktur(expr);
     if starts_with_euclid_math_one {
         writer.ensure_euclid_math_one(out);
     } else if starts_with_euclid_math_two {
         writer.ensure_euclid_math_two(out);
+    } else if starts_with_euclid_fraktur {
+        writer.ensure_euclid_fraktur(out);
     }
     if expr_starts_with_big_symbol_script_base(expr) {
         out.push(0x0d);
         writer.big_symbol_line_marker_pending = true;
     }
-    if starts_with_euclid_math_one || starts_with_euclid_math_two {
+    if starts_with_euclid_math_one || starts_with_euclid_math_two || starts_with_euclid_fraktur {
         writer.ensure_black_color_def(out);
         color_black(out);
     } else if !expr_starts_with_line_font_def(expr)

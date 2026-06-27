@@ -49,6 +49,7 @@ internal static class Program
     private const string MathTypeProgId = "Equation.DSMT4";
 
     private static readonly Guid IidIOleObject = new Guid("00000112-0000-0000-C000-000000000046");
+    private static readonly string[] MathTypeProcessNames = new[] { "MathType", "MathTypeLib" };
     private static readonly byte[] MathTypeBaselineSignature = Encoding.ASCII.GetBytes("MathType");
     private static bool mathTypeApiDllResolved;
     private static string? mathTypeApiDllPath;
@@ -57,6 +58,7 @@ internal static class Program
     public static int Main(string[] args)
     {
         ConfigureConsoleEncoding();
+        CloseStaleBackgroundMathTypeProcesses();
         var existingMathTypeProcessIds = SnapshotMathTypeProcessIds();
         try
         {
@@ -188,18 +190,68 @@ internal static class Program
     }
 
     /// <summary>
-    /// Capture currently running MathType processes so cleanup can avoid user-opened windows.
+    /// Capture currently running MathType-related server processes so cleanup can avoid user-opened windows.
     /// </summary>
     private static HashSet<int> SnapshotMathTypeProcessIds()
     {
-        try
+        var ids = new HashSet<int>();
+        foreach (var processName in MathTypeProcessNames)
         {
-            return new HashSet<int>(Process.GetProcessesByName("MathType").Select(process => process.Id));
+            try
+            {
+                foreach (var process in Process.GetProcessesByName(processName))
+                {
+                    using (process)
+                    {
+                        ids.Add(process.Id);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"{processName} process snapshot failed: {ex.Message}");
+            }
         }
-        catch (Exception ex)
+        return ids;
+    }
+
+    /// <summary>
+    /// Remove hidden MathType server leftovers from earlier failed helper runs before COM activation.
+    /// </summary>
+    private static void CloseStaleBackgroundMathTypeProcesses()
+    {
+        foreach (var processName in MathTypeProcessNames)
         {
-            Log($"MathType process snapshot failed: {ex.Message}");
-            return new HashSet<int>();
+            Process[] processes;
+            try
+            {
+                processes = Process.GetProcessesByName(processName);
+            }
+            catch (Exception ex)
+            {
+                Log($"{processName} process lookup failed during stale cleanup: {ex.Message}");
+                continue;
+            }
+
+            foreach (var process in processes)
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (!string.IsNullOrWhiteSpace(process.MainWindowTitle))
+                        {
+                            continue;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"{processName} main window lookup failed for {process.Id}: {ex.Message}");
+                    }
+
+                    TerminateMathTypeProcess(process, "stale background cleanup");
+                }
+            }
         }
     }
 
@@ -208,45 +260,54 @@ internal static class Program
     /// </summary>
     private static void CloseMathTypeProcessesOpenedByHelper(HashSet<int> existingProcessIds)
     {
-        Process[] processes;
-        try
+        foreach (var processName in MathTypeProcessNames)
         {
-            processes = Process.GetProcessesByName("MathType");
-        }
-        catch (Exception ex)
-        {
-            Log($"MathType process lookup failed during cleanup: {ex.Message}");
-            return;
-        }
-
-        foreach (var process in processes)
-        {
-            using (process)
+            Process[] processes;
+            try
             {
-                if (existingProcessIds.Contains(process.Id))
-                {
-                    continue;
-                }
+                processes = Process.GetProcessesByName(processName);
+            }
+            catch (Exception ex)
+            {
+                Log($"{processName} process lookup failed during cleanup: {ex.Message}");
+                continue;
+            }
 
-                try
+            foreach (var process in processes)
+            {
+                using (process)
                 {
-                    Log($"closing MathType process {process.Id}");
-                    if (process.CloseMainWindow() && process.WaitForExit(5000))
+                    if (existingProcessIds.Contains(process.Id))
                     {
                         continue;
                     }
 
-                    // MathType can remain hidden as an OLE server with no main window;
-                    // kill only the process created during this helper invocation.
-                    Log($"killing MathType process {process.Id}");
-                    process.Kill();
-                    process.WaitForExit(5000);
-                }
-                catch (Exception ex)
-                {
-                    Log($"MathType process cleanup failed for {process.Id}: {ex.Message}");
+                    TerminateMathTypeProcess(process, "helper cleanup");
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Close a MathType-related server process, escalating to Kill for hidden OLE servers.
+    /// </summary>
+    private static void TerminateMathTypeProcess(Process process, string reason)
+    {
+        try
+        {
+            Log($"closing {process.ProcessName} process {process.Id} ({reason})");
+            if (process.CloseMainWindow() && process.WaitForExit(5000))
+            {
+                return;
+            }
+
+            Log($"killing {process.ProcessName} process {process.Id} ({reason})");
+            process.Kill();
+            process.WaitForExit(5000);
+        }
+        catch (Exception ex)
+        {
+            Log($"MathType process cleanup failed for {process.Id}: {ex.Message}");
         }
     }
 
@@ -381,26 +442,14 @@ internal static class Program
             Log("SetHostNames");
             oleObject.SetHostNames("Pandoc Manuscript Probe", "MathType equation");
 
-            if (options.PreVerb is not null)
-            {
-                Log($"pre DoVerb({options.PreVerb.Value})");
-                var preRect = new RECT { left = 0, top = 0, right = 1600, bottom = 600 };
-                oleObject.DoVerb(options.PreVerb.Value, IntPtr.Zero, site, 0, IntPtr.Zero, ref preRect);
-            }
-            else
-            {
-                Log("OleRun");
-                OleCheck(OleRun(created), "OleRun");
-            }
+            InvokeMathTypeVerbWithRecovery(oleObject, options.PreVerb, site, $"pre DoVerb({options.PreVerb})");
 
             Log("SetEquationData");
             SetEquationData(created, options);
 
             if (options.DoVerb)
             {
-                Log("DoVerb(2)");
-                var rect = new RECT { left = 0, top = 0, right = 1600, bottom = 600 };
-                oleObject.DoVerb(2, IntPtr.Zero, site, 0, IntPtr.Zero, ref rect);
+                InvokeMathTypeVerbWithRecovery(oleObject, 2, site, "DoVerb(2)");
             }
 
             Log("OleSave");
@@ -436,6 +485,25 @@ internal static class Program
         }
 
         Log($"wrote {outputPath}, bytes={new FileInfo(outputPath).Length}");
+    }
+
+    /// <summary>
+    /// Retry one MathType OLE verb after clearing stale hidden servers that can poison COM startup.
+    /// </summary>
+    private static void InvokeMathTypeVerbWithRecovery(IOleObject oleObject, int verb, IOleClientSite site, string label)
+    {
+        var rect = new RECT { left = 0, top = 0, right = 1600, bottom = 600 };
+        try
+        {
+            Log(label);
+            oleObject.DoVerb(verb, IntPtr.Zero, site, 0, IntPtr.Zero, ref rect);
+        }
+        catch (COMException ex) when ((uint)ex.HResult == 0x80080005)
+        {
+            Log($"{label} failed with 0x80080005; retry after stale-server cleanup");
+            CloseStaleBackgroundMathTypeProcesses();
+            oleObject.DoVerb(verb, IntPtr.Zero, site, 0, IntPtr.Zero, ref rect);
+        }
     }
 
     /// <summary>
@@ -1485,7 +1553,7 @@ internal static class Program
             bool binaryInput,
             bool doVerb,
             string method,
-            int? preVerb,
+            int preVerb,
             string? batchManifestPath,
             string? prefsFilePath,
             string? previewOutputPath,
@@ -1512,7 +1580,7 @@ internal static class Program
         public bool BinaryInput { get; }
         public bool DoVerb { get; }
         public string Method { get; }
-        public int? PreVerb { get; }
+        public int PreVerb { get; }
         public string? BatchManifestPath { get; }
         public string? PrefsFilePath { get; }
         public string? PreviewOutputPath { get; }
@@ -1552,7 +1620,9 @@ internal static class Program
             var binary = false;
             var doVerb = true;
             var method = "set-data";
-            int? preVerb = null;
+            // MathType probing and conversion in this repo are only validated
+            // with DoVerb(2), so make it the unconditional default.
+            int preVerb = 2;
             string? prefsFilePath = null;
             string? previewOutput = null;
             string? metadataOutput = null;
@@ -1586,8 +1656,8 @@ internal static class Program
                         method = args[++i];
                         break;
                     case "--pre-verb":
-                        // MathType probing in this repo is only validated with
-                        // DoVerb(2); reject other values so callers fail fast.
+                        // Keep accepting the flag for explicitness, but reject
+                        // any value other than the validated DoVerb(2) path.
                         preVerb = 2;
                         if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
                         {

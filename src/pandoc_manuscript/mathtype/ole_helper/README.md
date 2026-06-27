@@ -44,7 +44,7 @@ MathTypeOleHelper --format <clipboard format> (--input <file-or-tex-or-mtef> --o
 - `--encoding <name>`: 文本输入编码，可选 `utf8` 或 `utf16le`。默认 `utf8`。
 - `--binary`: 按二进制文件读取 `--input`。`sdk-xform-ole` 必须使用这个参数。
 - `--no-verb`: 跳过最终的 `DoVerb(2)`。
-- `--pre-verb 2`: 在写入公式数据前先调用一次 `IOleObject.DoVerb(2)`。这是当前仓库唯一允许的 pre-open verb 值。
+- `--pre-verb 2`: 在写入公式数据前先调用一次 `IOleObject.DoVerb(2)`。helper 现在默认就会走这条路径，这个参数主要保留给显式调用；当前仓库唯一允许的 pre-open verb 值仍然只有 `2`。
 - `--prefs-file <eqp>`: 应用 MathType `.eqp` 偏好文件。`set-data` 会应用到新建公式；`sdk-xform-ole` 会应用到 WMF 预览 transform。
 - `--preview-output <wmf>`: 额外输出 WMF 预览。
 - `--metadata-output <json>`: 额外输出 WMF 尺寸和 MathType baseline metadata。只有同时写出预览时才会写 metadata。
@@ -114,7 +114,7 @@ manifest 示例：
 
 常用约定：
 
-- `--pre-verb 2` 会在写入数据前打开 MathType OLE 对象；这里只支持 `2`，传其他值会直接报错。
+- `--pre-verb 2` 会在写入数据前打开 MathType OLE 对象；现在即使不显式传这个参数，也默认按 `2` 处理。这里只支持 `2`，传其他值会直接报错。
 - `--no-verb` 会跳过写入后的 `DoVerb(2)`，用于避免某些机器在二次 verb 时崩溃。
 - `--encoding utf16le` 推荐配合 `"TeX Input Language"` 使用。
 - `--input` 如果不是已存在文件路径，就会按 literal TeX 文本处理。
@@ -249,7 +249,9 @@ $env:MATHTYPE_OLE_HELPER_VERBOSE = "1"
 
 日志会输出到 stderr，前缀是 `[ole-helper]`。程序成功时退出码为 `0`，失败时退出码为
 `1`。如果遇到 COM 或 .NET 异常，verbose 模式会逐项输出异常类型、HResult、message
-和 stack trace，避免 `Exception.ToString()` 自身失败时吞掉真正错误。
+和 stack trace，避免 `Exception.ToString()` 自身失败时吞掉真正错误。helper 现在还会在
+启动前清理无窗口的残留 MathType / MathTypeLib 后台进程，并在 `DoVerb` 遇到 `0x80080005`
+时自动重试一次。
 
 ## Unsupported Methods
 

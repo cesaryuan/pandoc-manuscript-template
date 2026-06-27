@@ -219,6 +219,28 @@ for row in examples: print(row)"
 matched 302 mismatched 0 missing 0
 ```
 
+## Supported Functions Audit
+
+`audit_supported_functions` 会扫描
+[`docs/Supported Functions.md`](docs/Supported%20Functions.md)，既可以做本地 parser/writer
+静态统计，也可以直接调用 MathType helper 做字节级对照。
+
+常用命令：
+
+```powershell
+cargo run --bin audit_supported_functions -- --math-only --mathtype-compare --limit 120 --timeout-ms 60000
+```
+
+默认输出现在优先保留 `matched`、`mismatched`、`helper_error`、`rust_error`、
+`skipped` 这些主结果，不再默认打印 `raw_fallback`、`unclassified_raw_fallback`
+以及对应的 examples / sections / command groups，避免和 MathType 对照结果混在一起。
+
+如果确实要排查静态 raw fallback 分类，再显式打开：
+
+```powershell
+cargo run --bin audit_supported_functions -- --math-only --show-static-audit
+```
+
 ## Development Notes
 
 - [`docs/Supported Functions Implementation Log.md`](docs/Supported%20Functions%20Implementation%20Log.md):

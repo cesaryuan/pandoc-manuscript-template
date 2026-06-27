@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
 use std::fs;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 use std::thread;
@@ -33,6 +34,8 @@ use mtef::write_mtef;
 use parser::{normalize_latex, Parser};
 use raw_fallback::is_known_mathtype_raw_command;
 
+const MATHTYPE_COMPARE_CACHE_VERSION: &str = "v2";
+
 /// Scan Supported Functions.md and classify snippets against the current parser.
 fn main() -> Result<(), String> {
     let config = Config::parse(env::args().skip(1).collect())?;
@@ -45,28 +48,40 @@ fn main() -> Result<(), String> {
     let report = audit_snippets(&snippets);
     let math_report = audit_snippets(&math_snippets);
     if config.view.includes_code() {
-        print_report("supported_functions", &report, config.limit);
+        print_report(
+            "supported_functions",
+            &report,
+            config.limit,
+            config.show_static_audit,
+        );
     }
     let math_raw_class = classify_raw_fallbacks(&math_report.raw_fallback);
     if config.view.includes_math() {
-        print_report("supported_functions_math", &math_report, config.limit);
-        print_section_counts(
-            "supported_functions_math_raw_fallback_sections",
-            &math_report.raw_fallback,
-            &math_sections,
+        print_report(
+            "supported_functions_math",
+            &math_report,
             config.limit,
+            config.show_static_audit,
         );
-        print_section_counts(
-            "supported_functions_math_unclassified_raw_fallback_sections",
-            &math_raw_class.unclassified,
-            &math_sections,
-            config.limit,
-        );
-        print_remaining_blocker_counts(
-            "supported_functions_math_unclassified_raw_fallback_blockers",
-            &math_raw_class.unclassified,
-            config.limit,
-        );
+        if config.show_static_audit {
+            print_section_counts(
+                "supported_functions_math_raw_fallback_sections",
+                &math_report.raw_fallback,
+                &math_sections,
+                config.limit,
+            );
+            print_section_counts(
+                "supported_functions_math_unclassified_raw_fallback_sections",
+                &math_raw_class.unclassified,
+                &math_sections,
+                config.limit,
+            );
+            print_remaining_blocker_counts(
+                "supported_functions_math_unclassified_raw_fallback_blockers",
+                &math_raw_class.unclassified,
+                config.limit,
+            );
+        }
     }
     if let Some(path) = &config.unclassified_jsonl {
         write_unclassified_jsonl(path, &math_raw_class.unclassified, &math_sections)?;
@@ -109,6 +124,7 @@ struct Config {
     limit: usize,
     max_snippets: Option<usize>,
     snippet_filter: Option<String>,
+    show_static_audit: bool,
     view: AuditView,
     unclassified_jsonl: Option<PathBuf>,
     remaining_jsonl: Option<PathBuf>,
@@ -150,6 +166,7 @@ impl Config {
         let mut limit = 80usize;
         let mut max_snippets = None;
         let mut snippet_filter = None;
+        let mut show_static_audit = false;
         let mut view = AuditView::Both;
         let mut unclassified_jsonl = None;
         let mut remaining_jsonl = None;
@@ -205,6 +222,7 @@ impl Config {
                         .ok_or_else(|| "--view requires both, code, or math".to_string())?;
                     view = parse_audit_view(raw)?;
                 }
+                "--show-static-audit" => show_static_audit = true,
                 "--math-only" => view = AuditView::Math,
                 "--code-only" => view = AuditView::Code,
                 "--mathtype-compare" => mathtype_compare = true,
@@ -260,6 +278,7 @@ impl Config {
             limit,
             max_snippets,
             snippet_filter,
+            show_static_audit,
             view,
             unclassified_jsonl,
             remaining_jsonl,
@@ -281,7 +300,7 @@ impl Config {
 
 /// Return the usage text for invalid audit invocations.
 fn usage() -> &'static str {
-    "Usage: audit_supported_functions [--input <Supported Functions.md>] [--limit <N>] [--max-snippets <N>] [--snippet-filter <text>] [--view both|code|math] [--math-only] [--code-only] [--write-unclassified-jsonl <path>] [--write-remaining-jsonl <path>] [--mathtype-compare] [--helper <exe>] [--work-dir <dir>] [--pre-verb 2] [--timeout-ms <N>]"
+    "Usage: audit_supported_functions [--input <Supported Functions.md>] [--limit <N>] [--max-snippets <N>] [--snippet-filter <text>] [--view both|code|math] [--show-static-audit] [--math-only] [--code-only] [--write-unclassified-jsonl <path>] [--write-remaining-jsonl <path>] [--mathtype-compare] [--helper <exe>] [--work-dir <dir>] [--pre-verb 2] [--timeout-ms <N>]"
 }
 
 /// Parse a report-view selector from the CLI.
@@ -752,8 +771,12 @@ fn mathtype_cache_paths(key: &str, config: &MathTypeCompareConfig) -> MathTypeCa
 
 /// Build a stable cache key for one MathType helper invocation.
 fn cache_key(payload: &str, config: &MathTypeCompareConfig) -> String {
+    // Bump this when the caller-side helper contract changes. `v2` starts the
+    // cache lineage that passes literal TeX payload text to `--input` instead
+    // of a temp file path, so older probe results cannot masquerade as current
+    // MathType output in byte-for-byte audits.
     let material = format!(
-        "v1\0payload={payload}\0pre_verb={}\0helper={}",
+        "{MATHTYPE_COMPARE_CACHE_VERSION}\0payload={payload}\0pre_verb={}\0helper={}",
         config.pre_verb.as_str(),
         config.helper_fingerprint
     );
@@ -766,6 +789,14 @@ fn is_transient_mathtype_probe_error(err: &str) -> bool {
     err.contains("timed out")
         || err.contains("failed to run")
         || err.contains("failed while waiting for helper")
+        // Helper exit code 1 is too coarse to cache safely: transient COM
+        // crashes and real formula failures both collapse to the same status.
+        || err.contains("status exit code: 1")
+        || err.contains("0x800706be")
+        || err.contains("0x80010105")
+        || err.contains("rpc_e_serverfault")
+        || err.contains("远程过程调用失败")
+        || err.contains("服务器出现意外情况")
 }
 
 /// Load a cached MathType probe result so repeated audits do not relaunch the helper.
@@ -872,9 +903,17 @@ fn run_mathtype_helper(
     timeout_ms: u64,
 ) -> Result<(), String> {
     let _ = fs::remove_file(ole_path);
+    let stderr_path = ole_path.with_extension("stderr.txt");
+    let _ = fs::remove_file(&stderr_path);
     let mut command = Command::new(helper);
     command.args(["--method", "set-data"]);
     command.args(["--pre-verb", pre_verb]);
+    // Persist helper stderr so transient COM/OLE failures can be classified and
+    // excluded from the long-lived on-disk probe cache.
+    command.stderr(
+        File::create(&stderr_path)
+            .map_err(|err| format!("failed to create {}: {err}", stderr_path.display()))?,
+    );
     let mut child = command
         .args(["--format", "TeX Input Language", "--input"])
         .arg(tex_payload)
@@ -890,12 +929,21 @@ fn run_mathtype_helper(
         })?;
     if !status.success() {
         let _ = fs::remove_file(ole_path);
+        let helper_stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
+        let _ = fs::remove_file(&stderr_path);
+        let helper_stderr = helper_stderr.trim();
         return Err(format!(
-            "{} failed for {} with status {status}",
+            "{} failed for {} with status {status}{}",
             helper.display(),
-            tex_payload
+            tex_payload,
+            if helper_stderr.is_empty() {
+                String::new()
+            } else {
+                format!("; stderr={helper_stderr}")
+            }
         ));
     }
+    let _ = fs::remove_file(&stderr_path);
     Ok(())
 }
 
@@ -1077,21 +1125,11 @@ fn is_documentation_fragment(snippet: &str, err: &str) -> bool {
         || err.contains("found None")
 }
 
-/// Print compact totals and representative missing snippets.
-fn print_report(prefix: &str, report: &AuditReport, limit: usize) {
+/// Print static-audit totals, keeping raw-fallback diagnostics behind an explicit flag.
+fn print_report(prefix: &str, report: &AuditReport, limit: usize, show_static_audit: bool) {
     println!("{prefix}_snippets={}", report.total);
     println!("{prefix}_native_parse={}", report.native_parse.len());
     println!("{prefix}_native_render={}", report.native_render.len());
-    println!("{prefix}_raw_fallback={}", report.raw_fallback.len());
-    let raw_class = classify_raw_fallbacks(&report.raw_fallback);
-    println!(
-        "{prefix}_known_mathtype_raw_fallback={}",
-        raw_class.known.len()
-    );
-    println!(
-        "{prefix}_unclassified_raw_fallback={}",
-        raw_class.unclassified.len()
-    );
     println!("{prefix}_raw_render={}", report.raw_render.len());
     println!(
         "{prefix}_raw_render_error={}",
@@ -1100,26 +1138,40 @@ fn print_report(prefix: &str, report: &AuditReport, limit: usize) {
     println!("{prefix}_render_error={}", report.render_error.len());
     println!("{prefix}_syntax_fragment={}", report.syntax_fragment.len());
     println!("{prefix}_parse_error={}", report.parse_error.len());
-    print_list(
-        &format!("{prefix}_raw_fallback_examples"),
-        report.raw_fallback.iter().map(|item| (item, None)),
-        limit,
-    );
-    print_raw_command_groups(
-        &format!("{prefix}_raw_fallback_command_groups"),
-        &report.raw_fallback,
-        limit,
-    );
-    print_list(
-        &format!("{prefix}_unclassified_raw_fallback_examples"),
-        raw_class.unclassified.iter().map(|item| (item, None)),
-        limit,
-    );
-    print_raw_command_groups(
-        &format!("{prefix}_unclassified_raw_fallback_command_groups"),
-        &raw_class.unclassified,
-        limit,
-    );
+    if show_static_audit {
+        // Keep raw-fallback coverage details opt-in so MathType-compare runs
+        // stay focused on byte-level matched/mismatched results.
+        let raw_class = classify_raw_fallbacks(&report.raw_fallback);
+        println!("{prefix}_raw_fallback={}", report.raw_fallback.len());
+        println!(
+            "{prefix}_known_mathtype_raw_fallback={}",
+            raw_class.known.len()
+        );
+        println!(
+            "{prefix}_unclassified_raw_fallback={}",
+            raw_class.unclassified.len()
+        );
+        print_list(
+            &format!("{prefix}_raw_fallback_examples"),
+            report.raw_fallback.iter().map(|item| (item, None)),
+            limit,
+        );
+        print_raw_command_groups(
+            &format!("{prefix}_raw_fallback_command_groups"),
+            &report.raw_fallback,
+            limit,
+        );
+        print_list(
+            &format!("{prefix}_unclassified_raw_fallback_examples"),
+            raw_class.unclassified.iter().map(|item| (item, None)),
+            limit,
+        );
+        print_raw_command_groups(
+            &format!("{prefix}_unclassified_raw_fallback_command_groups"),
+            &raw_class.unclassified,
+            limit,
+        );
+    }
     print_list(
         &format!("{prefix}_raw_render_error_examples"),
         report

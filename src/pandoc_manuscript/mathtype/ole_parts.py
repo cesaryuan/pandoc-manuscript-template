@@ -66,6 +66,7 @@ def source_tree_path(path: str | Path) -> Path | None:
 MATHTYPE_RUST_PROJECT = source_tree_path("scripts/mathtype-rust/Cargo.toml")
 MATHTYPE_RUST_SOURCE_EXE = source_tree_path(Path("scripts/mathtype-rust/target/debug") / MATHTYPE_RUST_SOURCE_EXE_NAME)
 MATHTYPE_RUST_EXE = MATHTYPE_RUST_SOURCE_EXE or MATHTYPE_RUST_PACKAGE_EXE
+MATHTYPE_RUST_BUILD_CHECKED = False
 
 
 def normalize_conversion_method(value: object | None) -> MathTypeConversionMethod:
@@ -385,6 +386,29 @@ def build_helper() -> None:
 
 def build_mathtype_rust_converter() -> Path:
     """Ensure the Rust MTEF converter exists for the MathType Rust path."""
+    global MATHTYPE_RUST_BUILD_CHECKED
+    if MATHTYPE_RUST_PROJECT is not None and MATHTYPE_RUST_PROJECT.exists():
+        if shutil.which("cargo") is None:
+            if MATHTYPE_RUST_EXE.exists():
+                log_warning(
+                    "[mathtype] warning: cargo not found; using existing mathtype-rust executable "
+                    f"without rebuilding: {MATHTYPE_RUST_EXE}"
+                )
+                return MATHTYPE_RUST_EXE
+            raise RuntimeError(
+                f"mathtype-rust requires `cargo`, or a prebuilt executable at {MATHTYPE_RUST_EXE}"
+            )
+        if not MATHTYPE_RUST_BUILD_CHECKED:
+            log_info(f"[mathtype] building mathtype-rust converter: {MATHTYPE_RUST_PROJECT}")
+            run(
+                ["cargo", "build", "--manifest-path", str(MATHTYPE_RUST_PROJECT)],
+                stderr_as_warning=False,
+            )
+            MATHTYPE_RUST_BUILD_CHECKED = True
+        if not MATHTYPE_RUST_EXE.exists():
+            raise FileNotFoundError(f"Cargo build did not create expected executable: {MATHTYPE_RUST_EXE}")
+        return MATHTYPE_RUST_EXE
+
     if MATHTYPE_RUST_EXE.exists():
         log_debug(f"[mathtype] mathtype-rust executable found: {MATHTYPE_RUST_EXE}")
         return MATHTYPE_RUST_EXE
@@ -393,19 +417,19 @@ def build_mathtype_rust_converter() -> Path:
             f"mathtype-rust executable is missing: {MATHTYPE_RUST_EXE}. "
             "Install a wheel that bundles mathtype-rust, or run from a source checkout with scripts/mathtype-rust."
         )
-    if shutil.which("cargo") is None:
-        raise RuntimeError(
-            f"mathtype-rust requires `cargo`, or a prebuilt executable at {MATHTYPE_RUST_EXE}"
-        )
+    raise FileNotFoundError(f"mathtype-rust executable is missing: {MATHTYPE_RUST_EXE}")
 
-    log_info(f"[mathtype] building mathtype-rust converter: {MATHTYPE_RUST_PROJECT}")
-    run(
-        ["cargo", "build", "--manifest-path", str(MATHTYPE_RUST_PROJECT)],
-        stderr_as_warning=False,
-    )
-    if not MATHTYPE_RUST_EXE.exists():
-        raise FileNotFoundError(f"Cargo build did not create expected executable: {MATHTYPE_RUST_EXE}")
-    return MATHTYPE_RUST_EXE
+
+def mathtype_rust_exe_digest_for_method(conversion_method: MathTypeConversionMethod) -> str | None:
+    """Build and hash mathtype-rust when the selected backend can use it."""
+    if conversion_method == "set-data":
+        return None
+    if conversion_method == "auto":
+        try:
+            return file_sha256(build_mathtype_rust_converter())
+        except (RuntimeError, FileNotFoundError):
+            return None
+    return file_sha256(build_mathtype_rust_converter())
 
 
 def normalize_mathtype_latex(latex: str) -> str:
@@ -454,6 +478,70 @@ def file_sha256(path: Path) -> str | None:
     return digest.hexdigest()
 
 
+def mathtype_ole_mtef_payload(path: Path) -> bytes:
+    """Return the bare MTEF payload from a MathType OLE Equation Native stream."""
+    native = CompoundFile(path.read_bytes()).read_stream("Equation Native")
+    if len(native) < 28:
+        raise ValueError(f"Equation Native stream is shorter than the 28-byte MathType OLE header: {path}")
+    header_size = int.from_bytes(native[:2], byteorder="little")
+    if header_size != 28:
+        raise ValueError(f"unexpected MathType OLE header size in {path}: {header_size}")
+    return native[header_size:]
+
+
+def mathtype_ole_mtef_sha256(path: Path) -> str:
+    """Return a digest for only the MTEF bytes inside a MathType OLE file."""
+    return hashlib.sha256(mathtype_ole_mtef_payload(path)).hexdigest()
+
+
+JSON_RESULT_COMPARISON_FIELDS = (
+    ("width_pt",),
+    ("height_pt",),
+    ("mathtype", "width_pt"),
+    ("mathtype", "height_pt"),
+    ("mathtype", "baseline_from_bottom_pt"),
+)
+
+
+def rounded_json_result_value(value: object) -> object:
+    """Round numeric JSON metadata values before backend comparison."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return round(value)
+    return value
+
+
+def json_result_comparison_payload(data: object) -> dict[str, object]:
+    """Keep only rounded point-size metrics that should match across backends."""
+    if not isinstance(data, dict):
+        return {}
+
+    payload: dict[str, object] = {}
+    for field_path in JSON_RESULT_COMPARISON_FIELDS:
+        source: object = data
+        for key in field_path:
+            if not isinstance(source, dict) or key not in source:
+                break
+            source = source[key]
+        else:
+            target = payload
+            for key in field_path[:-1]:
+                nested = target.setdefault(key, {})
+                if not isinstance(nested, dict):
+                    nested = {}
+                    target[key] = nested
+                target = nested
+            target[field_path[-1]] = rounded_json_result_value(source)
+    return payload
+
+
+def json_result_sha256(path: Path) -> str:
+    """Return a stable digest for comparable rounded MathType JSON metrics."""
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
+    data = json_result_comparison_payload(data)
+    canonical = json.dumps(data, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
 def file_group_sha256(paths: list[Path]) -> str | None:
     """Return one digest for a small ordered set of existing input files."""
     existing_paths = [path for path in paths if path.exists()]
@@ -477,7 +565,7 @@ def mathtype_rust_source_digest() -> str | None:
     paths = [MATHTYPE_RUST_PROJECT, project_dir / "Cargo.lock"]
     src_dir = project_dir / "src"
     if src_dir.exists():
-        paths.extend(src_dir.glob("*.rs"))
+        paths.extend(src_dir.rglob("*.rs"))
     return file_group_sha256(paths)
 
 
@@ -716,21 +804,24 @@ def generate_cached_equation_parts_auto(
 def warn_if_conversion_outputs_differ(
     index: int,
     rust_ole_path: Path,
-    rust_wmf_path: Path,
     rust_metadata_path: Path,
     set_data_ole_path: Path,
-    set_data_wmf_path: Path,
     set_data_metadata_path: Path,
 ) -> None:
-    """Warn when both MathType backends produce different artifacts."""
+    """Warn when both MathType backends produce different OLE or JSON results."""
     differing_parts = []
-    for label, rust_path, set_data_path in (
-        ("OLE", rust_ole_path, set_data_ole_path),
-        ("WMF", rust_wmf_path, set_data_wmf_path),
-        ("JSON", rust_metadata_path, set_data_metadata_path),
-    ):
-        if file_sha256(rust_path) != file_sha256(set_data_path):
-            differing_parts.append(label)
+    try:
+        if mathtype_ole_mtef_sha256(rust_ole_path) != mathtype_ole_mtef_sha256(set_data_ole_path):
+            differing_parts.append("OLE MTEF")
+    except (KeyError, ValueError) as exc:
+        differing_parts.append(f"OLE MTEF unreadable ({exc})")
+
+    try:
+        if json_result_sha256(rust_metadata_path) != json_result_sha256(set_data_metadata_path):
+            differing_parts.append("JSON")
+    except (OSError, ValueError) as exc:
+        differing_parts.append(f"JSON unreadable ({exc})")
+
     if differing_parts:
         log_warning(
             f"[mathtype] warning: rust and set-data outputs differ for equation {index}: "
@@ -960,7 +1051,7 @@ def generate_equation_parts(
     cache_misses = 0
     helper_digest = file_sha256(HELPER_EXE)
     rust_source_digest = mathtype_rust_source_digest() if conversion_method != "set-data" else None
-    rust_exe_digest = file_sha256(MATHTYPE_RUST_EXE) if conversion_method != "set-data" else None
+    rust_exe_digest = mathtype_rust_exe_digest_for_method(conversion_method)
     if needs_variable_sizes and prefs_template is None:
         log_warning(
             "[mathtype] warning: MathType preference template not found; "
@@ -1028,10 +1119,8 @@ def generate_equation_parts(
             warn_if_conversion_outputs_differ(
                 index,
                 ole_path,
-                wmf_path,
                 metadata_path,
                 set_data_ole_path,
-                set_data_wmf_path,
                 set_data_metadata_path,
             )
         elif conversion_method == "auto":

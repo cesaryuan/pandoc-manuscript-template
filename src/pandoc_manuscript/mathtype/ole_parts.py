@@ -47,7 +47,8 @@ MATHTYPE_CACHE_DIR = PMT_MATHTYPE_CACHE_DIR
 MATHTYPE_CACHE_VERSION = 1
 BEGIN_ALIGNED_RE = re.compile(r"\\begin\s*\{\s*aligned\s*\}")
 END_ALIGNED_RE = re.compile(r"\\end\s*\{\s*aligned\s*\}")
-MathTypeConversionMethod = Literal["rust", "set-data", "auto"]
+MathTypeSingleConversionMethod = Literal["rust", "set-data"]
+MathTypeConversionMethod = Literal["rust", "set-data", "auto", "both"]
 DEFAULT_MATHTYPE_CONVERSION_METHOD: MathTypeConversionMethod = "rust"
 
 
@@ -86,10 +87,11 @@ def normalize_conversion_method(value: object | None) -> MathTypeConversionMetho
         "ole": "set-data",
         "auto": "auto",
         "fallback": "auto",
+        "both": "both",
     }
     method = aliases.get(text)
     if method is None:
-        allowed = "rust, set-data, auto"
+        allowed = "rust, set-data, auto, both"
         raise ValueError(f"mathtypeConversionMethod must be one of: {allowed}; got {value!r}")
     return method
 
@@ -526,15 +528,19 @@ def mathtype_cache_key(
     helper_digest: str | None,
     rust_source_digest: str | None,
     rust_exe_digest: str | None,
-    conversion_method: MathTypeConversionMethod,
+    conversion_method: MathTypeSingleConversionMethod,
 ) -> str:
     """Build a stable cache key from the exact MathType inputs.
 
     The key uses the normalized TeX payload and generated preference contents,
     because those are the values passed to the MathType OLE helper. Rust
-    Rust converter digests are included so generated parts do not outlive the
+    converter digests are included so generated parts do not outlive the
     converter implementation or backend selection that produced them.
     """
+    if conversion_method == "set-data":
+        rust_source_digest = None
+        rust_exe_digest = None
+
     payload = {
         "version": MATHTYPE_CACHE_VERSION,
         "tex_payload": mathtype_tex_payload(latex),
@@ -602,6 +608,134 @@ def store_cached_equation(
     shutil.copy2(wmf_path, cached_wmf)
     if metadata_path.exists():
         shutil.copy2(metadata_path, cached_metadata)
+
+
+def generate_cached_equation_parts_for_method(
+    index: int,
+    latex: str,
+    font_size_key: float | None,
+    prefs_digest: str | None,
+    helper_digest: str | None,
+    rust_source_digest: str | None,
+    rust_exe_digest: str | None,
+    input_path: Path,
+    ole_path: Path,
+    wmf_path: Path,
+    metadata_path: Path,
+    mtef_path: Path,
+    prefs_file: Path | None,
+    conversion_method: MathTypeSingleConversionMethod,
+) -> bool:
+    """Restore or generate one equation for one cache-isolated backend."""
+    cache_key = mathtype_cache_key(
+        latex,
+        font_size_key,
+        prefs_digest,
+        helper_digest,
+        rust_source_digest,
+        rust_exe_digest,
+        conversion_method,
+    )
+    if restore_cached_equation(cache_key, ole_path, wmf_path, metadata_path):
+        log_debug(f"[mathtype] cache hit eq={index} method={conversion_method} key={cache_key[:12]}")
+        return True
+
+    log_debug(f"[mathtype] cache miss eq={index} method={conversion_method} key={cache_key[:12]}")
+    generate_uncached_equation_parts(
+        index,
+        input_path,
+        ole_path,
+        wmf_path,
+        metadata_path,
+        mtef_path,
+        prefs_file=prefs_file,
+        conversion_method=conversion_method,
+    )
+    store_cached_equation(cache_key, ole_path, wmf_path, metadata_path)
+    return False
+
+
+def generate_cached_equation_parts_auto(
+    index: int,
+    latex: str,
+    font_size_key: float | None,
+    prefs_digest: str | None,
+    helper_digest: str | None,
+    rust_source_digest: str | None,
+    rust_exe_digest: str | None,
+    input_path: Path,
+    ole_path: Path,
+    wmf_path: Path,
+    metadata_path: Path,
+    mtef_path: Path,
+    prefs_file: Path | None,
+) -> tuple[int, int]:
+    """Try the rust cache/generator first, then the set-data cache/generator."""
+    try:
+        hit = generate_cached_equation_parts_for_method(
+            index,
+            latex,
+            font_size_key,
+            prefs_digest,
+            helper_digest,
+            rust_source_digest,
+            rust_exe_digest,
+            input_path,
+            ole_path,
+            wmf_path,
+            metadata_path,
+            mtef_path,
+            prefs_file,
+            "rust",
+        )
+        return int(hit), int(not hit)
+    except (RuntimeError, FileNotFoundError):
+        log_warning(
+            f"[mathtype] mathtype-rust auto path failed for equation {index}; "
+            "trying MathType TeX input fallback"
+        )
+        hit = generate_cached_equation_parts_for_method(
+            index,
+            latex,
+            font_size_key,
+            prefs_digest,
+            helper_digest,
+            rust_source_digest,
+            rust_exe_digest,
+            input_path,
+            ole_path,
+            wmf_path,
+            metadata_path,
+            mtef_path,
+            prefs_file,
+            "set-data",
+        )
+        return int(hit), 1 + int(not hit)
+
+
+def warn_if_conversion_outputs_differ(
+    index: int,
+    rust_ole_path: Path,
+    rust_wmf_path: Path,
+    rust_metadata_path: Path,
+    set_data_ole_path: Path,
+    set_data_wmf_path: Path,
+    set_data_metadata_path: Path,
+) -> None:
+    """Warn when both MathType backends produce different artifacts."""
+    differing_parts = []
+    for label, rust_path, set_data_path in (
+        ("OLE", rust_ole_path, set_data_ole_path),
+        ("WMF", rust_wmf_path, set_data_wmf_path),
+        ("JSON", rust_metadata_path, set_data_metadata_path),
+    ):
+        if file_sha256(rust_path) != file_sha256(set_data_path):
+            differing_parts.append(label)
+    if differing_parts:
+        log_warning(
+            f"[mathtype] warning: rust and set-data outputs differ for equation {index}: "
+            f"{', '.join(differing_parts)}; using rust output"
+        )
 
 
 def make_ole_from_format(
@@ -730,6 +864,9 @@ def generate_uncached_equation_parts(
     conversion_method: MathTypeConversionMethod = DEFAULT_MATHTYPE_CONVERSION_METHOD,
 ) -> None:
     """Generate MathType parts using the configured conversion backend."""
+    if conversion_method == "both":
+        raise ValueError("both conversion mode is only supported through generate_equation_parts")
+
     if conversion_method == "rust":
         make_ole_wmf_metadata_with_mathtype_rust(
             input_path,
@@ -837,6 +974,10 @@ def generate_equation_parts(
         wmf_path = output_dir / f"eq_{index:03d}.wmf"
         metadata_path = output_dir / f"eq_{index:03d}.json"
         mtef_path = output_dir / f"eq_{index:03d}.mtef.bin"
+        set_data_ole_path = output_dir / f"eq_{index:03d}.set-data.ole.bin"
+        set_data_wmf_path = output_dir / f"eq_{index:03d}.set-data.wmf"
+        set_data_metadata_path = output_dir / f"eq_{index:03d}.set-data.json"
+        set_data_mtef_path = output_dir / f"eq_{index:03d}.set-data.mtef.bin"
         prefs_path: Path | None = None
         font_size_key = cache_font_size_key(request.font_size_pt, prefs_template)
 
@@ -848,32 +989,88 @@ def generate_equation_parts(
                 prefs_cache[font_size_key] = prefs_path
 
         write_latex_input(input_path, latex)
-        cache_key = mathtype_cache_key(
-            latex,
-            font_size_key,
-            file_sha256(prefs_path) if prefs_path is not None else None,
-            helper_digest,
-            rust_source_digest,
-            rust_exe_digest,
-            conversion_method,
-        )
-        if restore_cached_equation(cache_key, ole_path, wmf_path, metadata_path):
-            cache_hits += 1
-            log_debug(f"[mathtype] cache hit eq={index} key={cache_key[:12]}")
-        else:
-            cache_misses += 1
-            log_debug(f"[mathtype] cache miss eq={index} key={cache_key[:12]}")
-            generate_uncached_equation_parts(
+        prefs_digest = file_sha256(prefs_path) if prefs_path is not None else None
+        if conversion_method == "both":
+            rust_hit = generate_cached_equation_parts_for_method(
                 index,
+                latex,
+                font_size_key,
+                prefs_digest,
+                helper_digest,
+                rust_source_digest,
+                rust_exe_digest,
                 input_path,
                 ole_path,
                 wmf_path,
                 metadata_path,
                 mtef_path,
-                prefs_file=prefs_path,
+                prefs_path,
+                "rust",
+            )
+            set_data_hit = generate_cached_equation_parts_for_method(
+                index,
+                latex,
+                font_size_key,
+                prefs_digest,
+                helper_digest,
+                rust_source_digest,
+                rust_exe_digest,
+                input_path,
+                set_data_ole_path,
+                set_data_wmf_path,
+                set_data_metadata_path,
+                set_data_mtef_path,
+                prefs_path,
+                "set-data",
+            )
+            cache_hits += int(rust_hit) + int(set_data_hit)
+            cache_misses += int(not rust_hit) + int(not set_data_hit)
+            warn_if_conversion_outputs_differ(
+                index,
+                ole_path,
+                wmf_path,
+                metadata_path,
+                set_data_ole_path,
+                set_data_wmf_path,
+                set_data_metadata_path,
+            )
+        elif conversion_method == "auto":
+            hits, misses = generate_cached_equation_parts_auto(
+                index,
+                latex,
+                font_size_key,
+                prefs_digest,
+                helper_digest,
+                rust_source_digest,
+                rust_exe_digest,
+                input_path,
+                ole_path,
+                wmf_path,
+                metadata_path,
+                mtef_path,
+                prefs_path,
+            )
+            cache_hits += hits
+            cache_misses += misses
+        else:
+            hit = generate_cached_equation_parts_for_method(
+                index,
+                latex,
+                font_size_key,
+                prefs_digest,
+                helper_digest,
+                rust_source_digest,
+                rust_exe_digest,
+                input_path,
+                ole_path,
+                wmf_path,
+                metadata_path,
+                mtef_path,
+                prefs_path,
                 conversion_method=conversion_method,
             )
-            store_cached_equation(cache_key, ole_path, wmf_path, metadata_path)
+            cache_hits += int(hit)
+            cache_misses += int(not hit)
         compound = inspect_ole(ole_path)
         if compound.read_stream("Equation Native").find(b"DSMT") < 0:
             raise ValueError(f"generated OLE lacks DSMT marker: {ole_path}")

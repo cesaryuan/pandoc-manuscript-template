@@ -164,6 +164,42 @@ def test_normalize_conversion_method_accepts_style_aliases() -> None:
     assert ole_parts.normalize_conversion_method("mathtype-rust") == "rust"
     assert ole_parts.normalize_conversion_method("tex") == "set-data"
     assert ole_parts.normalize_conversion_method("fallback") == "auto"
+    assert ole_parts.normalize_conversion_method("both") == "both"
+
+
+def test_generate_equation_parts_both_uses_independent_backend_caches(monkeypatch, tmp_path) -> None:
+    """Generate both backends with separate cache methods and keep rust output."""
+    calls = []
+    warnings = []
+
+    monkeypatch.setattr(ole_parts, "iter_equation_requests_with_progress", lambda requests: enumerate(requests, start=1))
+    monkeypatch.setattr(ole_parts, "file_sha256", lambda path: f"digest:{Path(path).name}" if Path(path).exists() else None)
+    monkeypatch.setattr(ole_parts, "mathtype_rust_source_digest", lambda: "rust-source")
+    monkeypatch.setattr(ole_parts, "restore_cached_equation", lambda *args: False)
+    monkeypatch.setattr(ole_parts, "store_cached_equation", lambda *args: None)
+    monkeypatch.setattr(ole_parts, "inspect_ole", lambda path: FakeCompound())
+    monkeypatch.setattr(ole_parts, "log_warning", lambda message: warnings.append(message))
+
+    def fake_generate_uncached(index, input_path, ole_path, wmf_path, metadata_path, mtef_path, **kwargs):
+        method = kwargs["conversion_method"]
+        calls.append(method)
+        ole_path.write_bytes(b"ole-" + method.encode())
+        wmf_path.write_bytes(bytes.fromhex("d7cdc69a") + b"-" + method.encode())
+        metadata_path.write_text('{"method":"' + method + '"}', encoding="utf-8")
+
+    monkeypatch.setattr(ole_parts, "generate_uncached_equation_parts", fake_generate_uncached)
+
+    equations = ole_parts.generate_equation_parts(
+        [ole_parts.EquationRequest("x")],
+        tmp_path,
+        conversion_method="both",
+    )
+
+    assert calls == ["rust", "set-data"]
+    assert equations[0].ole_path == tmp_path / "eq_001.ole.bin"
+    assert (tmp_path / "eq_001.ole.bin").read_bytes() == b"ole-rust"
+    assert (tmp_path / "eq_001.set-data.ole.bin").read_bytes() == b"ole-set-data"
+    assert any("rust and set-data outputs differ" in message for message in warnings)
 
 
 def test_convert_marked_docx_passes_style_conversion_method(monkeypatch, tmp_path) -> None:
@@ -210,6 +246,25 @@ def test_mathtype_cache_key_includes_rust_converter_and_method_digests() -> None
     base = ole_parts.mathtype_cache_key("x", None, None, "helper", "rust-src-a", "rust-exe", "rust")
     changed_source = ole_parts.mathtype_cache_key("x", None, None, "helper", "rust-src-b", "rust-exe", "rust")
     changed_method = ole_parts.mathtype_cache_key("x", None, None, "helper", "rust-src-a", "rust-exe", "set-data")
+    set_data_base = ole_parts.mathtype_cache_key("x", None, None, "helper", "rust-src-a", "rust-exe", "set-data")
+    set_data_changed_rust = ole_parts.mathtype_cache_key(
+        "x",
+        None,
+        None,
+        "helper",
+        "rust-src-b",
+        "changed-rust-exe",
+        "set-data",
+    )
 
     assert base != changed_source
     assert base != changed_method
+    assert set_data_base == set_data_changed_rust
+
+
+class FakeCompound:
+    """Minimal OLE inspector double with a DSMT-bearing native stream."""
+
+    def read_stream(self, name: str) -> bytes:
+        """Return a valid MathType marker for generated-output validation."""
+        return b"DSMT"

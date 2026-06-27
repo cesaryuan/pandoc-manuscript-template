@@ -163,7 +163,8 @@ MathType-exported PDFs may hide the hat.
 Set `mathtypeConversionMethod` in `style.yml` to choose the MathType backend:
 `rust` uses LaTeX -> mathtype-rust -> OLE/MTEF -> SDK WMF/JSON, `set-data`
 uses MathType's TeX input OLE path, and `auto` tries `rust` before falling back
-to `set-data`.
+to `set-data`. Use `both` to generate both backends, warn when their OLE/WMF/JSON
+artifacts differ, and keep the `rust` output in the DOCX.
 
 ## Subfigure Layouts
 

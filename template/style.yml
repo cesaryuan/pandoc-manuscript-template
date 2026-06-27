@@ -11,11 +11,12 @@ citation-number-range-delimiter: "–"
 # The default stays false so a freshly initialized project builds without a
 # local MathType/OLE conversion setup.
 mathtype: false
-# MathType conversion backend: rust, set-data, or auto.
+# MathType conversion backend: rust, set-data, auto, or both.
 # rust: LaTeX -> mathtype-rust -> OLE/MTEF -> MathType SDK WMF/JSON.
 # set-data: LaTeX -> MathType OLE TeX input -> OLE/WMF/JSON.
 # auto: try rust first, then fall back to set-data.
-mathtypeConversionMethod: rust
+# both: generate both backends, warn if outputs differ, and use rust.
+mathtypeConversionMethod: both
 
 # Set to true to inline local child images inside referenced SVG files during
 # DOCX builds. This keeps SVG text/vector elements sharp while making linked

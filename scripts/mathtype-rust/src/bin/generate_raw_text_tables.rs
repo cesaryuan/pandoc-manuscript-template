@@ -106,7 +106,7 @@ impl Config {
                     helper = PathBuf::from(
                         args.get(index)
                             .ok_or_else(|| "--helper requires a path".to_string())?,
-                    )?;
+                    );
                 }
                 "--output" => {
                     index += 1;

@@ -169,7 +169,7 @@ impl Config {
                     input = PathBuf::from(
                         args.get(index)
                             .ok_or_else(|| "--input requires a path".to_string())?,
-                    )?;
+                    );
                 }
                 "--limit" => {
                     index += 1;
@@ -631,7 +631,10 @@ fn compare_snippets_with_mathtype(
             continue;
         }
         let normalized = normalize_latex(snippet);
-        let expr = match Parser::new(&normalized).parse() {
+        // Compare Rust and MathType against the same original LaTeX so helper
+        // fallbacks such as `aligned` stay visible in the byte-level audit.
+        let compare_latex = normalized;
+        let expr = match Parser::new(&compare_latex).parse() {
             Ok(expr) => expr,
             Err(err) if is_documentation_fragment(snippet, &err) => {
                 report.skipped.push((snippet.clone(), err));
@@ -642,14 +645,15 @@ fn compare_snippets_with_mathtype(
                 continue;
             }
         };
-        let rust_mtef = match write_mtef(&normalized, &expr) {
+        let rust_mtef = match write_mtef(&compare_latex, &expr) {
             Ok(bytes) => bytes,
             Err(err) => {
                 report.rust_error.push((snippet.clone(), err));
                 continue;
             }
         };
-        let mathtype_mtef = match probe_mathtype_mtef(&normalized, config, index, probe_session) {
+        let mathtype_mtef =
+            match probe_mathtype_mtef(&compare_latex, config, index, probe_session) {
             Ok(bytes) => bytes,
             Err(err) => {
                 report.helper_error.push((snippet.clone(), err));
@@ -711,7 +715,7 @@ fn probe_mathtype_mtef(
         run_mathtype_helper(
             &config.helper,
             &config.pre_verb,
-            &tex_path,
+            &payload,
             &ole_path,
             config.timeout_ms,
         )?;
@@ -756,6 +760,14 @@ fn cache_key(payload: &str, config: &MathTypeCompareConfig) -> String {
     fnv1a64_hex(material.as_bytes())
 }
 
+/// Return true for helper failures that should be retried instead of cached.
+fn is_transient_mathtype_probe_error(err: &str) -> bool {
+    let err = err.to_ascii_lowercase();
+    err.contains("timed out")
+        || err.contains("failed to run")
+        || err.contains("failed while waiting for helper")
+}
+
 /// Load a cached MathType probe result so repeated audits do not relaunch the helper.
 fn read_cached_mathtype_probe(
     paths: &MathTypeCachePaths,
@@ -772,10 +784,18 @@ fn read_cached_mathtype_probe(
         }
     }
     match fs::read_to_string(&paths.error) {
-        Ok(message) if !message.trim().is_empty() => Ok(Some(CachedMathTypeProbe::Error(message))),
-        Ok(_) => Ok(Some(CachedMathTypeProbe::Error(
-            "cached MathType probe failed without details".to_string(),
-        ))),
+        Ok(message) => {
+            let message = if message.trim().is_empty() {
+                "cached MathType probe failed without details".to_string()
+            } else {
+                message
+            };
+            if is_transient_mathtype_probe_error(&message) {
+                let _ = fs::remove_file(&paths.error);
+                return Ok(None);
+            }
+            Ok(Some(CachedMathTypeProbe::Error(message)))
+        }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(format!(
             "failed to read cache {}: {err}",
@@ -797,11 +817,15 @@ fn write_cached_mathtype_mtef(paths: &MathTypeCachePaths, mtef: &[u8]) -> Result
 
 /// Store one helper failure so unsupported snippets do not keep reopening MathType.
 fn write_cached_mathtype_error(paths: &MathTypeCachePaths, err: &str) -> Result<(), String> {
+    let _ = fs::remove_file(&paths.mtef);
+    if is_transient_mathtype_probe_error(err) {
+        let _ = fs::remove_file(&paths.error);
+        return Ok(());
+    }
     if let Some(parent) = paths.error.parent() {
         fs::create_dir_all(parent)
             .map_err(|cache_err| format!("failed to create {}: {cache_err}", parent.display()))?;
     }
-    let _ = fs::remove_file(&paths.mtef);
     fs::write(&paths.error, err).map_err(|cache_err| {
         format!(
             "failed to write cache {}: {cache_err}",
@@ -843,7 +867,7 @@ fn extract_mtef_from_ole(ole: &[u8]) -> Result<Vec<u8>, String> {
 fn run_mathtype_helper(
     helper: &PathBuf,
     pre_verb: &str,
-    tex_path: &PathBuf,
+    tex_payload: &str,
     ole_path: &PathBuf,
     timeout_ms: u64,
 ) -> Result<(), String> {
@@ -853,7 +877,7 @@ fn run_mathtype_helper(
     command.args(["--pre-verb", pre_verb]);
     let mut child = command
         .args(["--format", "TeX Input Language", "--input"])
-        .arg(tex_path)
+        .arg(tex_payload)
         .args(["--output"])
         .arg(ole_path)
         .args(["--encoding", "utf16le", "--no-verb"])
@@ -869,7 +893,7 @@ fn run_mathtype_helper(
         return Err(format!(
             "{} failed for {} with status {status}",
             helper.display(),
-            tex_path.display()
+            tex_payload
         ));
     }
     Ok(())
@@ -1238,10 +1262,19 @@ fn collect_raw_commands(expr: &Expr, commands: &mut Vec<String>) {
         | Expr::ArrowAccent { content, .. }
         | Expr::BarTemplate { content, .. }
         | Expr::Strike { content, .. }
+        | Expr::NotRelation(content)
         | Expr::Boxed(content)
         | Expr::Sqrt(content)
-        | Expr::Delimited { content, .. }
-        | Expr::Script { base: content, .. } => collect_raw_commands(content, commands),
+        | Expr::Delimited { content, .. } => collect_raw_commands(content, commands),
+        Expr::Script { base, sub, sup } => {
+            collect_raw_commands(base, commands);
+            if let Some(sub) = sub {
+                collect_raw_commands(sub, commands);
+            }
+            if let Some(sup) = sup {
+                collect_raw_commands(sup, commands);
+            }
+        }
         Expr::XArrow { label, under, .. } => {
             collect_raw_commands(label, commands);
             if let Some(under) = under {
@@ -1308,11 +1341,15 @@ fn collect_raw_commands(expr: &Expr, commands: &mut Vec<String>) {
                 .into_iter()
                 .for_each(|expr| collect_raw_commands(expr, commands));
         }
-        Expr::Matrix { rows, .. } | Expr::Environment { rows, .. } => rows
+        Expr::Substack { rows }
+        | Expr::Subarray { rows, .. }
+        | Expr::Matrix { rows, .. }
+        | Expr::Environment { rows, .. } => rows
             .iter()
             .flat_map(|row| row.iter())
             .for_each(|expr| collect_raw_commands(expr, commands)),
         Expr::Char(_)
+        | Expr::EmbellishedChar { .. }
         | Expr::CommandSymbol { .. }
         | Expr::BigSymbol(_)
         | Expr::SumOperatorSymbol(_)

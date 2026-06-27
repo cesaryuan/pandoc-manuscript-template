@@ -290,11 +290,14 @@ pandoc manuscript.md -t json -o scripts\mathtype-rust\samples\manuscript_ast.jso
 样本中出现的结构，包括分式、根式、上下标、动态括号、big operators、常用
 数学字体、accent、函数名、希腊字母和部分符号。
 
-有两个环境公式目前走受限的已验证 body 路径：
+当前环境类公式分成两种情况：
 
-- `\begin{cases}...\end{cases}`
-- `\begin{aligned}...\end{aligned}`
+- `\begin{align}...\end{align}`、`alignat` 等会走原生环境 AST 和 MTEF writer。
+- `\begin{aligned}...\end{aligned}` 目前按 MathType TeX Input 的真实行为处理：虽
+  然 MathType 能“接受”这段输入，但它不会把 `aligned` 翻译成原生对齐结构，而是
+  会保留 `\begin` / `&` / `\end` 这类 raw fallback 片段。
+- `\begin{cases}...\end{cases}` 目前仍是受限的已验证路径。
 
-这样可以保证当前 302 个 manuscript 样本的 MTEF 与 MathType 完全一致。后续如
-果要支持任意 `cases` 或 `aligned` 内容，应把这部分替换成通用环境 AST 和 MTEF
-writer。
+这样可以保证当前样本的 MTEF 与 MathType 完全一致。后续如果要超越“与 MathType
+一致”的目标，真正原生支持任意 `aligned` 内容，就需要实现独立于 MathType fallback
+的通用环境 writer。

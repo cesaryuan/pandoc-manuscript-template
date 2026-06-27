@@ -95,6 +95,7 @@ pub(super) const SUPPORTED_SYMBOL_ALIASES: &[(&str, char)] = &[
     ("minuso", '\u{29b5}'),
     ("minuscolon", '\u{2239}'),
     ("multimap", '\u{22b8}'),
+    ("pounds", '\u{00a3}'),
     ("ncong", '\u{2246}'),
     ("ngeq", '\u{2271}'),
     ("ngeqq", '\u{2271}'),
@@ -211,6 +212,7 @@ pub(super) const SUPPORTED_SYMBOL_ALIASES: &[(&str, char)] = &[
     ("veebar", '\u{22bb}'),
     ("weierp", '\u{2118}'),
     ("wr", '\u{2240}'),
+    ("yen", '\u{00a5}'),
 ];
 
 /// Supported Functions aliases that expand to a short visible symbol sequence.
@@ -235,7 +237,7 @@ pub(super) const SUPPORTED_TEXT_ALIASES: &[(&str, &str)] = &[
     ("copyright", "\u{00a9}"),
     ("lq", "`"),
     ("mathsterling", "\u{00a3}"),
-    ("pounds", "\u{00a3}"),
     ("rq", "'"),
-    ("yen", "\u{00a5}"),
 ];
+
+

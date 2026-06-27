@@ -534,6 +534,7 @@ pub(crate) const COMMAND_SPECIFIC_CHARS: &[CommandStyledChar] = &[
     CommandStyledChar { command: "measuredangle", ch: '\u{2221}', typeface: FN_MT_EXTRA, mtcode: 0x2221, font_pos: Some(0x52), explicit_font: None },
     CommandStyledChar { command: "mid", ch: '\u{2223}', typeface: FN_TEXT_FE, mtcode: 0x2223, font_pos: None, explicit_font: None },
     CommandStyledChar { command: "multimap", ch: '\u{22b8}', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x22b8, font_pos: Some(0xa8), explicit_font: Some(ExplicitFont::EuclidMathOne) },
+    CommandStyledChar { command: "pounds", ch: '\u{00a3}', typeface: FN_FUNCTION, mtcode: 0x00a3, font_pos: None, explicit_font: None },
     CommandStyledChar { command: "ncong", ch: '\u{2246}', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x2247, font_pos: Some(0xae), explicit_font: Some(ExplicitFont::EuclidMathOne) },
     CommandStyledChar { command: "ngeq", ch: '\u{2271}', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x2271, font_pos: Some(0x93), explicit_font: Some(ExplicitFont::EuclidMathTwo) },
     CommandStyledChar { command: "ngeqq", ch: '\u{2271}', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0xea07, font_pos: Some(0x9d), explicit_font: Some(ExplicitFont::EuclidMathTwo) },
@@ -628,6 +629,7 @@ pub(crate) const COMMAND_SPECIFIC_CHARS: &[CommandStyledChar] = &[
     CommandStyledChar { command: "veebar", ch: '\u{22bb}', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x22bb, font_pos: Some(0xa9), explicit_font: Some(ExplicitFont::EuclidMathTwo) },
     CommandStyledChar { command: "weierp", ch: '\u{2118}', typeface: FN_SYMBOL, mtcode: 0x2118, font_pos: Some(0xc3), explicit_font: None },
     CommandStyledChar { command: "wr", ch: '\u{2240}', typeface: EXPLICIT_FONT_NEG_1, mtcode: 0x2240, font_pos: Some(0xaa), explicit_font: Some(ExplicitFont::EuclidMathOne) },
+    CommandStyledChar { command: "yen", ch: '\u{00a5}', typeface: FN_FUNCTION, mtcode: 0x00a5, font_pos: None, explicit_font: None },
 ];
 
 pub(crate) const TEX_COMMAND_CHARS: &[TexCommandChar] = &[
@@ -1159,9 +1161,7 @@ pub(crate) const TEX_COMMAND_TEXTS: &[TexCommandText] = &[
     TexCommandText { command: "copyright", text: "\u{00a9}" },
     TexCommandText { command: "lq", text: "`" },
     TexCommandText { command: "mathsterling", text: "\u{00a3}" },
-    TexCommandText { command: "pounds", text: "\u{00a3}" },
     TexCommandText { command: "rq", text: "'" },
-    TexCommandText { command: "yen", text: "\u{00a5}" },
 ];
 
 pub(crate) const RAW_LITERAL_BYTES: &[RawLiteralBytes] = &[
@@ -1233,3 +1233,5 @@ pub(crate) const BIG_OPERATOR_GLYPHS: &[BigOperatorGlyph] = &[
     BigOperatorGlyph { name: "integral", typeface: FN_SYMBOL, mtcode: 0x222b, font_pos: 0xf2, explicit_font: None, font_style_selector: None },
     BigOperatorGlyph { name: "contour_loop", typeface: FN_MT_EXTRA, mtcode: 0xee11, font_pos: 0xd1, explicit_font: None, font_style_selector: None },
 ];
+
+

@@ -377,9 +377,11 @@ def build_mathtype_rust_converter() -> Path:
 
 
 def normalize_mathtype_latex(latex: str) -> str:
-    """Rewrite LaTeX constructs that MathType's TeX input does not support."""
-    # MathType rejects the AMS `aligned` environment, but accepts the closely
-    # related `align` environment for the same multi-line equation content.
+    """Rewrite LaTeX constructs that MathType's TeX input does not translate natively."""
+    # MathType does not translate the AMS `aligned` environment as a native
+    # alignment object. Rewriting it to the closely related `align`
+    # environment preserves the row content while avoiding the raw-TeX
+    # fallback that otherwise appears in the generated MTEF.
     text = BEGIN_ALIGNED_RE.sub(r"\\begin{align}", latex)
     return END_ALIGNED_RE.sub(r"\\end{align}", text)
 

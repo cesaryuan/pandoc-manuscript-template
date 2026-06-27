@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::generated::char_tables::ExplicitFont;
-use crate::mathtype_ansi::encode_mathtype_source;
+use crate::mathtype_ansi::{encode_mathtype_source, encode_mathtype_text};
 use crate::typeface::{
     EXPLICIT_FONT_NEG_1, EXPLICIT_FONT_NEG_2, FN_EXPAND, FN_FUNCTION, FN_MT_EXTRA, FN_NUMBER,
     FN_SPACE, FN_SYMBOL, FN_TEXT, FN_VARIABLE, FN_VECTOR,
@@ -103,6 +103,7 @@ struct MtefWriter {
     sans_serif_typeface: u8,
     black_color_defined: bool,
     sans_serif_group_active: bool,
+    typewriter_group_active: bool,
     big_symbol_line_marker_pending: bool,
     suppress_next_pile_color_default: bool,
     suppress_next_stackrel_color_default: bool,
@@ -111,6 +112,10 @@ struct MtefWriter {
     suppress_next_limit_restore: bool,
     emit_top_color_selector_one: bool,
     top_sequence_starts_default: bool,
+    fallback_environment_active: bool,
+    suppress_next_line_black: bool,
+    line_starts_default: bool,
+    parent_sequence_has_previous_sibling: bool,
 }
 
 impl MtefWriter {
@@ -184,16 +189,22 @@ impl MtefWriter {
 pub(crate) fn write_mtef(source_latex: &str, expr: &Expr) -> Result<Vec<u8>, String> {
     let mut out = vec![0x05, 0x01, 0x00, 0x07, 0x08];
     out.extend_from_slice(b"DSMT7\0");
-    // Live helper probes currently store 0x01 here for both ordinary inline formulas and
-    // top-level \displaystyle snippets, so keep the same header byte for every equation body.
-    out.push(0x01);
-    out.push(0x66);
+    // MathType switches to a shorter failure-form header when TeX Input collapses
+    // the whole formula into "(Text translation failed)".
+    if expr_is_translation_failed_placeholder(expr) {
+        out.push(0x00);
+    } else {
+        out.push(0x01);
+        out.push(0x66);
+    }
 
-    let mut source = b"TeX Input Language\0".to_vec();
-    source.extend_from_slice(&encode_mathtype_source(source_latex)?);
-    source.push(0x00);
-    write_unsigned(source.len(), &mut out)?;
-    out.extend_from_slice(&source);
+    if !expr_is_translation_failed_placeholder(expr) {
+        let mut source = b"TeX Input Language\0".to_vec();
+        source.extend_from_slice(&encode_mathtype_source(source_latex)?);
+        source.push(0x00);
+        write_unsigned(source.len(), &mut out)?;
+        out.extend_from_slice(&source);
+    }
 
     out.extend_from_slice(MTEF_FIXED_DEFS);
     write_equation_body(expr, &mut out)?;
@@ -226,6 +237,7 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
         sans_serif_typeface: EXPLICIT_FONT_NEG_1,
         black_color_defined: false,
         sans_serif_group_active: false,
+        typewriter_group_active: false,
         big_symbol_line_marker_pending: false,
         suppress_next_pile_color_default: false,
         suppress_next_stackrel_color_default: false,
@@ -234,6 +246,10 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
         suppress_next_limit_restore: false,
         emit_top_color_selector_one: false,
         top_sequence_starts_default: false,
+        fallback_environment_active: false,
+        suppress_next_line_black: false,
+        line_starts_default: false,
+        parent_sequence_has_previous_sibling: false,
     };
     if expr_is_only_spaces(expr) {
         write_only_spaces(expr, out)?;
@@ -287,6 +303,7 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
             && !starts_with_top_pile_template
             && !starts_with_top_style
             && !expr_sets_own_color(expr)
+            && !expr_is_translation_failed_placeholder(expr)
         {
             writer.ensure_black_color_def(out);
             color_black(out);
@@ -310,7 +327,8 @@ fn expr_starts_with_top_matrix(expr: &Expr) -> bool {
     match expr {
         Expr::Environment {
             kind:
-                EnvironmentKind::Align
+                EnvironmentKind::Array
+                | EnvironmentKind::Align
                 | EnvironmentKind::Aligned
                 | EnvironmentKind::AlignAt
                 | EnvironmentKind::AlignedAt
@@ -387,6 +405,19 @@ fn expr_starts_with_environment_fallback(expr: &Expr) -> bool {
         Expr::Sequence(items) => items
             .first()
             .is_some_and(expr_starts_with_environment_fallback),
+        _ => false,
+    }
+}
+
+/// Return true when the next item opens a native `array` MATRIX after prior text.
+fn expr_starts_with_array_environment(expr: &Expr) -> bool {
+    match expr {
+        Expr::Environment {
+            kind: EnvironmentKind::Array,
+            ..
+        } => true,
+        Expr::Style { content, .. } => expr_starts_with_array_environment(content),
+        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_array_environment),
         _ => false,
     }
 }
@@ -504,7 +535,9 @@ fn expr_starts_with_euclid_math_one(expr: &Expr) -> bool {
                 entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
             })
         }),
-        Expr::Font { content, .. } | Expr::Accent { content, .. } | Expr::Style { content, .. } => {
+        // Accent templates such as `\hat{\mathcal O}` open their own TMPL bytes first,
+        // so their nested explicit font definitions must stay inside the accent slot.
+        Expr::Font { content, .. } | Expr::Style { content, .. } => {
             expr_starts_with_euclid_math_one(content)
         }
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_euclid_math_one),
@@ -532,7 +565,9 @@ fn expr_starts_with_euclid_math_two(expr: &Expr) -> bool {
                 entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
             })
         }),
-        Expr::Font { content, .. } | Expr::Accent { content, .. } | Expr::Style { content, .. } => {
+        // Keep explicit Euclid fonts inside accent templates instead of pulling
+        // them ahead of the opening accent TMPL record.
+        Expr::Font { content, .. } | Expr::Style { content, .. } => {
             expr_starts_with_euclid_math_two(content)
         }
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_euclid_math_two),
@@ -593,7 +628,11 @@ fn write_expr(
     let next_state = match expr {
         Expr::Sequence(items) => {
             let starts_with_explicit_accent = expr_starts_with_explicit_accent_template(expr);
-            let start_default = writer.top_sequence_starts_default;
+            let start_default = writer.top_sequence_starts_default
+                || (writer.line_starts_default
+                    && items
+                        .first()
+                        .is_some_and(expr_starts_with_line_layout_object));
             if start_default {
                 writer.top_sequence_starts_default = false;
             }
@@ -661,6 +700,18 @@ fn write_expr(
                     color_default(out);
                     state.color = ColorState::Default;
                 }
+                if index > 0 && state.color == ColorState::Black && expr_starts_with_binom_pile(item) {
+                    color_default(out);
+                    state.color = ColorState::Default;
+                }
+                if index > 0
+                    && state.color == ColorState::Black
+                    && expr_starts_with_top_matrix(item)
+                    && items[index - 1].contains_raw_tex()
+                {
+                    color_default(out);
+                    state.color = ColorState::Default;
+                }
                 if index > 0
                     && state.color == ColorState::Black
                     && expr_starts_with_environment_fallback(item)
@@ -678,12 +729,31 @@ fn write_expr(
                 if index == 0 && start_default && expr_starts_with_top_style(item) {
                     writer.top_sequence_starts_default = true;
                 }
+                let previous_parent_sequence_has_previous_sibling =
+                    writer.parent_sequence_has_previous_sibling;
+                writer.parent_sequence_has_previous_sibling = index > 0;
                 state = write_expr(item, out, state.size, writer)?;
+                writer.parent_sequence_has_previous_sibling =
+                    previous_parent_sequence_has_previous_sibling;
             }
             state
         }
         Expr::Char(ch) => {
             write_char(*ch, out, writer)?;
+            WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            }
+        }
+        Expr::EmbellishedChar { ch, embellishments } => {
+            write_embellished_char_codes(*ch, embellishments, out, writer)?;
+            WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            }
+        }
+        Expr::NotRelation(content) => {
+            write_not_relation(content, out, writer)?;
             WriteState {
                 size: current_size,
                 color: ColorState::Black,
@@ -830,6 +900,22 @@ fn write_expr(
         Expr::XArrow { kind, label, under } => {
             write_xarrow(*kind, label, under.as_deref(), out, current_size, writer)?
         }
+        Expr::Substack { .. } => {
+            write_text("(Tex translation failed)", out)?;
+            WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            }
+        }
+        Expr::Subarray { rows, .. } => {
+            // Keep current subarray rendering on the MATRIX path until the remaining
+            // MathType mixed raw/native limit layout is fully modeled.
+            write_matrix(MatrixKind::Plain, rows, out, current_size, writer)?;
+            WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            }
+        }
         Expr::Matrix { kind, rows } => {
             write_matrix(*kind, rows, out, current_size, writer)?;
             WriteState {
@@ -837,8 +923,8 @@ fn write_expr(
                 color: ColorState::Black,
             }
         }
-        Expr::Environment { kind, rows } => {
-            write_environment(*kind, rows, out, current_size, writer)?;
+        Expr::Environment { kind, rows, trivia } => {
+            write_environment(*kind, rows, trivia, out, current_size, writer)?;
             WriteState {
                 size: current_size,
                 color: ColorState::Black,
@@ -893,6 +979,10 @@ fn write_color_expr(
 fn expr_sets_own_color(expr: &Expr) -> bool {
     match expr {
         Expr::Color { .. } | Expr::RawTex(_) | Expr::Boxed(_) => true,
+        Expr::Pile {
+            kind: PileKind::Binom,
+            ..
+        } => true,
         Expr::Style { content, .. } => expr_sets_own_color(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_sets_own_color),
         _ => false,
@@ -975,6 +1065,17 @@ fn write_command_symbol(
     out: &mut Vec<u8>,
     writer: &mut MtefWriter,
 ) -> Result<(), String> {
+    write_command_symbol_with_embellishments(command, ch, &[], out, writer)
+}
+
+/// Write a source-command-specific CHAR record with optional EMBELL records.
+fn write_command_symbol_with_embellishments(
+    command: &str,
+    ch: char,
+    embellishments: &[u8],
+    out: &mut Vec<u8>,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
     let symbol = encoding::command_specific_char(command)
         .ok_or_else(|| format!("missing generated command-specific symbol: \\{command}"))?;
     if symbol.ch != ch {
@@ -983,14 +1084,26 @@ fn write_command_symbol(
             symbol.ch
         ));
     }
-    write_styled_table_char(
-        symbol.typeface,
-        symbol.mtcode,
-        symbol.font_pos,
-        symbol.explicit_font,
-        out,
-        writer,
-    );
+    if embellishments.is_empty() {
+        write_styled_table_char(
+            symbol.typeface,
+            symbol.mtcode,
+            symbol.font_pos,
+            symbol.explicit_font,
+            out,
+            writer,
+        );
+    } else {
+        write_styled_table_char_with_embellishments(
+            symbol.typeface,
+            symbol.mtcode,
+            symbol.font_pos,
+            symbol.explicit_font,
+            embellishments,
+            out,
+            writer,
+        );
+    }
     Ok(())
 }
 
@@ -1113,13 +1226,98 @@ fn write_style_expr(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    let content = unwrap_single_sequence(content);
     let target_size = style_size(kind);
     let changed_size = target_size != current_size;
     let suppress_restore = writer.suppress_next_style_restore;
     if suppress_restore {
         writer.suppress_next_style_restore = false;
     }
-    if suppress_restore && !expr_starts_with_self_opening(content) {
+    if kind == StyleKind::Text {
+        match content {
+            Expr::Fraction(numerator, denominator) => {
+                return write_textstyle_fraction(
+                    numerator,
+                    denominator,
+                    out,
+                    current_size,
+                    suppress_restore,
+                    writer,
+                );
+            }
+            Expr::Pile {
+                kind: PileKind::Parenthesized,
+                upper,
+                lower,
+            } => {
+                return write_textstyle_parenthesized_pile(
+                    upper,
+                    lower,
+                    out,
+                    current_size,
+                    suppress_restore,
+                    writer,
+                );
+            }
+            Expr::Pile {
+                kind: PileKind::Binom,
+                upper,
+                lower,
+            } => {
+                return write_textstyle_binom_pile(
+                    upper,
+                    lower,
+                    out,
+                    current_size,
+                    suppress_restore,
+                    writer,
+                );
+            }
+            Expr::BigOp {
+                kind,
+                body: None,
+                lower,
+                upper,
+            } if lower.is_some() || upper.is_some() => {
+                return write_textstyle_bodyless_big_op(
+                    *kind,
+                    lower.as_deref(),
+                    upper.as_deref(),
+                    out,
+                    current_size,
+                    suppress_restore,
+                    writer,
+                );
+            }
+            _ => {}
+        }
+    }
+    let display_style_is_transparent = matches!(
+        content,
+        Expr::BigOp {
+            body: None,
+            lower,
+            upper,
+            ..
+        } if lower.is_some() || upper.is_some()
+    ) || matches!(
+        content,
+        Expr::Pile {
+            kind: PileKind::Parenthesized | PileKind::Binom,
+            ..
+        }
+    );
+    if kind == StyleKind::Display && suppress_restore && display_style_is_transparent {
+        let state = write_expr(content, out, current_size, writer)?;
+        return Ok(WriteState {
+            size: current_size,
+            color: state.color,
+        });
+    }
+    if suppress_restore
+        && !matches!(content, Expr::Sequence(_))
+        && !expr_starts_with_self_opening(content)
+    {
         writer.ensure_black_color_def(out);
         color_black(out);
     }
@@ -1136,6 +1334,188 @@ fn write_style_expr(
     })
 }
 
+/// Peel one-item sequences introduced by style switches so writer rules can
+/// reason about the actual styled construct.
+fn unwrap_single_sequence(mut expr: &Expr) -> &Expr {
+    while let Expr::Sequence(items) = expr {
+        if let [item] = items.as_slice() {
+            expr = item;
+        } else {
+            break;
+        }
+    }
+    expr
+}
+
+/// Write MathType's text-style fraction template variant used by \tfrac.
+fn write_textstyle_fraction(
+    numerator: &Expr,
+    denominator: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    suppress_restore: bool,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    // MathType selects black before opening the text-style fraction template,
+    // even when the surrounding text-style wrapper suppresses size restoration.
+    writer.ensure_black_color_def(out);
+    color_black(out);
+    let inner_size = match current_size {
+        SizeState::Full => SizeState::Sub,
+        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
+    };
+    out.extend_from_slice(&[0x03, 0x00, 0x0b, 0x01, 0x00]);
+    write_size(inner_size, out);
+    color_default(out);
+    let numerator_state = write_line(numerator, out, inner_size, writer)?;
+    if numerator_state.size != inner_size {
+        write_size(inner_size, out);
+        if numerator_state.color != ColorState::Default {
+            color_default(out);
+        }
+    } else {
+        color_default(out);
+    }
+    let denominator_state = write_line(denominator, out, inner_size, writer)?;
+    out.push(0x00);
+    if !suppress_restore && inner_size != current_size {
+        write_size(current_size, out);
+    }
+    Ok(WriteState {
+        size: current_size,
+        color: denominator_state.color,
+    })
+}
+
+/// Write MathType's text-style parenthesized binomial layout used by \tbinom.
+fn write_textstyle_parenthesized_pile(
+    upper: &Expr,
+    lower: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    suppress_restore: bool,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    let pile_size = match current_size {
+        SizeState::Full => SizeState::Sub,
+        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
+    };
+    write_size(pile_size, out);
+    let state = write_pile(
+        PileKind::Parenthesized,
+        upper,
+        lower,
+        out,
+        pile_size,
+        writer,
+    )?;
+    if !suppress_restore && pile_size != current_size {
+        write_size(current_size, out);
+    }
+    Ok(WriteState {
+        size: current_size,
+        color: state.color,
+    })
+}
+
+/// Write MathType's command-form binomial layout used by \binom and \dbinom.
+fn write_binom_pile(
+    upper: &Expr,
+    lower: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    out.extend_from_slice(&[0x03, 0x00, 0x01, 0x03, 0x00]);
+    writer.ensure_black_color_def(out);
+    color_black(out);
+    out.extend_from_slice(&[0x04, 0x00, 0x02, 0x01]);
+    color_default(out);
+    let upper_state = write_line(upper, out, current_size, writer)?;
+    if upper_state.size != current_size {
+        write_size(current_size, out);
+    }
+    color_default(out);
+    let lower_state = write_line(lower, out, current_size, writer)?;
+    if lower_state.size != current_size {
+        write_size(current_size, out);
+    }
+    out.push(0x00);
+    color_default(out);
+    write_delimiter_glyph_pair('(', ')', out)?;
+    out.push(0x00);
+    Ok(WriteState {
+        size: current_size,
+        color: ColorState::Default,
+    })
+}
+
+/// Write MathType's text-style command-form binomial layout used by \tbinom.
+fn write_textstyle_binom_pile(
+    upper: &Expr,
+    lower: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    suppress_restore: bool,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    let pile_size = match current_size {
+        SizeState::Full => SizeState::Sub,
+        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
+    };
+    write_size(pile_size, out);
+    let state = write_binom_pile(upper, lower, out, pile_size, writer)?;
+    if !suppress_restore && pile_size != current_size {
+        write_size(current_size, out);
+    }
+    Ok(WriteState {
+        size: current_size,
+        color: state.color,
+    })
+}
+
+/// Write inline/text-style bodyless big operators, which MathType encodes with tmINTOP.
+fn write_textstyle_bodyless_big_op(
+    kind: BigOpKind,
+    lower: Option<&Expr>,
+    upper: Option<&Expr>,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    suppress_restore: bool,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    let script_size = match current_size {
+        SizeState::Full => SizeState::Sub,
+        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
+    };
+    let variation = if upper.is_some() { 0x30 } else { 0x10 };
+    out.extend_from_slice(&[0x03, 0x00, 0x15, variation, 0x00]);
+    write_null_line(out);
+    write_size(script_size, out);
+    if let Some(lower) = lower {
+        let lower_state = write_line(lower, out, script_size, writer)?;
+        restore_script_separator(lower_state, script_size, out);
+    } else {
+        write_null_line(out);
+    }
+    if let Some(upper) = upper {
+        write_line(upper, out, script_size, writer)?;
+    } else {
+        write_null_line(out);
+    }
+    out.push(0x0d);
+    color_default(out);
+    write_named_big_operator_glyph_line(bodyless_big_op_glyph_name(kind), out, writer)?;
+    out.push(0x00);
+    if !suppress_restore && script_size != current_size {
+        write_size(current_size, out);
+    }
+    Ok(WriteState {
+        size: current_size,
+        color: ColorState::Black,
+    })
+}
+
 /// Map parser style switches onto the MTEF logical sizes already used for scripts.
 fn style_size(kind: StyleKind) -> SizeState {
     match kind {
@@ -1145,15 +1525,50 @@ fn style_size(kind: StyleKind) -> SizeState {
     }
 }
 
-/// Write text-like CHAR records as UTF-16 code units, including surrogate pairs.
+/// Write text-like CHAR records using the same visible fallback MathType applies.
+///
+/// Helper probes show that MathType text mode:
+/// - turns unsupported characters into visible `?` glyphs,
+/// - uses one `?` per UTF-16 code unit for non-BMP scalars,
+/// - and renders visible punctuation such as `$` / `?` with function style.
 fn write_text_code_units(text: &str, options: u8, out: &mut Vec<u8>) -> Result<(), String> {
-    for code in text.encode_utf16() {
-        out.push(0x02);
-        out.push(options);
-        out.push(FN_TEXT);
-        write_u16(code, out);
+    for ch in text.chars() {
+        if options == 0x00 {
+            let encoded = encode_mathtype_text(&ch.to_string())?;
+            if encoded.iter().all(|byte| *byte == b'?') && ch != '?' {
+                for _ in 0..encoded.len() {
+                    write_text_char_record('?', options, FN_TEXT, out);
+                }
+                continue;
+            }
+        }
+        let mut units = [0u16; 2];
+        for code in ch.encode_utf16(&mut units) {
+            let typeface = if options == 0x00 && text_function_style_char(ch) {
+                FN_FUNCTION
+            } else {
+                FN_TEXT
+            };
+            out.push(0x02);
+            out.push(options);
+            out.push(typeface);
+            write_u16(*code, out);
+        }
     }
     Ok(())
+}
+
+/// Return true when visible text-mode punctuation uses MathType's function style.
+fn text_function_style_char(ch: char) -> bool {
+    matches!(ch, '$' | '?')
+}
+
+/// Write one text-mode visible glyph with an explicitly selected typeface.
+fn write_text_char_record(ch: char, options: u8, typeface: u8, out: &mut Vec<u8>) {
+    out.push(0x02);
+    out.push(options);
+    out.push(typeface);
+    write_u16(ch as u16, out);
 }
 
 /// Write MathType's limit template for \lim and \sup with lower/upper slots.
@@ -1348,6 +1763,7 @@ fn write_named_big_operator_glyph(name: &str, out: &mut Vec<u8>) -> Result<(), S
             sans_serif_typeface: EXPLICIT_FONT_NEG_1,
             black_color_defined: false,
             sans_serif_group_active: false,
+            typewriter_group_active: false,
             big_symbol_line_marker_pending: false,
             suppress_next_pile_color_default: false,
             suppress_next_stackrel_color_default: false,
@@ -1356,6 +1772,10 @@ fn write_named_big_operator_glyph(name: &str, out: &mut Vec<u8>) -> Result<(), S
             suppress_next_limit_restore: false,
             emit_top_color_selector_one: false,
             top_sequence_starts_default: false,
+            fallback_environment_active: false,
+            suppress_next_line_black: false,
+            line_starts_default: false,
+            parent_sequence_has_previous_sibling: false,
         },
     );
     Ok(())
@@ -1408,21 +1828,27 @@ fn write_pile(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    if kind == PileKind::Binom {
+        return write_binom_pile(upper, lower, out, current_size, writer);
+    }
     let suppress_initial_color = writer.suppress_next_pile_color_default;
     if suppress_initial_color {
         writer.suppress_next_pile_color_default = false;
+    }
+    let delimiters = pile_delimiters(kind);
+    if delimiters.is_some() {
+        writer.ensure_black_color_def(out);
+        color_black(out);
+    } else if suppress_initial_color {
+        writer.ensure_black_color_def(out);
     } else {
         color_default(out);
     }
-    if let Some((left, right)) = pile_delimiters(kind) {
+    if let Some((left, right)) = delimiters {
         out.extend_from_slice(&[0x03, 0x00, delimiter_selector(left, right)?, 0x03, 0x00]);
+        color_default(out);
     }
-    if suppress_initial_color {
-        writer.ensure_black_color_def(out);
-    }
-    color_black(out);
     out.extend_from_slice(&[0x04, 0x00, 0x02, 0x01]);
-    color_default(out);
     let upper_state = write_line(upper, out, current_size, writer)?;
     if upper_state.size != current_size {
         write_size(current_size, out);
@@ -1433,8 +1859,7 @@ fn write_pile(
         write_size(current_size, out);
     }
     out.push(0x00);
-    if let Some((left, right)) = pile_delimiters(kind) {
-        color_default(out);
+    if let Some((left, right)) = delimiters {
         write_delimiter_glyph_pair(left, right, out)?;
         out.push(0x00);
     }
@@ -1443,11 +1868,10 @@ fn write_pile(
         color: ColorState::Default,
     })
 }
-
 /// Return the optional delimiter pair around a two-row pile.
 fn pile_delimiters(kind: PileKind) -> Option<(char, char)> {
     match kind {
-        PileKind::Plain => None,
+        PileKind::Plain | PileKind::Binom => None,
         PileKind::Parenthesized => Some(('(', ')')),
         PileKind::Braced => Some(('{', '}')),
         PileKind::Bracketed => Some(('[', ']')),
@@ -1603,6 +2027,12 @@ fn write_xarrow(
 ) -> Result<WriteState, String> {
     let direction_bit = xarrow_direction_bit(kind);
     let variation = direction_bit | 0x04 | u8::from(under.is_some()) * 0x08;
+    // MathType selects black before opening tmARROW, then switches the label
+    // slot back to default color inside the template.
+    if !writer.parent_sequence_has_previous_sibling {
+        writer.ensure_black_color_def(out);
+        color_black(out);
+    }
     out.extend_from_slice(&[0x03, 0x00, 0x0e, variation, 0x00]);
     let label_size = match current_size {
         SizeState::Full => SizeState::Sub,
@@ -1615,6 +2045,7 @@ fn write_xarrow(
         write_size(label_size, out);
     }
     if let Some(under) = under {
+        color_default(out);
         let under_state = write_line(under, out, label_size, writer)?;
         if under_state.size != label_size {
             write_size(label_size, out);
@@ -1653,8 +2084,8 @@ fn xarrow_direction_bit(kind: XArrowKind) -> u8 {
 /// Return the expandable glyph code used for one x-arrow variant.
 fn xarrow_glyph(kind: XArrowKind) -> u16 {
     match kind {
-        // MathType uses the template variation to flip ordinary left arrows.
-        XArrowKind::Left | XArrowKind::Right => 0x2192,
+        XArrowKind::Left => 0x2190,
+        XArrowKind::Right => 0x2192,
         XArrowKind::DoubleLeft | XArrowKind::DoubleRight => 0x21d2,
         XArrowKind::HookLeft | XArrowKind::HookRight => 0x21aa,
         XArrowKind::TwoHeadLeft | XArrowKind::TwoHeadRight => 0x21a0,
@@ -1674,11 +2105,16 @@ fn write_matrix(
 ) -> Result<(), String> {
     let Some((left, right, selector)) = (match kind {
         MatrixKind::Plain => None,
+        MatrixKind::Small => {
+            write_size(current_size, out);
+            write_plain_matrix_record(rows, out, current_size, writer)?;
+            return Ok(());
+        }
         MatrixKind::Parenthesized => Some(('(', ')', 0x01)),
         MatrixKind::Bracketed => Some(('[', ']', 0x03)),
         MatrixKind::Braced => Some(('{', '}', 0x02)),
         MatrixKind::Barred => Some(('|', '|', 0x04)),
-        MatrixKind::DoubleBarred => Some(('‖', '‖', 0x05)),
+        MatrixKind::DoubleBarred => Some(('\u{2016}', '\u{2016}', 0x05)),
     }) else {
         write_plain_matrix_record(rows, out, current_size, writer)?;
         return Ok(());
@@ -1691,57 +2127,128 @@ fn write_matrix(
 fn write_environment(
     kind: EnvironmentKind,
     rows: &[Vec<Expr>],
+    trivia: &EnvironmentTrivia,
     out: &mut Vec<u8>,
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<(), String> {
     match kind {
-        EnvironmentKind::Align => write_align_matrix_record(rows, out, current_size, writer),
+        EnvironmentKind::Array => {
+            write_array_environment(rows, trivia, out, current_size, writer)
+        }
+        EnvironmentKind::Align => {
+            if let Some(cell) = transparent_failure_environment_cell(rows) {
+                write_expr(cell, out, current_size, writer)?;
+                Ok(())
+            } else {
+                write_align_matrix_record(rows, out, current_size, writer)
+            }
+        },
         EnvironmentKind::AlignAt => write_align_matrix_record(rows, out, current_size, writer),
-        EnvironmentKind::Split => {
-            write_environment_fallback("split", "&", "\\end", rows, out, current_size, writer)
-        }
-        EnvironmentKind::Aligned => {
-            write_environment_fallback("aligned", "&", "\\end", rows, out, current_size, writer)
-        }
+        EnvironmentKind::Split => write_environment_fallback(
+            "split",
+            "&",
+            "\\end",
+            rows,
+            trivia,
+            out,
+            current_size,
+            writer,
+        ),
+        // MathType's TeX Input keeps the `aligned` wrapper as raw fallback text
+        // even when the environment contains only one visible cell, so do not
+        // collapse it into the inner expression here.
+        EnvironmentKind::Aligned => write_environment_fallback(
+            "aligned",
+            "&",
+            "\\end",
+            rows,
+            trivia,
+            out,
+            current_size,
+            writer,
+        ),
         EnvironmentKind::AlignedAt => write_align_matrix_record(rows, out, current_size, writer),
-        EnvironmentKind::Gather => {
-            write_environment_fallback("gather", "", "\\end", rows, out, current_size, writer)
-        }
-        EnvironmentKind::Gathered => {
-            write_environment_fallback("gathered", "", "\\end", rows, out, current_size, writer)
-        }
+        EnvironmentKind::Gather => write_environment_fallback(
+            "gather",
+            "",
+            "\\end",
+            rows,
+            trivia,
+            out,
+            current_size,
+            writer,
+        ),
+        EnvironmentKind::Gathered => write_environment_fallback(
+            "gathered",
+            "",
+            "\\end",
+            rows,
+            trivia,
+            out,
+            current_size,
+            writer,
+        ),
         EnvironmentKind::Cases => write_left_fenced_matrix(rows, out, current_size, writer),
         EnvironmentKind::RightCases => write_right_fenced_matrix(rows, out, current_size, writer),
     }
 }
 
+/// Write MathType''s mixed native/raw array environment form.
+fn write_array_environment(
+    rows: &[Vec<Expr>],
+    trivia: &EnvironmentTrivia,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    write_plain_matrix_record_with_row_leading(rows, &trivia.row_leading, out, current_size, writer)
+}
 /// Emulate MathType TeX Input's fallback for unsupported alignment environments.
+///
+/// In practice this is how we match MathType for `aligned`: keep native support
+/// in our AST/MTEF writer, but use the same fallback byte pattern MathType
+/// emits because its TeX Input translator does not accept `aligned` directly.
 fn write_environment_fallback(
     name: &str,
     separator: &str,
     end_command: &str,
     rows: &[Vec<Expr>],
+    trivia: &EnvironmentTrivia,
     out: &mut Vec<u8>,
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<(), String> {
     write_raw_tex_text("\\begin", out)?;
     writer.ensure_black_color_def(out);
-    color_black(out);
+    let mut wrote_name_color = false;
     for ch in name.chars() {
+        if !wrote_name_color {
+            color_black(out);
+            wrote_name_color = true;
+        }
         write_char(ch, out, writer)?;
     }
     let mut state = WriteState {
         size: current_size,
         color: ColorState::Black,
     };
+    let mut skip_fallback_end_command = false;
     for (row_index, row) in rows.iter().enumerate() {
+        let row_prefix = trivia.row_leading.get(row_index).map(String::as_str).unwrap_or("");
+        let separator_prefixes = trivia
+            .separator_leading
+            .get(row_index)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let row_starts_with_separator =
+            row.first().is_some_and(expr_is_empty_sequence) && row.len() > 1;
         for (cell_index, cell) in row.iter().enumerate() {
             if row_index > 0 && cell_index == 0 && expr_is_empty_sequence(cell) {
                 continue;
             }
             let mut after_raw_separator = false;
+            let needs_row_leading_prefix = row_index > 0 && cell_index == 0 && !row_prefix.is_empty();
             if cell_index > 0 {
                 if state.size != current_size {
                     write_size(current_size, out);
@@ -1750,7 +2257,44 @@ fn write_environment_fallback(
                 if state.color != ColorState::Default {
                     color_default(out);
                 }
+                let separator_prefix = if row_starts_with_separator && cell_index == 1 {
+                    row_prefix
+                } else {
+                    let explicit_prefix = separator_prefixes
+                        .get(cell_index.saturating_sub(1))
+                        .map(String::as_str)
+                        .unwrap_or("");
+                    if explicit_prefix.is_empty() && cell_index == 1 {
+                        row_prefix
+                    } else {
+                        explicit_prefix
+                    }
+                };
+                if !separator_prefix.is_empty() {
+                    write_raw_tex_text(separator_prefix, out)?;
+                }
                 write_raw_tex_text(separator, out)?;
+                after_raw_separator = true;
+                if !expr_starts_with_space(cell) {
+                    color_black(out);
+                }
+            } else if row_index > 0 && cell_index == 0 && separator.is_empty() {
+                if state.color != ColorState::Default {
+                    color_default(out);
+                }
+                if !row_prefix.is_empty() {
+                    write_raw_tex_text(row_prefix, out)?;
+                }
+                write_raw_tex_text("\\\\", out)?;
+                after_raw_separator = true;
+                if !expr_starts_with_space(cell) {
+                    color_black(out);
+                }
+            } else if needs_row_leading_prefix {
+                if state.color != ColorState::Default {
+                    color_default(out);
+                }
+                write_raw_tex_text(row_prefix, out)?;
                 after_raw_separator = true;
                 if !expr_starts_with_space(cell) {
                     color_black(out);
@@ -1764,29 +2308,81 @@ fn write_environment_fallback(
                 color_default(out);
                 state.color = ColorState::Default;
             }
+            let is_last_cell = row_index + 1 == rows.len() && cell_index + 1 == row.len();
+            if is_last_cell && matches!(name, "aligned" | "split") {
+                if let Some((kind, substack_rows)) = bodyless_big_op_substack_parts(cell) {
+                    let trailing_end_raw = format!("{row_prefix}{end_command}");
+                    let was_active = writer.fallback_environment_active;
+                    writer.fallback_environment_active = true;
+                    let result = write_big_op_substack_environment_fallback(
+                        kind,
+                        substack_rows,
+                        &trailing_end_raw,
+                        out,
+                        current_size,
+                        writer,
+                    );
+                    writer.fallback_environment_active = was_active;
+                    state = result?;
+                    skip_fallback_end_command = true;
+                    continue;
+                }
+            }
             state = if name == "split" && !after_raw_separator {
                 if let Some(nested_state) =
                     write_nested_aligned_fallback(cell, out, current_size, writer)?
                 {
                     nested_state
                 } else if expr_starts_with_space(cell) {
-                    write_fallback_cell_after_default_space(cell, out, current_size, writer)?
+                    let was_active = writer.fallback_environment_active;
+                    writer.fallback_environment_active = true;
+                    let result =
+                        write_fallback_cell_after_default_space(cell, out, current_size, writer);
+                    writer.fallback_environment_active = was_active;
+                    result?
                 } else {
-                    write_expr(cell, out, current_size, writer)?
+                    let was_active = writer.fallback_environment_active;
+                    writer.fallback_environment_active = true;
+                    let result = write_expr(cell, out, current_size, writer);
+                    writer.fallback_environment_active = was_active;
+                    result?
                 }
             } else if after_raw_separator && expr_starts_with_space(cell) {
-                write_fallback_cell_after_default_space(cell, out, current_size, writer)?
+                let was_active = writer.fallback_environment_active;
+                writer.fallback_environment_active = true;
+                let result =
+                    write_fallback_cell_after_default_space(cell, out, current_size, writer);
+                writer.fallback_environment_active = was_active;
+                result?
             } else {
-                write_expr(cell, out, current_size, writer)?
+                let was_active = writer.fallback_environment_active;
+                writer.fallback_environment_active = true;
+                let result = write_expr(cell, out, current_size, writer);
+                writer.fallback_environment_active = was_active;
+                result?
             };
         }
     }
     if state.size != current_size {
         write_size(current_size, out);
     }
-    color_default(out);
-    write_raw_tex_text(end_command, out)?;
-    color_black(out);
+    if !skip_fallback_end_command {
+        color_default(out);
+        let end_prefix = if trivia.end_leading.is_empty() {
+            trivia.row_leading.last().map(String::as_str).unwrap_or("")
+        } else {
+            &trivia.end_leading
+        };
+        if !end_prefix.is_empty() {
+            write_raw_tex_text(end_prefix, out)?;
+        }
+        write_raw_tex_text(end_command, out)?;
+        color_black(out);
+        for ch in name.chars() {
+            write_char(ch, out, writer)?;
+        }
+        return Ok(());
+    }
     for ch in name.chars() {
         write_char(ch, out, writer)?;
     }
@@ -1800,21 +2396,69 @@ fn write_nested_aligned_fallback(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<Option<WriteState>, String> {
-    let Expr::Sequence(items) = expr else {
+    let Some((rows, trivia)) = nested_aligned_rows(expr) else {
         return Ok(None);
     };
-    let [Expr::Environment {
-        kind: EnvironmentKind::Aligned,
+    write_environment_fallback(
+        "aligned",
+        "&",
+        "\\end",
         rows,
-    }] = items.as_slice()
-    else {
-        return Ok(None);
-    };
-    write_environment_fallback("aligned", "&", "\\end", rows, out, current_size, writer)?;
+        trivia,
+        out,
+        current_size,
+        writer,
+    )?;
     Ok(Some(WriteState {
         size: current_size,
         color: ColorState::Black,
     }))
+}
+
+/// Return rows plus fallback trivia for one aligned environment wrapped by split.
+fn nested_aligned_rows(expr: &Expr) -> Option<(&[Vec<Expr>], &EnvironmentTrivia)> {
+    match expr {
+        Expr::Environment {
+            kind: EnvironmentKind::Aligned,
+            rows,
+            trivia,
+        } => Some((rows, trivia)),
+        Expr::Style { content, .. } => nested_aligned_rows(content),
+        Expr::Sequence(items) => match items.as_slice() {
+            [item] => nested_aligned_rows(item),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Return the only visible cell when MathType treats an environment wrapper as transparent.
+fn transparent_environment_cell(rows: &[Vec<Expr>]) -> Option<&Expr> {
+    let [row] = rows else {
+        return None;
+    };
+    let [cell] = row.as_slice() else {
+        return None;
+    };
+    Some(cell)
+}
+
+/// Return the only cell when MathType collapses the whole environment into one failure message.
+fn transparent_failure_environment_cell(rows: &[Vec<Expr>]) -> Option<&Expr> {
+    let cell = transparent_environment_cell(rows)?;
+    expr_is_translation_failed_placeholder(cell).then_some(cell)
+}
+
+/// Return true for the exact MathType failure placeholder, allowing thin wrappers.
+fn expr_is_translation_failed_placeholder(expr: &Expr) -> bool {
+    match expr {
+        Expr::Text(text) => text == "(Tex translation failed)",
+        Expr::Style { content, .. } => expr_is_translation_failed_placeholder(content),
+        Expr::Sequence(items) => matches!(items.as_slice(), [item] if expr_is_translation_failed_placeholder(item)),
+        Expr::Environment { rows, .. } => transparent_environment_cell(rows)
+            .is_some_and(expr_is_translation_failed_placeholder),
+        _ => false,
+    }
 }
 
 /// Return true when a fallback cell starts with TeX spacing such as \quad.
@@ -1974,6 +2618,76 @@ fn write_plain_matrix_record(
     Ok(())
 }
 
+/// Write a plain array matrix while injecting probe-backed raw row controls.
+fn write_plain_matrix_record_with_row_leading(
+    rows: &[Vec<Expr>],
+    row_leading: &[String],
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    let row_count = u8::try_from(rows.len()).map_err(|_| "matrix has too many rows".to_string())?;
+    let col_count = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let col_count =
+        u8::try_from(col_count).map_err(|_| "matrix has too many columns".to_string())?;
+
+    out.extend_from_slice(&[0x05, 0x00, 0x01, 0x01, 0x01, row_count, col_count]);
+    out.extend(std::iter::repeat(0x00).take(partition_byte_count(row_count)));
+    out.extend(std::iter::repeat(0x00).take(partition_byte_count(col_count)));
+    let mut cell_ordinal = 0usize;
+    let mut previous_cell_was_empty = false;
+    let total_cells = rows.len() * col_count as usize;
+    let mut final_cell_state = WriteState {
+        size: current_size,
+        color: ColorState::Default,
+    };
+    for (row_index, row) in rows.iter().enumerate() {
+        let row_prefix = row_leading.get(row_index).map(String::as_str).unwrap_or("");
+        for col_index in 0..col_count as usize {
+            let prefix_cell = row_index > 0 && col_index == 0 && !row_prefix.is_empty();
+            if cell_ordinal > 0 && !previous_cell_was_empty {
+                color_default(out);
+            }
+            let is_last_cell = cell_ordinal + 1 == total_cells;
+            if let Some(cell) = row.get(col_index) {
+                previous_cell_was_empty = expr_is_empty_sequence(cell);
+                if prefix_cell {
+                    let prefixed = row_prefixed_cell_expr(cell, row_prefix);
+                    final_cell_state =
+                        write_matrix_cell_line(&prefixed, out, current_size, writer)?;
+                } else {
+                    final_cell_state = write_matrix_cell_line(cell, out, current_size, writer)?;
+                }
+            } else {
+                previous_cell_was_empty = true;
+                write_empty_matrix_cell_line(out);
+                final_cell_state = WriteState {
+                    size: current_size,
+                    color: ColorState::Default,
+                };
+            }
+            if final_cell_state.size != current_size && !is_last_cell {
+                write_size(current_size, out);
+            }
+            cell_ordinal += 1;
+        }
+    }
+    out.push(0x00);
+    Ok(())
+}
+/// Merge an array row's raw prefix into the first visible cell line.
+fn row_prefixed_cell_expr(cell: &Expr, prefix: &str) -> Expr {
+    match cell {
+        Expr::Sequence(items) => {
+            let mut merged = Vec::with_capacity(items.len() + 1);
+            merged.push(Expr::RawTex(prefix.to_string()));
+            merged.extend(items.clone());
+            Expr::Sequence(merged)
+        }
+        other => Expr::Sequence(vec![Expr::RawTex(prefix.to_string()), other.clone()]),
+    }
+}
+
 /// Write a MATRIX record; fenced matrices use MathType's centered column style byte.
 fn write_matrix_record_with_header(
     rows: &[Vec<Expr>],
@@ -2086,11 +2800,21 @@ fn write_font_expr(
     }
     let opened_sans_serif_group =
         kind == FontKind::MathSf && !writer.sans_serif_group_active;
+    let opened_typewriter_group =
+        kind == FontKind::TypewriterText && !writer.typewriter_group_active;
     if opened_sans_serif_group {
         writer.ensure_sans_serif(out);
         writer.ensure_black_color_def(out);
         color_black(out);
         writer.sans_serif_group_active = true;
+    }
+    if opened_typewriter_group {
+        // MathType's native \texttt opens its Courier-like text style with a
+        // small FONT_STYLE_DEF marker before the visible CHAR records.
+        out.extend_from_slice(&[0x08, 0x03, 0x00]);
+        writer.ensure_black_color_def(out);
+        color_black(out);
+        writer.typewriter_group_active = true;
     }
     let result = match expr {
         Expr::Sequence(items) => {
@@ -2122,6 +2846,9 @@ fn write_font_expr(
     };
     if opened_sans_serif_group {
         writer.sans_serif_group_active = false;
+    }
+    if opened_typewriter_group {
+        writer.typewriter_group_active = false;
     }
     result
 }
@@ -2156,6 +2883,11 @@ fn write_font_char(
         }
         FontKind::RomanText => {
             write_table_char(FN_TEXT, code as u16, None, out);
+        }
+        FontKind::TypewriterText => {
+            // MathType's native \texttt uses the active explicit text-style
+            // font slot (-1 biased to 0x7f), not fnUSER1.
+            write_table_char(EXPLICIT_FONT_NEG_1, code as u16, None, out);
         }
         FontKind::MathCal => {
             let Ok(entry) = encoding::mathcal_char(ch) else {
@@ -2304,7 +3036,7 @@ fn write_accent_expr(
             color: ColorState::Black,
         });
     }
-    if kind == AccentKind::Hat {
+    if matches!(kind, AccentKind::Hat | AccentKind::WideHat) {
         return write_hat_template(expr, out, current_size, writer);
     }
     write_expr(expr, out, current_size, writer)
@@ -2351,7 +3083,10 @@ fn write_arrow_accent_template(
     out: &mut Vec<u8>,
     current_size: SizeState,
     writer: &mut MtefWriter,
-) -> Result<WriteState, String> {
+    ) -> Result<WriteState, String> {
+    if under && expr_is_lim_function(expr) {
+        return write_lim_arrow_template(kind, expr, out, current_size, writer);
+    }
     if kind == ArrowAccentKind::Right && !under {
         if let Some((None, ch)) = single_font_char(expr) {
             write_embellished_char_with_code(ch, 0x0b, out, writer)?;
@@ -2371,6 +3106,33 @@ fn write_arrow_accent_template(
         color_black(out);
     }
     write_delimiter_glyph(arrow_accent_glyph(kind, under), out)?;
+    out.push(0x00);
+    Ok(WriteState {
+        size: current_size,
+        color: ColorState::Black,
+    })
+}
+
+/// Write the MathType structure used by `\varinjlim` and `\varprojlim`.
+fn write_lim_arrow_template(
+    kind: ArrowAccentKind,
+    expr: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    out.extend_from_slice(&[0x03, 0x00, 0x1f, arrow_accent_variation(kind, true), 0x00]);
+    let line_state = write_line(expr, out, current_size, writer)?;
+    if line_state.size != current_size {
+        write_size(current_size, out);
+    }
+    color_default(out);
+    let lim_arrow = match kind {
+        ArrowAccentKind::Left => '\u{20d6}',
+        ArrowAccentKind::Right => '\u{20d7}',
+        _ => return Err("unsupported lim arrow accent".to_string()),
+    };
+    write_delimiter_glyph(lim_arrow, out)?;
     out.push(0x00);
     Ok(WriteState {
         size: current_size,
@@ -2426,7 +3188,9 @@ fn write_bar_template(
         BarTemplateKind::Over => 0x0d,
     };
     out.extend_from_slice(&[0x03, 0x00, selector, 0x00, 0x00]);
-    color_default(out);
+    if !expr_is_lim_function(content) {
+        color_default(out);
+    }
     let content_state = write_line(content, out, current_size, writer)?;
     out.push(0x00);
     Ok(content_state)
@@ -2485,6 +3249,7 @@ fn write_hat_template_for_bold_char(ch: char, out: &mut Vec<u8>) -> Result<(), S
             sans_serif_typeface: EXPLICIT_FONT_NEG_1,
             black_color_defined: true,
             sans_serif_group_active: false,
+            typewriter_group_active: false,
             big_symbol_line_marker_pending: false,
             suppress_next_pile_color_default: false,
             suppress_next_stackrel_color_default: false,
@@ -2493,6 +3258,10 @@ fn write_hat_template_for_bold_char(ch: char, out: &mut Vec<u8>) -> Result<(), S
             suppress_next_limit_restore: false,
             emit_top_color_selector_one: false,
             top_sequence_starts_default: false,
+            fallback_environment_active: false,
+            suppress_next_line_black: false,
+            line_starts_default: false,
+            parent_sequence_has_previous_sibling: false,
         },
     )?;
     out.push(0x00);
@@ -2539,6 +3308,26 @@ fn embellishment_code(kind: AccentKind) -> u8 {
         AccentKind::Acute | AccentKind::Grave | AccentKind::Check => {
             unreachable!("explicit accent templates do not use EMBELL records")
         }
+    }
+}
+
+/// MathType's `embNOT` overlay subtype used by `\not <relation>`.
+const EMBELL_NOT: u8 = 0x0a;
+
+/// Write a negated relation as the base relation glyph plus MathType's `embNOT`.
+fn write_not_relation(
+    relation: &Expr,
+    out: &mut Vec<u8>,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    match relation {
+        Expr::Char(ch) => write_embellished_char_with_code(*ch, EMBELL_NOT, out, writer),
+        Expr::CommandSymbol { command, ch } => {
+            write_command_symbol_with_embellishments(command, *ch, &[EMBELL_NOT], out, writer)
+        }
+        Expr::Sequence(items) if items.len() == 1 => write_not_relation(&items[0], out, writer),
+        Expr::Style { content, .. } => write_not_relation(content, out, writer),
+        _ => Err("internal error: unsupported relation payload in write_not_relation".to_string()),
     }
 }
 
@@ -2635,7 +3424,7 @@ fn write_embellished_char_codes(
 fn is_function_char(ch: char) -> bool {
     matches!(
         ch,
-        '!' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | ',' | '.' | ':' | ';' | '/'
+        '!' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | ',' | '.' | ':' | ';' | '/' | '@'
     )
 }
 
@@ -2665,15 +3454,50 @@ fn write_fraction(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
-    out.extend_from_slice(&[0x03, 0x00, 0x0b, 0x00, 0x00]);
-    color_default(out);
+    write_fraction_with_variation(0x00, numerator, denominator, out, current_size, writer)
+}
+
+/// Write one fraction template with an explicit MathType variation byte.
+fn write_fraction_with_variation(
+    variation: u8,
+    numerator: &Expr,
+    denominator: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    write_fraction_with_variation_options(
+        variation,
+        numerator,
+        denominator,
+        out,
+        current_size,
+        writer,
+        true,
+    )
+}
+
+/// Write one fraction template while optionally suppressing the leading default-color selector.
+fn write_fraction_with_variation_options(
+    variation: u8,
+    numerator: &Expr,
+    denominator: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+    emit_initial_default_color: bool,
+) -> Result<WriteState, String> {
+    out.extend_from_slice(&[0x03, 0x00, 0x0b, variation, 0x00]);
+    if emit_initial_default_color {
+        color_default(out);
+    }
     let numerator_state = write_line(numerator, out, current_size, writer)?;
     if numerator_state.size != current_size {
         write_size(current_size, out);
-        if numerator_state.color != ColorState::Default {
+        if emit_initial_default_color && numerator_state.color != ColorState::Default {
             color_default(out);
         }
-    } else {
+    } else if emit_initial_default_color {
         color_default(out);
     }
     let denominator_state = write_line(denominator, out, current_size, writer)?;
@@ -2750,7 +3574,28 @@ fn write_big_op(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    if !writer.fallback_environment_active
+        && (lower.is_some_and(expr_contains_substack) || upper.is_some_and(expr_contains_substack))
+    {
+        write_text("(Tex translation failed)", out)?;
+        return Ok(WriteState {
+            size: current_size,
+            color: ColorState::Black,
+        });
+    }
     let Some(body) = body else {
+        if let Some((column_spec, rows)) = lower.and_then(subarray_parts) {
+            if upper.is_none() {
+                return write_bodyless_big_op_subarray_fallback(
+                    kind,
+                    column_spec,
+                    rows,
+                    out,
+                    current_size,
+                    writer,
+                );
+            }
+        }
         if lower.is_none() && upper.is_none() {
             out.push(0x0d);
             writer.ensure_black_color_def(out);
@@ -2767,9 +3612,10 @@ fn write_big_op(
         lower.ok_or_else(|| "big operators require a lower limit in this subset".to_string())?;
     let selector = big_op_selector(kind);
     let variation = if upper.is_some() { 0x70 } else { 0x50 };
-    let needs_leading_black = body.contains_raw_tex()
-        || lower.contains_raw_tex()
-        || upper.is_some_and(Expr::contains_raw_tex);
+    // Only the body shares the template-opening line with the big-operator TMPL.
+    // Raw fallback inside lower/upper limits belongs to later slots and should
+    // not inject an extra black selector before the template header.
+    let needs_leading_black = body.contains_raw_tex();
     if needs_leading_black {
         writer.ensure_black_color_def(out);
         color_black(out);
@@ -2835,6 +3681,229 @@ fn write_standalone_big_op_limits(
 ) -> Result<WriteState, String> {
     let glyph_name = bodyless_big_op_glyph_name(kind);
     write_bodyless_big_op_template(glyph_name, lower, upper, out, current_size, writer)
+}
+
+/// Return one parsed substack node through the usual thin wrappers.
+fn substack_rows(expr: &Expr) -> Option<&[Vec<Expr>]> {
+    match expr {
+        Expr::Substack { rows } => Some(rows),
+        Expr::Style { content, .. } => substack_rows(content),
+        Expr::Sequence(items) => match items.as_slice() {
+            [item] => substack_rows(item),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Return a bodyless big operator that still carries a `\substack` lower limit.
+fn bodyless_big_op_substack_parts(expr: &Expr) -> Option<(BigOpKind, &[Vec<Expr>])> {
+    match expr {
+        Expr::BigOp {
+            kind,
+            lower,
+            upper: None,
+            body: None,
+        } => lower
+            .as_deref()
+            .and_then(substack_rows)
+            .map(|rows| (*kind, rows)),
+        Expr::Style { content, .. } => bodyless_big_op_substack_parts(content),
+        Expr::Sequence(items) => match items.as_slice() {
+            [item] => bodyless_big_op_substack_parts(item),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Return true when an expression still contains one parsed `\substack`.
+fn expr_contains_substack(expr: &Expr) -> bool {
+    match expr {
+        Expr::Substack { .. } => true,
+        Expr::Style { content, .. } => expr_contains_substack(content),
+        Expr::Sequence(items) => items.iter().any(expr_contains_substack),
+        Expr::Script { base, sub, sup } => {
+            expr_contains_substack(base)
+                || sub.as_deref().is_some_and(expr_contains_substack)
+                || sup.as_deref().is_some_and(expr_contains_substack)
+        }
+        _ => false,
+    }
+}
+
+/// Return one parsed subarray environment, allowing the usual thin wrappers.
+fn subarray_parts(expr: &Expr) -> Option<(&str, &[Vec<Expr>])> {
+    match expr {
+        Expr::Subarray { column_spec, rows } => Some((column_spec.as_str(), rows)),
+        Expr::Style { content, .. } => subarray_parts(content),
+        Expr::Sequence(items) => match items.as_slice() {
+            [item] => subarray_parts(item),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Write MathType's bodyless tmSUM template when `\substack` appears inside another
+/// unsupported environment such as `aligned`.
+fn write_big_op_substack_environment_fallback(
+    kind: BigOpKind,
+    rows: &[Vec<Expr>],
+    trailing_end_raw: &str,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    let selector = big_op_selector(kind);
+    let variation = 0x50;
+    let body = Expr::RawTex(trailing_end_raw.to_string());
+    let script_size = match current_size {
+        SizeState::Full => SizeState::Sub,
+        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
+    };
+    out.extend_from_slice(&[0x03, 0x00, selector, variation, 0x00]);
+    color_default(out);
+    let body_state = write_line(&body, out, current_size, writer)?;
+    if body_state.size != script_size {
+        write_size(script_size, out);
+    }
+    let lower_state = write_substack_lower_slot(rows, out, script_size, writer)?;
+    if lower_state.size != script_size {
+        write_size(script_size, out);
+    }
+    write_null_line(out);
+    out.push(0x0d);
+    write_big_op_glyph(kind, out)?;
+    out.push(0x00);
+    Ok(WriteState {
+        size: script_size,
+        color: ColorState::Black,
+    })
+}
+
+/// Convert one-column `\substack` rows into a plain pile expression.
+fn substack_pile_expr(rows: &[Vec<Expr>]) -> Expr {
+    match rows {
+        [] => Expr::Sequence(Vec::new()),
+        [row] => subarray_row_expr(row),
+        [first, second] => Expr::Pile {
+            kind: PileKind::Plain,
+            upper: Box::new(subarray_row_expr(first)),
+            lower: Box::new(subarray_row_expr(second)),
+        },
+        [first, rest @ ..] => Expr::Pile {
+            kind: PileKind::Plain,
+            upper: Box::new(subarray_row_expr(first)),
+            lower: Box::new(substack_pile_expr(rest)),
+        },
+    }
+}
+
+/// Write the lower slot pile MathType uses for two-row `\substack` limits.
+fn write_substack_lower_slot(
+    rows: &[Vec<Expr>],
+    out: &mut Vec<u8>,
+    script_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    if rows.len() == 2 {
+        out.extend_from_slice(&[0x04, 0x00, 0x02, 0x01]);
+        let upper_state = write_line(&subarray_row_expr(&rows[0]), out, script_size, writer)?;
+        if upper_state.size != script_size {
+            write_size(script_size, out);
+        }
+        color_default(out);
+        let lower_state = write_line(&subarray_row_expr(&rows[1]), out, script_size, writer)?;
+        if lower_state.size != script_size {
+            write_size(script_size, out);
+        }
+        out.push(0x00);
+        return Ok(WriteState {
+            size: script_size,
+            color: ColorState::Default,
+        });
+    }
+    write_line(&substack_pile_expr(rows), out, script_size, writer)
+}
+
+/// Write MathType's hybrid subarray fallback used after bodyless big-operator glyphs.
+fn write_bodyless_big_op_subarray_fallback(
+    kind: BigOpKind,
+    column_spec: &str,
+    rows: &[Vec<Expr>],
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    let script_size = match current_size {
+        SizeState::Full => SizeState::Sub,
+        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
+    };
+    out.push(0x0d);
+    writer.ensure_black_color_def(out);
+    color_black(out);
+    write_standalone_big_op_glyph(kind, out)?;
+    write_size(current_size, out);
+    color_default(out);
+    write_raw_tex_text(r"_{\begin", out)?;
+    color_black(out);
+    let first_line = subarray_first_line_expr(column_spec, rows.first());
+    write_expr(&first_line, out, script_size, writer)?;
+    for row in rows.iter().skip(1) {
+        color_default(out);
+        write_raw_tex_text("\\\\", out)?;
+        color_black(out);
+        let row_expr = subarray_row_expr(row);
+        write_expr(&row_expr, out, script_size, writer)?;
+    }
+    color_default(out);
+    write_raw_tex_text(r"\end", out)?;
+    color_black(out);
+    let end_name = owned_char_sequence("subarray");
+    write_expr(&end_name, out, script_size, writer)?;
+    color_default(out);
+    write_raw_tex_text("}", out)?;
+    Ok(WriteState {
+        size: script_size,
+        color: ColorState::Default,
+    })
+}
+
+fn subarray_first_line_expr(column_spec: &str, row: Option<&Vec<Expr>>) -> Expr {
+    let mut items = char_sequence_items("subarray");
+    items.extend(char_sequence_items(column_spec));
+    if let Some(row) = row {
+        append_subarray_row_items(&mut items, row);
+    }
+    Expr::Sequence(items)
+}
+
+/// Build one visible row line inside MathType's subarray fallback.
+fn subarray_row_expr(row: &[Expr]) -> Expr {
+    let mut items = Vec::new();
+    append_subarray_row_items(&mut items, row);
+    Expr::Sequence(items)
+}
+
+/// Build owned Expr::Char items from plain text without introducing text-style typefaces.
+fn char_sequence_items(text: &str) -> Vec<Expr> {
+    text.chars().map(Expr::Char).collect()
+}
+
+/// Flatten parser-produced one-cell row wrappers so subarray fallback lines do not emit spurious empty LINE records.
+fn append_subarray_row_items(items: &mut Vec<Expr>, row: &[Expr]) {
+    for cell in row {
+        match unwrap_single_sequence(cell) {
+            Expr::Sequence(nested) => items.extend(nested.iter().cloned()),
+            other => items.push(other.clone()),
+        }
+    }
+}
+
+/// Build a sequence of character expressions from plain text.
+fn owned_char_sequence(text: &str) -> Expr {
+    Expr::Sequence(char_sequence_items(text))
 }
 
 /// Write the Sigma/Pi glyph MathType appends at the end of a big-op template.
@@ -2925,13 +3994,23 @@ fn write_script(
     if let Expr::SumOperatorSymbol(ch) = base {
         return write_sum_operator_script(*ch, sub, sup, out, current_size, writer);
     }
-    let base_state = write_script_base(base, out, current_size, writer)?;
-    if matches!(base, Expr::BigSymbol(_)) {
-        write_size(current_size, out);
-    } else if base_state.size != current_size {
-        write_size(current_size, out);
+    let empty_base = expr_is_empty_sequence(base);
+    let base_state = if empty_base {
+        WriteState {
+            size: current_size,
+            color: ColorState::Black,
+        }
+    } else {
+        write_script_base(base, out, current_size, writer)?
+    };
+    if !empty_base {
+        if matches!(base, Expr::BigSymbol(_)) {
+            write_size(current_size, out);
+        } else if base_state.size != current_size {
+            write_size(current_size, out);
+        }
     }
-    if !expr_is_empty_sequence(base) {
+    if !empty_base && !writer.line_starts_default {
         color_default(out);
     }
     let selector = match (sub.is_some(), sup.is_some()) {
@@ -3169,6 +4248,10 @@ fn write_line(
     let starts_with_euclid_math_one = expr_starts_with_euclid_math_one(expr);
     let starts_with_euclid_math_two = expr_starts_with_euclid_math_two(expr);
     let starts_with_euclid_fraktur = expr_starts_with_euclid_fraktur(expr);
+    let suppress_black = writer.suppress_next_line_black;
+    if suppress_black {
+        writer.suppress_next_line_black = false;
+    }
     if starts_with_euclid_math_one {
         writer.ensure_euclid_math_one(out);
     } else if starts_with_euclid_math_two {
@@ -3188,15 +4271,26 @@ fn write_line(
     } else if expr_starts_with_standalone_big_glyph(expr) {
         out.push(0x0d);
     }
-    if starts_with_euclid_math_one || starts_with_euclid_math_two || starts_with_euclid_fraktur {
+    let line_starts_default = suppress_black || expr_starts_with_self_opening(expr);
+    if !suppress_black
+        && (starts_with_euclid_math_one || starts_with_euclid_math_two || starts_with_euclid_fraktur)
+    {
         writer.ensure_black_color_def(out);
         color_black(out);
-    } else if !expr_starts_with_self_opening(expr) {
+    } else if !suppress_black && !expr_starts_with_self_opening(expr) {
         writer.ensure_black_color_def(out);
         color_black(out);
     }
+    let previous_line_starts_default = writer.line_starts_default;
+    let previous_top_sequence_starts_default = writer.top_sequence_starts_default;
+    writer.line_starts_default = line_starts_default;
+    if line_starts_default && matches!(expr, Expr::Sequence(_)) {
+        writer.top_sequence_starts_default = true;
+    }
     writer.suppress_next_stackrel_color_default = expr_starts_with_stackrel(expr);
     let final_state = write_expr(expr, out, current_size, writer)?;
+    writer.line_starts_default = previous_line_starts_default;
+    writer.top_sequence_starts_default = previous_top_sequence_starts_default;
     out.push(0x00);
     Ok(final_state)
 }
@@ -3205,6 +4299,7 @@ fn write_line(
 fn expr_starts_with_line_layout_object(expr: &Expr) -> bool {
     match expr {
         Expr::Matrix { .. }
+        | Expr::Pile { .. }
         | Expr::Environment { .. }
         | Expr::Stackrel { .. }
         | Expr::Underset { .. }
@@ -3248,7 +4343,43 @@ fn expr_starts_with_self_opening(expr: &Expr) -> bool {
         || expr_starts_with_split_function_name(expr)
         || expr_starts_with_raw_tex(expr)
         || expr_starts_with_explicit_accent_template(expr)
+        || expr_starts_with_lim_decoration(expr)
         || expr_starts_with_sum_operator_script_base(expr)
+        || expr_starts_with_empty_base_script(expr)
+}
+
+/// Return true when MathType opens a script template directly because the base is empty.
+fn expr_starts_with_empty_base_script(expr: &Expr) -> bool {
+    match expr {
+        Expr::Script { base, .. } => expr_is_empty_sequence(base),
+        Expr::Style { content, .. } => expr_starts_with_empty_base_script(content),
+        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_empty_base_script),
+        _ => false,
+    }
+}
+
+/// Return true for MathType's `var*lim` wrappers, which open with their own template bytes.
+fn expr_starts_with_lim_decoration(expr: &Expr) -> bool {
+    match expr {
+        Expr::BarTemplate { content, .. } => expr_is_lim_function(content),
+        Expr::ArrowAccent {
+            kind: ArrowAccentKind::Left | ArrowAccentKind::Right,
+            under: true,
+            content,
+        } => expr_is_lim_function(content),
+        Expr::Style { content, .. } => expr_starts_with_lim_decoration(content),
+        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_lim_decoration),
+        _ => false,
+    }
+}
+
+/// Return true when the expression is just the visible `lim` function token.
+fn expr_is_lim_function(expr: &Expr) -> bool {
+    match expr {
+        Expr::FunctionName(name) => name == "lim",
+        Expr::Sequence(items) if items.len() == 1 => expr_is_lim_function(&items[0]),
+        _ => false,
+    }
 }
 
 /// Return true when a LINE contains only one bare integral sign without operands or limits.
@@ -3257,6 +4388,19 @@ fn expr_starts_with_standalone_integral(expr: &Expr) -> bool {
         Expr::Integral { .. } => true,
         Expr::Style { content, .. } => expr_starts_with_standalone_integral(content),
         Expr::Sequence(items) => items.len() == 1 && expr_starts_with_standalone_integral(&items[0]),
+        _ => false,
+    }
+}
+
+/// Return true when a sequence item starts with MathType's command-form binomial template.
+fn expr_starts_with_binom_pile(expr: &Expr) -> bool {
+    match expr {
+        Expr::Pile {
+            kind: PileKind::Binom,
+            ..
+        } => true,
+        Expr::Style { content, .. } => expr_starts_with_binom_pile(content),
+        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_binom_pile),
         _ => false,
     }
 }
@@ -3335,7 +4479,7 @@ fn write_space_without_color(width: u8, out: &mut Vec<u8>) {
 fn expr_starts_with_line_font_def(expr: &Expr) -> bool {
     match expr {
         Expr::Font {
-            kind: FontKind::MathSf,
+            kind: FontKind::MathSf | FontKind::TypewriterText,
             ..
         } => true,
         Expr::Style { content, .. } => expr_starts_with_line_font_def(content),
@@ -3353,7 +4497,7 @@ fn write_delimited(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
-    if left == '|' && right == '〉' {
+    if left == '|' && right == '\u{3009}' {
         return write_ket_delimited(content, out, current_size, writer);
     }
     let selector = delimiter_selector(left, right)?;
@@ -3392,7 +4536,7 @@ fn write_ket_delimited(
     if line_state.color != ColorState::Black {
         color_black(out);
     }
-    write_delimiter_glyph_pair('|', '〉', out)?;
+    write_delimiter_glyph_pair('|', '\u{3009}', out)?;
     out.push(0x00);
     Ok(WriteState {
         size: current_size,
@@ -3407,10 +4551,10 @@ fn delimiter_selector(left: char, right: char) -> Result<u8, String> {
         ('[', ']') => Ok(0x03),
         ('{', '}') => Ok(0x02),
         ('|', '|') => Ok(0x04),
-        ('‖', '‖') => Ok(0x05),
-        ('⌊', '⌋') => Ok(0x06),
-        ('⌈', '⌉') => Ok(0x07),
-        ('〈', '〉') | ('<', '>') => Ok(0x00),
+        ('\u{2016}', '\u{2016}') => Ok(0x05),
+        ('\u{230a}', '\u{230b}') => Ok(0x06),
+        ('\u{2308}', '\u{2309}') => Ok(0x07),
+        ('\u{3008}', '\u{3009}') | ('<', '>') => Ok(0x00),
         _ => Err(format!("unsupported dynamic delimiter pair: {left}{right}")),
     }
 }
@@ -3418,7 +4562,7 @@ fn delimiter_selector(left: char, right: char) -> Result<u8, String> {
 /// Write special paired fence glyphs whose codes differ by side.
 fn write_delimiter_glyph_pair(left: char, right: char, out: &mut Vec<u8>) -> Result<(), String> {
     match (left, right) {
-        ('|', '〉') => {
+        ('|', '\u{3009}') => {
             write_expanding_glyph(0xec07, out);
             write_expanding_glyph(0x232a, out);
             Ok(())
@@ -3428,7 +4572,7 @@ fn write_delimiter_glyph_pair(left: char, right: char, out: &mut Vec<u8>) -> Res
             write_expanding_glyph(0xec08, out);
             Ok(())
         }
-        ('‖', '‖') => {
+        ('\u{2016}', '\u{2016}') => {
             write_expanding_glyph(0xec09, out);
             write_expanding_glyph(0xec0a, out);
             Ok(())
@@ -3443,8 +4587,10 @@ fn write_delimiter_glyph_pair(left: char, right: char, out: &mut Vec<u8>) -> Res
 /// Write the explicit delimiter glyph records MathType appends to fence templates.
 fn write_delimiter_glyph(ch: char, out: &mut Vec<u8>) -> Result<(), String> {
     let code = match ch {
-        '⌊' => 0xf8f0,
-        '⌋' => 0xf8fb,
+        '\u{230a}' => 0xf8f0,
+        '\u{230b}' => 0xf8fb,
+        '\u{2308}' => 0xf8f0,
+        '\u{2309}' => 0xf8fb,
         _ => ch as u32,
     };
     if code > u16::MAX as u32 {
@@ -3453,3 +4599,20 @@ fn write_delimiter_glyph(ch: char, out: &mut Vec<u8>) -> Result<(), String> {
     write_expanding_glyph(code as u16, out);
     Ok(())
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

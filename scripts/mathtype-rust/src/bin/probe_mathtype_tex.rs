@@ -82,12 +82,13 @@ fn probe_latex(latex: &str, options: &Options) -> Result<Vec<u8>, String> {
         .map_err(|err| format!("failed to create {}: {err}", probe_dir.display()))?;
     let tex_path = probe_dir.join("probe.tex");
     let ole_path = probe_dir.join("probe.ole.bin");
-    fs::write(&tex_path, mathtype_tex_payload(latex))
+    let payload = mathtype_tex_payload(latex);
+    fs::write(&tex_path, &payload)
         .map_err(|err| format!("failed to write {}: {err}", tex_path.display()))?;
     run_mathtype_helper(
         &options.helper,
         &options.pre_verb,
-        &tex_path,
+        &payload,
         &ole_path,
         options.timeout_ms,
     )?;
@@ -147,7 +148,7 @@ impl Options {
                     helper = PathBuf::from(
                         args.get(index)
                             .ok_or_else(|| "--helper requires a path".to_string())?,
-                    )?;
+                    );
                 }
                 "--work-dir" => {
                     index += 1;
@@ -250,7 +251,7 @@ fn usage() -> &'static str {
 fn run_mathtype_helper(
     helper: &PathBuf,
     pre_verb: &str,
-    tex_path: &PathBuf,
+    tex_payload: &str,
     ole_path: &PathBuf,
     timeout_ms: u64,
 ) -> Result<(), String> {
@@ -260,7 +261,7 @@ fn run_mathtype_helper(
     command.args(["--pre-verb", pre_verb]);
     let mut child = command
         .args(["--format", "TeX Input Language", "--input"])
-        .arg(tex_path)
+        .arg(tex_payload)
         .args(["--output"])
         .arg(ole_path)
         .args(["--encoding", "utf16le", "--no-verb"])
@@ -276,7 +277,7 @@ fn run_mathtype_helper(
         return Err(format!(
             "{} failed for {} with status {status}",
             helper.display(),
-            tex_path.display()
+            tex_payload
         ));
     }
     Ok(())

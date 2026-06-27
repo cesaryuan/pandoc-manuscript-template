@@ -1,4 +1,5 @@
 use crate::ast::Expr;
+use crate::mathtype_ansi::encode_mathtype_text;
 
 /// Parse the supported command subset that MathType accepts inside \text{...}.
 pub(super) fn parse_content(raw: &str) -> Expr {
@@ -8,6 +9,25 @@ pub(super) fn parse_content(raw: &str) -> Expr {
     let mut items = Vec::new();
 
     while pos < chars.len() {
+        // MathType drops a leading text-mode space when the visible content starts
+        // with a literal `$...$` fragment inside `\text{...}`.
+        if chars[pos].is_whitespace()
+            && text.is_empty()
+            && chars.get(pos + 1) == Some(&'$')
+        {
+            pos += 1;
+            continue;
+        }
+        if chars[pos] == '$' {
+            if let Some(end) = find_text_math_fragment_end(&chars, pos + 1) {
+                flush_text(&mut text, &mut items);
+                items.push(Expr::Char('$'));
+                push_text_math_fragment_items(&chars[(pos + 1)..end], &mut items);
+                items.push(Expr::Char('$'));
+                pos = end + 1;
+                continue;
+            }
+        }
         if chars[pos] != '\\' {
             text.push(chars[pos]);
             pos += 1;
@@ -71,6 +91,43 @@ pub(super) fn parse_content(raw: &str) -> Expr {
 
     flush_text(&mut text, &mut items);
     sequence_or_single(items)
+}
+
+/// Find the closing `$` for one visible text-mode math fragment.
+fn find_text_math_fragment_end(chars: &[char], mut pos: usize) -> Option<usize> {
+    while pos < chars.len() {
+        if chars[pos] == '$' {
+            return Some(pos);
+        }
+        pos += 1;
+    }
+    None
+}
+
+/// Push the visible items MathType keeps from one `$...$` fragment inside `\text{...}`.
+fn push_text_math_fragment_items(chars: &[char], items: &mut Vec<Expr>) {
+    let mut text = String::new();
+    for &ch in chars {
+        if ch == '?' {
+            flush_text(&mut text, items);
+            items.push(Expr::Char('?'));
+            continue;
+        }
+        if ch.is_ascii() {
+            text.push(ch);
+            continue;
+        }
+        match encode_mathtype_text(&ch.to_string()) {
+            Ok(bytes) if bytes.iter().all(|byte| *byte == b'?') => {
+                flush_text(&mut text, items);
+                for _ in 0..bytes.len() {
+                    items.push(Expr::Char('?'));
+                }
+            }
+            _ => text.push(ch),
+        }
+    }
+    flush_text(&mut text, items);
 }
 
 /// Consume the single argument form used by \textcircled a.

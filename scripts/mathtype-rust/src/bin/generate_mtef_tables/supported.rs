@@ -363,10 +363,19 @@ fn collect_raw_commands(expr: &Expr, commands: &mut BTreeMap<String, ()>) {
         | Expr::ArrowAccent { content, .. }
         | Expr::BarTemplate { content, .. }
         | Expr::Strike { content, .. }
+        | Expr::NotRelation(content)
         | Expr::Boxed(content)
         | Expr::Sqrt(content)
-        | Expr::Delimited { content, .. }
-        | Expr::Script { base: content, .. } => collect_raw_commands(content, commands),
+        | Expr::Delimited { content, .. } => collect_raw_commands(content, commands),
+        Expr::Script { base, sub, sup } => {
+            collect_raw_commands(base, commands);
+            if let Some(sub) = sub {
+                collect_raw_commands(sub, commands);
+            }
+            if let Some(sup) = sup {
+                collect_raw_commands(sup, commands);
+            }
+        }
         Expr::XArrow { label, under, .. } => {
             collect_raw_commands(label, commands);
             if let Some(under) = under {
@@ -419,12 +428,16 @@ fn collect_raw_commands(expr: &Expr, commands: &mut BTreeMap<String, ()>) {
                 collect_raw_commands(annotation, commands);
             }
         }
-        Expr::Matrix { rows, .. } | Expr::Environment { rows, .. } => {
+        Expr::Substack { rows }
+        | Expr::Subarray { rows, .. }
+        | Expr::Matrix { rows, .. }
+        | Expr::Environment { rows, .. } => {
             for item in rows.iter().flat_map(|row| row.iter()) {
                 collect_raw_commands(item, commands);
             }
         }
         Expr::Char(_)
+        | Expr::EmbellishedChar { .. }
         | Expr::CommandSymbol { .. }
         | Expr::BigSymbol(_)
         | Expr::SumOperatorSymbol(_)

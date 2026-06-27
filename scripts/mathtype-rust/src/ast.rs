@@ -2,6 +2,10 @@
 pub(crate) enum Expr {
     Sequence(Vec<Expr>),
     Char(char),
+    EmbellishedChar {
+        ch: char,
+        embellishments: Vec<u8>,
+    },
     CommandSymbol {
         command: String,
         ch: char,
@@ -41,6 +45,7 @@ pub(crate) enum Expr {
         kind: StrikeKind,
         content: Box<Expr>,
     },
+    NotRelation(Box<Expr>),
     Fraction(Box<Expr>, Box<Expr>),
     Sqrt(Box<Expr>),
     Boxed(Box<Expr>),
@@ -91,6 +96,13 @@ pub(crate) enum Expr {
         label: Box<Expr>,
         under: Option<Box<Expr>>,
     },
+    Substack {
+        rows: Vec<Vec<Expr>>,
+    },
+    Subarray {
+        column_spec: String,
+        rows: Vec<Vec<Expr>>,
+    },
     Matrix {
         kind: MatrixKind,
         rows: Vec<Vec<Expr>>,
@@ -98,6 +110,7 @@ pub(crate) enum Expr {
     Environment {
         kind: EnvironmentKind,
         rows: Vec<Vec<Expr>>,
+        trivia: EnvironmentTrivia,
     },
     Delimited {
         left: char,
@@ -109,6 +122,13 @@ pub(crate) enum Expr {
         sub: Option<Box<Expr>>,
         sup: Option<Box<Expr>>,
     },
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct EnvironmentTrivia {
+    pub(crate) row_leading: Vec<String>,
+    pub(crate) separator_leading: Vec<Vec<String>>,
+    pub(crate) end_leading: String,
 }
 
 impl Expr {
@@ -125,10 +145,15 @@ impl Expr {
             | Expr::ArrowAccent { content, .. }
             | Expr::BarTemplate { content, .. }
             | Expr::Strike { content, .. }
+            | Expr::NotRelation(content)
             | Expr::Boxed(content)
             | Expr::Sqrt(content)
-            | Expr::Delimited { content, .. }
-            | Expr::Script { base: content, .. } => content.contains_raw_tex(),
+            | Expr::Delimited { content, .. } => content.contains_raw_tex(),
+            Expr::Script { base, sub, sup } => {
+                base.contains_raw_tex()
+                    || sub.as_deref().is_some_and(Expr::contains_raw_tex)
+                    || sup.as_deref().is_some_and(Expr::contains_raw_tex)
+            }
             Expr::XArrow { label, under, .. } => {
                 label.contains_raw_tex() || under.as_deref().is_some_and(Expr::contains_raw_tex)
             }
@@ -171,11 +196,15 @@ impl Expr {
                 content.contains_raw_tex()
                     || annotation.as_deref().is_some_and(Expr::contains_raw_tex)
             }
-            Expr::Matrix { rows, .. } | Expr::Environment { rows, .. } => rows
+            Expr::Substack { rows }
+            | Expr::Matrix { rows, .. }
+            | Expr::Subarray { rows, .. }
+            | Expr::Environment { rows, .. } => rows
                 .iter()
                 .flat_map(|row| row.iter())
                 .any(Expr::contains_raw_tex),
             Expr::Char(_)
+            | Expr::EmbellishedChar { .. }
             | Expr::CommandSymbol { .. }
             | Expr::BigSymbol(_)
             | Expr::SumOperatorSymbol(_)
@@ -199,6 +228,7 @@ pub(crate) enum StyleKind {
 pub(crate) enum FontKind {
     Bold,
     RomanText,
+    TypewriterText,
     MathCal,
     MathSf,
     MathBb,
@@ -288,6 +318,7 @@ pub(crate) enum BraceKind {
 pub(crate) enum PileKind {
     Plain,
     Parenthesized,
+    Binom,
     Braced,
     Bracketed,
 }
@@ -295,6 +326,7 @@ pub(crate) enum PileKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MatrixKind {
     Plain,
+    Small,
     Parenthesized,
     Bracketed,
     Braced,
@@ -304,6 +336,7 @@ pub(crate) enum MatrixKind {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum EnvironmentKind {
+    Array,
     Align,
     Split,
     Aligned,
@@ -314,3 +347,6 @@ pub(crate) enum EnvironmentKind {
     Gather,
     Gathered,
 }
+
+
+

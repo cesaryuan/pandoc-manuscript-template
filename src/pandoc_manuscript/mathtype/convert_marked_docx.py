@@ -3,15 +3,16 @@
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 from ..runtime.logging import log_info
 from ..runtime.paths import PMT_MATHTYPE_WORK_DIR
 
 from .marked_docx import extract_marked_equation_requests, inspect_docx, replace_marked_omml_with_generated
-from .ole_parts import build_helper, generate_equation_parts
+from .ole_parts import build_helper, generate_equation_parts, normalize_conversion_method
 
 
-def convert_marked_docx(source: Path, target: Path, work_dir: Path) -> int:
+def convert_marked_docx(source: Path, target: Path, work_dir: Path, metadata: dict[str, Any] | None = None) -> int:
     """Convert all hidden-marker-bound OMML nodes in a DOCX to MathType OLE."""
     requests = extract_marked_equation_requests(source)
     if not requests:
@@ -24,7 +25,9 @@ def convert_marked_docx(source: Path, target: Path, work_dir: Path) -> int:
     log_info(f"[mathtype] marked DOCX math nodes: {len(requests)}")
     if size_summary:
         log_info(f"[mathtype] detected Word font sizes (pt): {', '.join(f'{size:g}' for size in size_summary)}")
-    equations = generate_equation_parts(requests, work_dir)
+    conversion_method = normalize_conversion_method((metadata or {}).get("mathtypeConversionMethod"))
+    log_info(f"[mathtype] conversion method: {conversion_method}")
+    equations = generate_equation_parts(requests, work_dir, conversion_method=conversion_method)
     replaced = replace_marked_omml_with_generated(source, target, equations)
     log_info(f"[mathtype] replaced top-level OMML nodes: {replaced}")
     inspect_docx(target)

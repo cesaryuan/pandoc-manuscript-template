@@ -114,7 +114,7 @@ def svg_to_png_filter_env(
     )
 
 
-def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
+def run_mathtype_conversion(marked_docx: Path, target_docx: Path, metadata: dict[str, Any]) -> None:
     """Convert a marked reply DOCX's OMML equations into MathType OLE equations."""
     if not extract_marked_equation_requests(marked_docx):
         log_info("[INFO] No MathType equation markers found; keeping Pandoc DOCX equations unchanged.")
@@ -128,6 +128,7 @@ def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
         source=marked_docx,
         target=target_docx,
         work_dir=PMT_MATHTYPE_WORK_DIR / "reply" / target_docx.stem,
+        metadata=metadata,
     )
 
 
@@ -265,7 +266,7 @@ def build_reply_docx(
             raise RuntimeError(f"Reply DOCX post-processing failed: {pandoc_output}")
 
         if use_mathtype:
-            run_mathtype_conversion(pandoc_output, output)
+            run_mathtype_conversion(pandoc_output, output, metadata)
 
         syntax_findings = validate_final_docx_syntax(output)
         if syntax_findings:

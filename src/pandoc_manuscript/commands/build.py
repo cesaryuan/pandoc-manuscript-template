@@ -401,7 +401,7 @@ def resolve_mathtype_build_enabled(requested: bool) -> bool:
     return False
 
 
-def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
+def run_mathtype_conversion(marked_docx: Path, target_docx: Path, metadata: dict[str, Any]) -> None:
     """Convert a marked DOCX's OMML equations into MathType OLE equations."""
     log_info("\n[DOCX] Converting equations to MathType OLE objects...\n")
     build_helper()
@@ -409,6 +409,7 @@ def run_mathtype_conversion(marked_docx: Path, target_docx: Path) -> None:
         source=marked_docx,
         target=target_docx,
         work_dir=Path(SETTINGS.mathtype_work_dir) / SETTINGS.project_name,
+        metadata=metadata,
     )
 
 
@@ -553,7 +554,7 @@ def build_docx(*, warn_hat_order: bool = True):
             raise RuntimeError("DOCX post-processing failed")
 
     if use_mathtype:
-        run_mathtype_conversion(pandoc_output, docx_file)
+        run_mathtype_conversion(pandoc_output, docx_file, metadata)
 
     # Final output validation should inspect the real shipped DOCX rather than
     # an intermediate pre-MathType file, so syntax residue cannot slip through.

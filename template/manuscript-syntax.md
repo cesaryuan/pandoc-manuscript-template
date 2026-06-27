@@ -160,6 +160,11 @@ than `\hat{\mathbf{C}}`. When a DOCX build actually starts MathType conversion,
 `pmt build` and `pmt build-reply` warn about the latter form because
 MathType-exported PDFs may hide the hat.
 
+Set `mathtypeConversionMethod` in `style.yml` to choose the MathType backend:
+`rust` uses LaTeX -> mathtype-rust -> OLE/MTEF -> SDK WMF/JSON, `set-data`
+uses MathType's TeX input OLE path, and `auto` tries `rust` before falling back
+to `set-data`.
+
 ## Subfigure Layouts
 
 For most multi-panel figures, prefer creating one SVG layout file that

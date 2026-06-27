@@ -11,6 +11,7 @@ import subprocess
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from tqdm import tqdm
 
@@ -46,6 +47,8 @@ MATHTYPE_CACHE_DIR = PMT_MATHTYPE_CACHE_DIR
 MATHTYPE_CACHE_VERSION = 1
 BEGIN_ALIGNED_RE = re.compile(r"\\begin\s*\{\s*aligned\s*\}")
 END_ALIGNED_RE = re.compile(r"\\end\s*\{\s*aligned\s*\}")
+MathTypeConversionMethod = Literal["rust", "set-data", "auto"]
+DEFAULT_MATHTYPE_CONVERSION_METHOD: MathTypeConversionMethod = "rust"
 
 
 def source_tree_path(path: str | Path) -> Path | None:
@@ -62,6 +65,33 @@ def source_tree_path(path: str | Path) -> Path | None:
 MATHTYPE_RUST_PROJECT = source_tree_path("scripts/mathtype-rust/Cargo.toml")
 MATHTYPE_RUST_SOURCE_EXE = source_tree_path(Path("scripts/mathtype-rust/target/debug") / MATHTYPE_RUST_SOURCE_EXE_NAME)
 MATHTYPE_RUST_EXE = MATHTYPE_RUST_SOURCE_EXE or MATHTYPE_RUST_PACKAGE_EXE
+
+
+def normalize_conversion_method(value: object | None) -> MathTypeConversionMethod:
+    """Normalize style metadata for MathType equation conversion backends."""
+    if value is None:
+        return DEFAULT_MATHTYPE_CONVERSION_METHOD
+    text = str(value).strip().casefold().replace("_", "-")
+    aliases: dict[str, MathTypeConversionMethod] = {
+        "rust": "rust",
+        "mathtype-rust": "rust",
+        "mtef": "rust",
+        "sdk": "rust",
+        "sdk-xform-ole": "rust",
+        "set-data": "set-data",
+        "setdata": "set-data",
+        "tex": "set-data",
+        "tex-input": "set-data",
+        "mathtype": "set-data",
+        "ole": "set-data",
+        "auto": "auto",
+        "fallback": "auto",
+    }
+    method = aliases.get(text)
+    if method is None:
+        allowed = "rust, set-data, auto"
+        raise ValueError(f"mathtypeConversionMethod must be one of: {allowed}; got {value!r}")
+    return method
 
 
 @dataclass(frozen=True)
@@ -352,7 +382,7 @@ def build_helper() -> None:
 
 
 def build_mathtype_rust_converter() -> Path:
-    """Ensure the Rust MTEF converter exists for the MathType fallback path."""
+    """Ensure the Rust MTEF converter exists for the MathType Rust path."""
     if MATHTYPE_RUST_EXE.exists():
         log_debug(f"[mathtype] mathtype-rust executable found: {MATHTYPE_RUST_EXE}")
         return MATHTYPE_RUST_EXE
@@ -363,10 +393,10 @@ def build_mathtype_rust_converter() -> Path:
         )
     if shutil.which("cargo") is None:
         raise RuntimeError(
-            f"mathtype-rust fallback requires `cargo`, or a prebuilt executable at {MATHTYPE_RUST_EXE}"
+            f"mathtype-rust requires `cargo`, or a prebuilt executable at {MATHTYPE_RUST_EXE}"
         )
 
-    log_info(f"[mathtype] building mathtype-rust fallback converter: {MATHTYPE_RUST_PROJECT}")
+    log_info(f"[mathtype] building mathtype-rust converter: {MATHTYPE_RUST_PROJECT}")
     run(
         ["cargo", "build", "--manifest-path", str(MATHTYPE_RUST_PROJECT)],
         stderr_as_warning=False,
@@ -438,7 +468,7 @@ def file_group_sha256(paths: list[Path]) -> str | None:
 
 
 def mathtype_rust_source_digest() -> str | None:
-    """Return a digest for Rust fallback sources that affect generated MTEF."""
+    """Return a digest for Rust converter sources that affect generated MTEF."""
     if MATHTYPE_RUST_PROJECT is None:
         return None
     project_dir = MATHTYPE_RUST_PROJECT.parent
@@ -496,13 +526,14 @@ def mathtype_cache_key(
     helper_digest: str | None,
     rust_source_digest: str | None,
     rust_exe_digest: str | None,
+    conversion_method: MathTypeConversionMethod,
 ) -> str:
     """Build a stable cache key from the exact MathType inputs.
 
     The key uses the normalized TeX payload and generated preference contents,
     because those are the values passed to the MathType OLE helper. Rust
-    fallback digests are included so fallback-generated parts do not outlive the
-    converter implementation that produced them.
+    Rust converter digests are included so generated parts do not outlive the
+    converter implementation or backend selection that produced them.
     """
     payload = {
         "version": MATHTYPE_CACHE_VERSION,
@@ -512,6 +543,7 @@ def mathtype_cache_key(
         "helper_sha256": helper_digest,
         "mathtype_rust_source_sha256": rust_source_digest,
         "mathtype_rust_exe_sha256": rust_exe_digest,
+        "conversion_method": conversion_method,
     }
     data = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(data).hexdigest()
@@ -611,7 +643,7 @@ def make_ole_from_format(
 
 
 def make_ole_from_mathtype_rust(input_path: Path, output_path: Path, mtef_output: Path) -> None:
-    """Generate MathType OLE and bare MTEF from LaTeX via the Rust fallback."""
+    """Generate MathType OLE and bare MTEF from LaTeX via the Rust converter."""
     rust_exe = build_mathtype_rust_converter()
     run(
         [
@@ -647,7 +679,7 @@ def make_wmf_metadata_from_mtef(
     )
 
 
-def make_ole_wmf_metadata_with_rust_fallback(
+def make_ole_wmf_metadata_with_mathtype_rust(
     input_path: Path,
     ole_path: Path,
     wmf_path: Path,
@@ -655,7 +687,7 @@ def make_ole_wmf_metadata_with_rust_fallback(
     mtef_path: Path,
     prefs_file: Path | None = None,
 ) -> None:
-    """Use Rust MTEF generation when MathType cannot import TeX directly."""
+    """Generate OLE, WMF, and metadata through Rust MTEF conversion."""
     make_ole_from_mathtype_rust(input_path, ole_path, mtef_path)
     sdk_ole_path = ole_path.with_name(f"{ole_path.stem}.sdk{ole_path.suffix}")
     make_wmf_metadata_from_mtef(
@@ -667,6 +699,88 @@ def make_ole_wmf_metadata_with_rust_fallback(
     )
     if sdk_ole_path.exists():
         sdk_ole_path.unlink()
+
+
+def make_ole_wmf_metadata_with_mathtype_set_data(
+    input_path: Path,
+    ole_path: Path,
+    wmf_path: Path,
+    metadata_path: Path,
+    prefs_file: Path | None = None,
+) -> None:
+    """Generate OLE, WMF, and metadata by importing TeX through MathType OLE."""
+    make_ole_from_format(
+        "TeX Input Language",
+        input_path,
+        ole_path,
+        preview_output=wmf_path,
+        metadata_output=metadata_path,
+        prefs_file=prefs_file,
+    )
+
+
+def generate_uncached_equation_parts(
+    index: int,
+    input_path: Path,
+    ole_path: Path,
+    wmf_path: Path,
+    metadata_path: Path,
+    mtef_path: Path,
+    prefs_file: Path | None = None,
+    conversion_method: MathTypeConversionMethod = DEFAULT_MATHTYPE_CONVERSION_METHOD,
+) -> None:
+    """Generate MathType parts using the configured conversion backend."""
+    if conversion_method == "rust":
+        make_ole_wmf_metadata_with_mathtype_rust(
+            input_path,
+            ole_path,
+            wmf_path,
+            metadata_path,
+            mtef_path,
+            prefs_file=prefs_file,
+        )
+        log_info(f"[mathtype] mathtype-rust conversion succeeded for equation {index}")
+        return
+
+    if conversion_method == "set-data":
+        make_ole_wmf_metadata_with_mathtype_set_data(
+            input_path,
+            ole_path,
+            wmf_path,
+            metadata_path,
+            prefs_file=prefs_file,
+        )
+        log_info(f"[mathtype] MathType TeX input conversion succeeded for equation {index}")
+        return
+
+    try:
+        make_ole_wmf_metadata_with_mathtype_rust(
+            input_path,
+            ole_path,
+            wmf_path,
+            metadata_path,
+            mtef_path,
+            prefs_file=prefs_file,
+        )
+        log_info(f"[mathtype] mathtype-rust auto path succeeded for equation {index}")
+    except (RuntimeError, FileNotFoundError):
+        log_warning(
+            f"[mathtype] mathtype-rust auto path failed for equation {index}; "
+            "trying MathType TeX input fallback"
+        )
+        try:
+            make_ole_wmf_metadata_with_mathtype_set_data(
+                input_path,
+                ole_path,
+                wmf_path,
+                metadata_path,
+                prefs_file=prefs_file,
+            )
+        except RuntimeError as fallback_exc:
+            raise RuntimeError(
+                f"mathtype-rust auto path and MathType TeX input fallback both failed for equation {index}"
+            ) from fallback_exc
+        log_info(f"[mathtype] MathType TeX input fallback succeeded for equation {index}")
 
 
 def inspect_ole(path: Path) -> CompoundFile:
@@ -693,8 +807,13 @@ def iter_equation_requests_with_progress(
     )
 
 
-def generate_equation_parts(requests: list[EquationRequest], output_dir: Path) -> list[GeneratedEquation]:
+def generate_equation_parts(
+    requests: list[EquationRequest],
+    output_dir: Path,
+    conversion_method: MathTypeConversionMethod = DEFAULT_MATHTYPE_CONVERSION_METHOD,
+) -> list[GeneratedEquation]:
     """Generate OLE bins and WMF previews for all marker-bound formulas."""
+    conversion_method = normalize_conversion_method(conversion_method)
     output_dir.mkdir(parents=True, exist_ok=True)
     equations: list[GeneratedEquation] = []
     prefs_template = MATHTYPE_DEFAULT_PREFS_TEMPLATE if MATHTYPE_DEFAULT_PREFS_TEMPLATE.exists() else None
@@ -703,8 +822,8 @@ def generate_equation_parts(requests: list[EquationRequest], output_dir: Path) -
     cache_hits = 0
     cache_misses = 0
     helper_digest = file_sha256(HELPER_EXE)
-    rust_source_digest = mathtype_rust_source_digest()
-    rust_exe_digest = file_sha256(MATHTYPE_RUST_EXE)
+    rust_source_digest = mathtype_rust_source_digest() if conversion_method != "set-data" else None
+    rust_exe_digest = file_sha256(MATHTYPE_RUST_EXE) if conversion_method != "set-data" else None
     if needs_variable_sizes and prefs_template is None:
         log_warning(
             "[mathtype] warning: MathType preference template not found; "
@@ -736,6 +855,7 @@ def generate_equation_parts(requests: list[EquationRequest], output_dir: Path) -
             helper_digest,
             rust_source_digest,
             rust_exe_digest,
+            conversion_method,
         )
         if restore_cached_equation(cache_key, ole_path, wmf_path, metadata_path):
             cache_hits += 1
@@ -743,34 +863,16 @@ def generate_equation_parts(requests: list[EquationRequest], output_dir: Path) -
         else:
             cache_misses += 1
             log_debug(f"[mathtype] cache miss eq={index} key={cache_key[:12]}")
-            try:
-                make_ole_from_format(
-                    "TeX Input Language",
-                    input_path,
-                    ole_path,
-                    preview_output=wmf_path,
-                    metadata_output=metadata_path,
-                    prefs_file=prefs_path,
-                )
-            except RuntimeError as exc:
-                log_warning(
-                    f"[mathtype] TeX input failed for equation {index}; "
-                    "trying mathtype-rust MTEF fallback"
-                )
-                try:
-                    make_ole_wmf_metadata_with_rust_fallback(
-                        input_path,
-                        ole_path,
-                        wmf_path,
-                        metadata_path,
-                        mtef_path,
-                        prefs_file=prefs_path,
-                    )
-                except (RuntimeError, FileNotFoundError) as fallback_exc:
-                    raise RuntimeError(
-                        f"TeX input and mathtype-rust fallback both failed for equation {index}"
-                    ) from fallback_exc
-                log_info(f"[mathtype] mathtype-rust fallback succeeded for equation {index}")
+            generate_uncached_equation_parts(
+                index,
+                input_path,
+                ole_path,
+                wmf_path,
+                metadata_path,
+                mtef_path,
+                prefs_file=prefs_path,
+                conversion_method=conversion_method,
+            )
             store_cached_equation(cache_key, ole_path, wmf_path, metadata_path)
         compound = inspect_ole(ole_path)
         if compound.read_stream("Equation Native").find(b"DSMT") < 0:

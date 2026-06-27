@@ -173,6 +173,21 @@ impl Parser {
                 return Ok(with_leading_raw_space(expanded, had_leading_ws));
             }
         }
+        if command == "big" {
+            self.skip_ws();
+            if self.peek().is_some() {
+                // MathType consumes `\big` and prefixes the following visible delimiter with a
+                // line marker instead of preserving the command name itself.
+                return Ok(Expr::MarkedChar(
+                    self.parse_delimiter_char("big delimiter")?,
+                ));
+            }
+        }
+        if ignored_delimiter_size_command(&command) {
+            // MathType ignores these standalone delimiter-size hints and keeps only the visible
+            // delimiter token that follows, so do not preserve the command itself in the AST.
+            return Ok(Expr::Sequence(Vec::new()));
+        }
         // MathType keeps some zero-argument aliases as raw source text even when scripts or
         // neighboring atoms follow, so preserve the command token before normal parsing.
         if should_force_raw_simple_command(&command) {
@@ -720,6 +735,14 @@ impl Parser {
                     // MathType's escaped control-space uses the narrower fnSPACE 0xef04 slot,
                     // not the regular `\space` / `\nobreakspace` width.
                     return Ok(Expr::Space(0x04));
+                }
+                if ch == '&' {
+                    // MathType TeX Input keeps `\&` on the raw-text path instead of converting it
+                    // into a native punctuation CHAR record.
+                    return Ok(with_leading_raw_space(
+                        Expr::RawTex("\\&".to_string()),
+                        had_leading_ws,
+                    ));
                 }
                 if let Some(text_char) = escaped_single_char_math_char(ch) {
                     return Ok(Expr::Char(text_char));
@@ -2594,6 +2617,29 @@ fn escaped_single_char_space(ch: char) -> Option<u8> {
         ';' => Some(0x04),
         _ => None,
     }
+}
+
+/// Return true for delimiter-size hints that MathType drops while keeping the following fence.
+fn ignored_delimiter_size_command(command: &str) -> bool {
+    matches!(
+        command,
+        "big"
+            | "Big"
+            | "bigg"
+            | "Bigg"
+            | "bigl"
+            | "Bigl"
+            | "bigr"
+            | "Bigr"
+            | "bigm"
+            | "Bigm"
+            | "biggl"
+            | "Biggl"
+            | "biggr"
+            | "Biggr"
+            | "biggm"
+            | "Biggm"
+    )
 }
 
 /// Return escaped single-character commands that MathType stores as visible math glyphs.

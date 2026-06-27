@@ -1401,6 +1401,7 @@ fn collect_raw_commands(expr: &Expr, commands: &mut Vec<String>) {
             .flat_map(|row| row.iter())
             .for_each(|expr| collect_raw_commands(expr, commands)),
         Expr::Char(_)
+        | Expr::MarkedChar(_)
         | Expr::EmbellishedChar { .. }
         | Expr::CommandSymbol { .. }
         | Expr::BigSymbol(_)

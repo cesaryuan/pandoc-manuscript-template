@@ -745,6 +745,16 @@ fn write_expr(
                 color: ColorState::Black,
             }
         }
+        Expr::MarkedChar(ch) => {
+            // Some MathType delimiter-size hints collapse into a plain visible glyph that still
+            // keeps the standalone line marker byte in front of the CHAR record.
+            out.push(0x0d);
+            write_char(*ch, out, writer)?;
+            WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            }
+        }
         Expr::EmbellishedChar { ch, embellishments } => {
             write_embellished_char_codes(*ch, embellishments, out, writer)?;
             WriteState {

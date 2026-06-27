@@ -2,6 +2,8 @@
 pub(crate) enum Expr {
     Sequence(Vec<Expr>),
     Char(char),
+    /// Preserve MathType's rare "line marker + visible CHAR" form for standalone glyph hints.
+    MarkedChar(char),
     EmbellishedChar {
         ch: char,
         embellishments: Vec<u8>,
@@ -204,6 +206,7 @@ impl Expr {
                 .flat_map(|row| row.iter())
                 .any(Expr::contains_raw_tex),
             Expr::Char(_)
+            | Expr::MarkedChar(_)
             | Expr::EmbellishedChar { .. }
             | Expr::CommandSymbol { .. }
             | Expr::BigSymbol(_)

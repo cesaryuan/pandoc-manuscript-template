@@ -437,6 +437,7 @@ fn collect_raw_commands(expr: &Expr, commands: &mut BTreeMap<String, ()>) {
             }
         }
         Expr::Char(_)
+        | Expr::MarkedChar(_)
         | Expr::EmbellishedChar { .. }
         | Expr::CommandSymbol { .. }
         | Expr::BigSymbol(_)

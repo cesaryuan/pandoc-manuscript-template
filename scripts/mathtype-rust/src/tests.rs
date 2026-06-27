@@ -839,6 +839,7 @@ fn assert_no_raw_tex(expr: &Expr) {
             .flat_map(|row| row.iter())
             .for_each(assert_no_raw_tex),
         Expr::Char(_)
+        | Expr::MarkedChar(_)
         | Expr::EmbellishedChar { .. }
         | Expr::CommandSymbol { .. }
         | Expr::BigSymbol(_)

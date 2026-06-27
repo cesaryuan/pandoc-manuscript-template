@@ -2883,6 +2883,20 @@ fn write_font_expr(
                 color: ColorState::Black,
             })
         }
+        Expr::Script { base, sub, sup } => {
+            // MathType keeps font-scoped scripts by applying the font to each visible script slot
+            // instead of dropping back to an unscoped native Script record.
+            let scripted = Expr::Script {
+                base: Box::new(font_wrapped_expr(kind, base.as_ref())),
+                sub: sub
+                    .as_deref()
+                    .map(|expr| Box::new(font_wrapped_expr(kind, expr))),
+                sup: sup
+                    .as_deref()
+                    .map(|expr| Box::new(font_wrapped_expr(kind, expr))),
+            };
+            write_expr(&scripted, out, current_size, writer)
+        }
         other => write_expr(other, out, current_size, writer),
     };
     if opened_sans_serif_group {
@@ -2917,6 +2931,9 @@ fn write_font_char(
     }
     match kind {
         FontKind::Bold => {
+            if !char_prefers_bold_font(ch) {
+                return write_char(ch, out, writer);
+            }
             out.push(0x02);
             out.push(0x00);
             out.push(FN_VECTOR);
@@ -2993,6 +3010,22 @@ fn write_font_char(
         }
     }
     Ok(())
+}
+
+/// Wrap one expression in a font node while avoiding duplicate wrappers.
+fn font_wrapped_expr(kind: FontKind, expr: &Expr) -> Expr {
+    match expr {
+        Expr::Font { kind: existing, .. } if *existing == kind => expr.clone(),
+        _ => Expr::Font {
+            kind,
+            content: Box::new(expr.clone()),
+        },
+    }
+}
+
+/// Return true when MathType really uses the bold math font instead of the regular glyph slot.
+fn char_prefers_bold_font(ch: char) -> bool {
+    ch.is_alphanumeric() || matches!(ch, '\u{03b1}'..='\u{03c9}' | '\u{0391}'..='\u{03a9}')
 }
 
 /// Write a generated character that uses MathType's Euclid Math One definition.

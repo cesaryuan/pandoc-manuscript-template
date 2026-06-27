@@ -89,13 +89,11 @@ pub(super) fn command_sections(
     let markdown = fs::read_to_string(&supported.path)
         .map_err(|err| format!("failed to read {}: {err}", supported.path.display()))?;
     let commands = extract_single_command_sections(&markdown, &supported.sections);
-    if commands.is_empty() {
-        if !supported.sections.is_empty() {
-            return Err(format!(
-                "no single-command Supported Functions snippets matched sections: {}",
-                supported.sections.join(", ")
-            ));
-        }
+    if commands.is_empty() && !supported.sections.is_empty() {
+        return Err(format!(
+            "no single-command Supported Functions snippets matched sections: {}",
+            supported.sections.join(", ")
+        ));
     }
     Ok(commands)
 }
@@ -364,7 +362,6 @@ fn collect_raw_commands(expr: &Expr, commands: &mut BTreeMap<String, ()>) {
         | Expr::BarTemplate { content, .. }
         | Expr::Strike { content, .. }
         | Expr::NotRelation(content)
-        | Expr::Boxed(content)
         | Expr::Sqrt(content)
         | Expr::Delimited { content, .. } => collect_raw_commands(content, commands),
         Expr::Script { base, sub, sup } => {
@@ -438,7 +435,6 @@ fn collect_raw_commands(expr: &Expr, commands: &mut BTreeMap<String, ()>) {
         }
         Expr::Char(_)
         | Expr::MarkedChar(_)
-        | Expr::EmbellishedChar { .. }
         | Expr::CommandSymbol { .. }
         | Expr::BigSymbol(_)
         | Expr::SumOperatorSymbol(_)

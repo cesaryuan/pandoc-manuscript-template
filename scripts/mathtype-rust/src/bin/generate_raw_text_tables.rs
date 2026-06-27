@@ -131,10 +131,10 @@ impl Config {
                 }
                 "--pre-verb" => {
                     index += 1;
-                    pre_verb = require_pre_verb_two_arg(
-                        args.get(index)
-                            .ok_or_else(|| "--pre-verb requires an OLE verb number".to_string())?,
-                    )?;
+                    pre_verb =
+                        require_pre_verb_two_arg(args.get(index).ok_or_else(|| {
+                            "--pre-verb requires an OLE verb number".to_string()
+                        })?)?;
                 }
                 "--timeout-ms" => {
                     index += 1;

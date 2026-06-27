@@ -95,9 +95,8 @@ fn probe_latex(latex: &str, options: &Options) -> Result<Vec<u8>, String> {
 
     let ole = fs::read(&ole_path)
         .map_err(|err| format!("failed to read {}: {err}", ole_path.display()))?;
-    extract_mtef_from_ole(&ole).map_err(|err| {
+    extract_mtef_from_ole(&ole).inspect_err(|_err| {
         let _ = fs::remove_file(&ole_path);
-        err
     })
 }
 
@@ -159,10 +158,10 @@ impl Options {
                 }
                 "--pre-verb" => {
                     index += 1;
-                    pre_verb = require_pre_verb_two_arg(
-                        args.get(index)
-                            .ok_or_else(|| "--pre-verb requires an OLE verb number".to_string())?,
-                    )?;
+                    pre_verb =
+                        require_pre_verb_two_arg(args.get(index).ok_or_else(|| {
+                            "--pre-verb requires an OLE verb number".to_string()
+                        })?)?;
                 }
                 "--latex" => {
                     index += 1;
@@ -268,9 +267,8 @@ fn run_mathtype_helper(
         .spawn()
         .map_err(|err| format!("failed to run {}: {err}", helper.display()))?;
     let status =
-        wait_with_timeout(&mut child, Duration::from_millis(timeout_ms)).map_err(|err| {
+        wait_with_timeout(&mut child, Duration::from_millis(timeout_ms)).inspect_err(|_err| {
             let _ = fs::remove_file(ole_path);
-            err
         })?;
     if !status.success() {
         let _ = fs::remove_file(ole_path);

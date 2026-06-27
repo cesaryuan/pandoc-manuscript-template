@@ -48,6 +48,9 @@ pub(crate) fn encode_mathtype_text(text: &str) -> Result<Vec<u8>, String> {
 }
 
 /// Encode the MTEF TeX-source future record the same way MathType stores it.
+/// Some helper binaries only need text-mode encoding, so keep this shared source encoder
+/// available without forcing every crate target to reference it directly.
+#[allow(dead_code)]
 pub(crate) fn encode_mathtype_source(text: &str) -> Result<Vec<u8>, String> {
     encode_mathtype_text(text)
 }

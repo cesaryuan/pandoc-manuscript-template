@@ -197,7 +197,7 @@ fn read_mini_stream_chain(
 /// Decode a CFB directory entry name from UTF-16LE.
 fn directory_entry_name(entry: &[u8]) -> Result<String, String> {
     let name_len = read_u16_at(entry, 64)? as usize;
-    if name_len < 2 || name_len > 64 {
+    if !(2..=64).contains(&name_len) {
         return Ok(String::new());
     }
     let raw_name = &entry[..name_len - 2];

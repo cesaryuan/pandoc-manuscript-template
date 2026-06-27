@@ -242,10 +242,10 @@ impl Config {
                 }
                 "--pre-verb" => {
                     index += 1;
-                    mathtype_pre_verb = require_pre_verb_two_arg(
-                        args.get(index)
-                            .ok_or_else(|| "--pre-verb requires an OLE verb number".to_string())?,
-                    )?;
+                    mathtype_pre_verb =
+                        require_pre_verb_two_arg(args.get(index).ok_or_else(|| {
+                            "--pre-verb requires an OLE verb number".to_string()
+                        })?)?;
                 }
                 "--timeout-ms" => {
                     index += 1;
@@ -671,8 +671,8 @@ fn compare_snippets_with_mathtype(
                 continue;
             }
         };
-        let mathtype_mtef =
-            match probe_mathtype_mtef(&compare_latex, config, index, probe_session) {
+        let mathtype_mtef = match probe_mathtype_mtef(&compare_latex, config, index, probe_session)
+        {
             Ok(bytes) => bytes,
             Err(err) => {
                 report.helper_error.push((snippet.clone(), err));
@@ -923,9 +923,8 @@ fn run_mathtype_helper(
         .spawn()
         .map_err(|err| format!("failed to run {}: {err}", helper.display()))?;
     let status =
-        wait_with_timeout(&mut child, Duration::from_millis(timeout_ms)).map_err(|err| {
+        wait_with_timeout(&mut child, Duration::from_millis(timeout_ms)).inspect_err(|_err| {
             let _ = fs::remove_file(ole_path);
-            err
         })?;
     if !status.success() {
         let _ = fs::remove_file(ole_path);
@@ -1315,7 +1314,6 @@ fn collect_raw_commands(expr: &Expr, commands: &mut Vec<String>) {
         | Expr::BarTemplate { content, .. }
         | Expr::Strike { content, .. }
         | Expr::NotRelation(content)
-        | Expr::Boxed(content)
         | Expr::Sqrt(content)
         | Expr::Delimited { content, .. } => collect_raw_commands(content, commands),
         Expr::Script { base, sub, sup } => {
@@ -1402,7 +1400,6 @@ fn collect_raw_commands(expr: &Expr, commands: &mut Vec<String>) {
             .for_each(|expr| collect_raw_commands(expr, commands)),
         Expr::Char(_)
         | Expr::MarkedChar(_)
-        | Expr::EmbellishedChar { .. }
         | Expr::CommandSymbol { .. }
         | Expr::BigSymbol(_)
         | Expr::SumOperatorSymbol(_)

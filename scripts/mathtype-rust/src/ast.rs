@@ -4,10 +4,6 @@ pub(crate) enum Expr {
     Char(char),
     /// Preserve MathType's rare "line marker + visible CHAR" form for standalone glyph hints.
     MarkedChar(char),
-    EmbellishedChar {
-        ch: char,
-        embellishments: Vec<u8>,
-    },
     CommandSymbol {
         command: String,
         ch: char,
@@ -50,7 +46,6 @@ pub(crate) enum Expr {
     NotRelation(Box<Expr>),
     Fraction(Box<Expr>, Box<Expr>),
     Sqrt(Box<Expr>),
-    Boxed(Box<Expr>),
     NthRoot {
         index: Box<Expr>,
         radicand: Box<Expr>,
@@ -148,7 +143,6 @@ impl Expr {
             | Expr::BarTemplate { content, .. }
             | Expr::Strike { content, .. }
             | Expr::NotRelation(content)
-            | Expr::Boxed(content)
             | Expr::Sqrt(content)
             | Expr::Delimited { content, .. } => content.contains_raw_tex(),
             Expr::Script { base, sub, sup } => {
@@ -207,7 +201,6 @@ impl Expr {
                 .any(Expr::contains_raw_tex),
             Expr::Char(_)
             | Expr::MarkedChar(_)
-            | Expr::EmbellishedChar { .. }
             | Expr::CommandSymbol { .. }
             | Expr::BigSymbol(_)
             | Expr::SumOperatorSymbol(_)
@@ -261,8 +254,6 @@ pub(crate) enum ArrowAccentKind {
     Left,
     Right,
     LeftRight,
-    LeftHarpoon,
-    RightHarpoon,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -322,8 +313,6 @@ pub(crate) enum PileKind {
     Plain,
     Parenthesized,
     Binom,
-    Braced,
-    Bracketed,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -350,6 +339,3 @@ pub(crate) enum EnvironmentKind {
     Gather,
     Gathered,
 }
-
-
-

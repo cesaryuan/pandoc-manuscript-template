@@ -28,6 +28,17 @@ cargo build --manifest-path scripts\mathtype-rust\Cargo.toml
 scripts\mathtype-rust\target\debug\mathtype-rust.exe
 ```
 
+## Developer Verification
+
+开发者最小验收命令：
+
+```powershell
+cargo test
+cargo fmt -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo run -- --latex '$x$' --output C:\tmp\formula.ole.bin --mtef-output C:\tmp\formula.mtef.bin
+```
+
 ## Convert One Formula
 
 直接传入 LaTeX 字符串：
@@ -259,7 +270,7 @@ cargo run --bin audit_supported_functions -- --math-only --show-static-audit
 先确保 helper 已构建：
 
 ```powershell
-dotnet build scripts\mathtype_ole_helper\mathtype_ole_helper.csproj -c Release
+dotnet build src\pandoc_manuscript\mathtype\ole_helper\MathTypeOleHelper.csproj -c Release
 ```
 
 然后重新生成参考文件：
@@ -273,7 +284,7 @@ foreach ($f in Get-ChildItem $outDir\eq_*.tex) {
   $wmf = Join-Path $outDir ("mt_eq_" + $num + ".wmf")
   $json = Join-Path $outDir ("mt_eq_" + $num + ".json")
 
-  & scripts\mathtype_ole_helper\bin\Release\net48\MathTypeOleHelper.exe `
+  & src\pandoc_manuscript\mathtype\ole_helper\bin\Release\net48\MathTypeOleHelper.exe `
     --method set-data `
     --pre-verb 2 `
     --format 'TeX Input Language' `

@@ -239,5 +239,3 @@ pub(super) const SUPPORTED_TEXT_ALIASES: &[(&str, &str)] = &[
     ("mathsterling", "\u{00a3}"),
     ("rq", "'"),
 ];
-
-

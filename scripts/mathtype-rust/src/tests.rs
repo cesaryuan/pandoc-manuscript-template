@@ -3,8 +3,7 @@ use crate::cfb::read_regular_stream;
 use crate::mtef::write_mtef;
 use crate::parser::{normalize_latex, Parser};
 use crate::typeface::{
-    EXPLICIT_FONT_NEG_1, FN_FUNCTION, FN_MT_EXTRA, FN_SPACE, FN_SYMBOL,
-    FN_TEXT_FE,
+    EXPLICIT_FONT_NEG_1, FN_FUNCTION, FN_MT_EXTRA, FN_SPACE, FN_SYMBOL, FN_TEXT_FE,
 };
 
 use std::fs;
@@ -327,7 +326,10 @@ fn char_hex_escape_preserves_raw_prefix() {
         "MathType keeps \\char\" as a raw prefix"
     );
     let bytes = write_mtef("\\char\"263a", &expr).expect("hex char escape renders");
-    assert!(bytes.len() > 28, "hex char escape should still render visible digits");
+    assert!(
+        bytes.len() > 28,
+        "hex char escape should still render visible digits"
+    );
 
     let incomplete = Parser::new("\\char")
         .parse()
@@ -503,11 +505,9 @@ fn supported_relation_aliases_render_natively() {
         "leqq should render through the generated command-specific table"
     );
     assert!(
-        bytes
-            .windows(9)
-            .any(|window| {
-                window == [0x02, 0x05, FN_SYMBOL, 0x3d, 0x00, 0x3d, 0x06, 0x00, 0x0a]
-            }),
+        bytes.windows(9).any(|window| {
+            window == [0x02, 0x05, FN_SYMBOL, 0x3d, 0x00, 0x3d, 0x06, 0x00, 0x0a]
+        }),
         "not-equals should render as a relation CHAR with MathType's embNOT embellishment"
     );
 }
@@ -687,10 +687,15 @@ fn escaped_punctuation_and_spacing_render_natively() {
 fn simple_under_tilde_preserves_raw_prefix() {
     let latex = "\\utilde{AB}";
     let expr = Parser::new(latex).parse().expect("simple utilde parses");
-    assert!(expr.contains_raw_tex(), "simple utilde should preserve raw prefix");
+    assert!(
+        expr.contains_raw_tex(),
+        "simple utilde should preserve raw prefix"
+    );
     let bytes = write_mtef(latex, &expr).expect("simple utilde renders");
     assert!(
-        bytes.windows(6).any(|window| window == [0x02, 0x80, 0x81, 0x5c, 0x00, 0x02]),
+        bytes
+            .windows(6)
+            .any(|window| window == [0x02, 0x80, 0x81, 0x5c, 0x00, 0x02]),
         "raw utilde prefix should serialize the visible command text"
     );
 }
@@ -768,7 +773,11 @@ fn non_bmp_text_renders_as_question_marks() {
         "MathType text mode should not preserve the surrogate pair"
     );
     assert!(
-        bytes.windows(2).filter(|window| *window == [0x3f, 0x00]).count() >= 2,
+        bytes
+            .windows(2)
+            .filter(|window| *window == [0x3f, 0x00])
+            .count()
+            >= 2,
         "MathType text mode should emit visible question marks for non-BMP text"
     );
 }
@@ -804,7 +813,6 @@ fn assert_no_raw_tex(expr: &Expr) {
         | Expr::BarTemplate { content, .. }
         | Expr::Strike { content, .. }
         | Expr::NotRelation(content)
-        | Expr::Boxed(content)
         | Expr::Sqrt(content)
         | Expr::Delimited { content, .. } => assert_no_raw_tex(content),
         Expr::Script { base, sub, sup } => {
@@ -861,13 +869,15 @@ fn assert_no_raw_tex(expr: &Expr) {
             assert_no_raw_tex(label);
             under.as_deref().into_iter().for_each(assert_no_raw_tex);
         }
-        Expr::Substack { rows } | Expr::Subarray { rows, .. } | Expr::Matrix { rows, .. } | Expr::Environment { rows, .. } => rows
+        Expr::Substack { rows }
+        | Expr::Subarray { rows, .. }
+        | Expr::Matrix { rows, .. }
+        | Expr::Environment { rows, .. } => rows
             .iter()
             .flat_map(|row| row.iter())
             .for_each(assert_no_raw_tex),
         Expr::Char(_)
         | Expr::MarkedChar(_)
-        | Expr::EmbellishedChar { .. }
         | Expr::CommandSymbol { .. }
         | Expr::BigSymbol(_)
         | Expr::SumOperatorSymbol(_)
@@ -883,6 +893,3 @@ fn render_mtef_for_test(latex: &str) -> Result<Vec<u8>, String> {
     let expr = Parser::new(latex).parse()?;
     write_mtef(latex, &expr)
 }
-
-
-

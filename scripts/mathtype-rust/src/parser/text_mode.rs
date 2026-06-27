@@ -11,10 +11,7 @@ pub(super) fn parse_content(raw: &str) -> Expr {
     while pos < chars.len() {
         // MathType drops a leading text-mode space when the visible content starts
         // with a literal `$...$` fragment inside `\text{...}`.
-        if chars[pos].is_whitespace()
-            && text.is_empty()
-            && chars.get(pos + 1) == Some(&'$')
-        {
+        if chars[pos].is_whitespace() && text.is_empty() && chars.get(pos + 1) == Some(&'$') {
             pos += 1;
             continue;
         }
@@ -208,7 +205,10 @@ fn sequence_or_single(mut items: Vec<Expr>) -> Expr {
 
 /// Return true when a text-mode command consumes one accent argument.
 fn is_text_accent_command(command: &str) -> bool {
-    matches!(command, "'" | "`" | "^" | "~" | "=" | "u" | "." | "\"" | "r" | "H" | "v")
+    matches!(
+        command,
+        "'" | "`" | "^" | "~" | "=" | "u" | "." | "\"" | "r" | "H" | "v"
+    )
 }
 
 /// Preserve MathType's text-mode accent command while keeping the visible argument native.

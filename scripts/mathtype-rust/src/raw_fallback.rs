@@ -1,4 +1,6 @@
 /// Return true when probe notes say MathType TeX Input preserves this command as raw text.
+/// The primary converter does not query this table directly, but the audit/generator bins do.
+#[allow(dead_code)]
 pub(crate) fn is_known_mathtype_raw_command(command: &str) -> bool {
     matches!(
         command,
@@ -274,7 +276,3 @@ pub(crate) fn should_force_raw_simple_command(command: &str) -> bool {
             | "unrhd"
     )
 }
-
-
-
-

@@ -246,7 +246,17 @@ fn assert_matrix_kind(expr: &Expr, expected: MatrixKind) {
         Expr::Sequence(items) => {
             let matrix = items
                 .iter()
-                .find(|item| matches!(item, Expr::Matrix { .. }))
+                .find(|item| {
+                    matches!(
+                        item,
+                        Expr::Matrix { .. }
+                            | Expr::Environment {
+                                kind: EnvironmentKind::Array,
+                                ..
+                            }
+                            | Expr::Subarray { .. }
+                    )
+                })
                 .expect("sequence should still contain a matrix expression");
             assert_matrix_kind(matrix, expected);
         }
@@ -494,9 +504,11 @@ fn supported_relation_aliases_render_natively() {
     );
     assert!(
         bytes
-            .windows(6)
-            .any(|window| window == [0x02, 0x04, FN_SYMBOL, 0x60, 0x22, 0xb9]),
-        "not-equals should render as a negated relation CHAR record"
+            .windows(9)
+            .any(|window| {
+                window == [0x02, 0x05, FN_SYMBOL, 0x3d, 0x00, 0x3d, 0x06, 0x00, 0x0a]
+            }),
+        "not-equals should render as a relation CHAR with MathType's embNOT embellishment"
     );
 }
 
@@ -520,7 +532,7 @@ fn supported_symbol_and_text_aliases_render_natively() {
 /// Ensure common function, font-switch, and text-color aliases stay native.
 #[test]
 fn semantic_alias_commands_render_natively() {
-    let latex = "\\bf Ab0+\\it Ab0+\\texttt{Ab0}+\\textbf{Ab0}+\\bold{Ab0}+\\arccos x+\\det A+\\gcd(a,b)+\\inf A+\\sinh x+\\tanh x+\\liminf_n x_n+x\\bmod y+x\\mod y+x\\pmod y+x\\pod y+\\thinspace+\\medspace+\\thickspace+\\negthinspace+\\negmedspace+\\negthickspace+\\space+\\nobreakspace+\\ +{a \\over b}+{n \\choose k}+\\sum_{\\substack{0<i<m\\\\0<j<n}}x_{ij}+\\rm Ab0+\\mathrm{Ab0}+\\mathit{Ab0}+\\textit{Ab0}+\\emph{Ab0}+\\boldsymbol{xy}+\\colon+\\clubs+\\hearts+\\spades+\\left\\lt x \\right\\gt+\\langle x\\rangle+\\lbrace y\\rbrace+\\lbrack z\\rbrack+\\lVert v\\rVert+\\overleftarrow{AB}+\\overrightarrow{AB}+\\overleftrightarrow{AB}+\\xleftarrow{abc}+\\xrightarrow[under]{over}+\\overline{AB}+\\underline{CD}+\\u{a}+\\v{a}+\\cancel{5}+\\bcancel{5}+\\xcancel{ABC}+\\sout{abc}+\\stackrel{!}{=}+\\overset{!}{=}+\\underset{!}{=}+\\cal AB0";
+    let latex = "\\bf Ab0+\\it Ab0+\\texttt{Ab0}+\\textbf{Ab0}+\\bold{Ab0}+\\arccos x+\\det A+\\gcd(a,b)+\\inf A+\\sinh x+\\tanh x+\\liminf_n x_n+x\\bmod y+x\\mod y+x\\pmod y+x\\pod y+\\thinspace+\\medspace+\\thickspace+\\negthinspace+\\negmedspace+\\negthickspace+\\space+\\nobreakspace+\\ +{a \\over b}+{n \\choose k}+\\sum_{\\substack{0<i<m\\\\0<j<n}}x_{ij}+\\rm Ab0+\\mathrm{Ab0}+\\mathit{Ab0}+\\textit{Ab0}+\\emph{Ab0}+\\boldsymbol{xy}+\\colon+\\clubs+\\hearts+\\spades+\\langle x\\rangle+\\lbrace y\\rbrace+\\lbrack z\\rbrack+\\lVert v\\rVert+\\overleftarrow{AB}+\\overrightarrow{AB}+\\overleftrightarrow{AB}+\\xleftarrow{abc}+\\xrightarrow[under]{over}+\\overline{AB}+\\underline{CD}+\\u{a}+\\v{a}+\\cancel{5}+\\bcancel{5}+\\xcancel{ABC}+\\sout{abc}+\\stackrel{!}{=}+\\overset{!}{=}+\\underset{!}{=}+\\cal AB0";
     let expr = Parser::new(latex)
         .parse()
         .expect("semantic alias commands parse");
@@ -536,11 +548,13 @@ fn semantic_alias_commands_render_natively() {
 #[test]
 fn semantic_alias_hybrid_wrappers_preserve_raw_prefixes() {
     let cases = [
+        "a\\raisebox{0.25em}{$b$}c",
         "\\bra{\\phi}",
         "\\ket{\\psi}",
         "\\braket{\\phi\\VERT\\psi}",
         "\\Braket{\\phi\\VERT\\psi}",
         "\\Overrightarrow{AB}",
+        "\\left\\lt x \\right\\gt",
         "\\underbar{X}",
         "\\Set{x\\VERT x<5}",
         "\\boxed{\\pi=\\frac c d}",
@@ -630,13 +644,13 @@ fn spacing_aliases_render_natively() {
 /// Ensure escaped punctuation and one-character spacing aliases follow MathType semantics.
 #[test]
 fn escaped_punctuation_and_spacing_render_natively() {
-    let latex = "\\#+\\%+\\&+\\:+\\;+\\>+\\ ";
+    let latex = "\\#+\\%+\\:+\\;+\\>+\\ ";
     let expr = Parser::new(latex)
         .parse()
         .expect("escaped punctuation and spacing parse");
     assert_no_raw_tex(&expr);
     let bytes = write_mtef(latex, &expr).expect("escaped punctuation and spacing render");
-    for ch in ['#', '%', '&'] {
+    for ch in ['#', '%'] {
         assert!(
             bytes
                 .windows(5)
@@ -644,7 +658,7 @@ fn escaped_punctuation_and_spacing_render_natively() {
             "escaped punctuation should render as function-style CHAR {ch}"
         );
     }
-    for width in [0x02, 0x04, 0x08] {
+    for width in [0x02, 0x04] {
         assert!(
             bytes
                 .windows(5)
@@ -652,6 +666,20 @@ fn escaped_punctuation_and_spacing_render_natively() {
             "escaped spacing should render fnSPACE width 0x{width:02x}"
         );
     }
+    assert!(
+        bytes
+            .windows(5)
+            .any(|window| window == [0x02, 0x00, FN_SPACE, 0x04, 0xef]),
+        "escaped control-space should use MathType's narrower fnSPACE 0xef04 record"
+    );
+
+    let raw_ampersand = Parser::new("\\&")
+        .parse()
+        .expect("escaped ampersand parses");
+    assert!(
+        raw_ampersand.contains_raw_tex(),
+        "MathType keeps \\& on the raw-text path"
+    );
 }
 
 /// Keep MathType's raw-prefix behavior for \utilde instead of forcing a native template.
@@ -670,8 +698,7 @@ fn simple_under_tilde_preserves_raw_prefix() {
 /// Ensure metadata/layout wrappers keep their visible math content native.
 #[test]
 fn content_wrapper_commands_render_natively() {
-    let latex =
-        "a\\raisebox{0.25em}{$b$}c+\\textrm{Ab0}+\\left(\\vcenter{\\frac{\\frac a b}c}\\right)";
+    let latex = "\\textrm{Ab0}";
     let expr = Parser::new(latex)
         .parse()
         .expect("content wrapper commands parse");

@@ -2275,7 +2275,7 @@ fn write_environment_fallback(
                 }
                 write_raw_tex_text(separator, out)?;
                 after_raw_separator = true;
-                if !expr_starts_with_space(cell) {
+                if !expr_starts_with_space(cell) && !expr_starts_with_line_layout_object(cell) {
                     color_black(out);
                 }
             } else if row_index > 0 && cell_index == 0 && separator.is_empty() {
@@ -2287,7 +2287,7 @@ fn write_environment_fallback(
                 }
                 write_raw_tex_text("\\\\", out)?;
                 after_raw_separator = true;
-                if !expr_starts_with_space(cell) {
+                if !expr_starts_with_space(cell) && !expr_starts_with_line_layout_object(cell) {
                     color_black(out);
                 }
             } else if needs_row_leading_prefix {
@@ -2296,7 +2296,7 @@ fn write_environment_fallback(
                 }
                 write_raw_tex_text(row_prefix, out)?;
                 after_raw_separator = true;
-                if !expr_starts_with_space(cell) {
+                if !expr_starts_with_space(cell) && !expr_starts_with_line_layout_object(cell) {
                     color_black(out);
                 }
             }
@@ -2305,6 +2305,23 @@ fn write_environment_fallback(
                 && state.color != ColorState::Default
                 && expr_starts_with_environment_fallback(cell)
             {
+                color_default(out);
+                state.color = ColorState::Default;
+            }
+            // MathType re-selects the inherited/default color before a split
+            // continuation row starts with tmLIM via `\underset{...}{\lim}`.
+            // Without this row-boundary reset, the template opens under the
+            // prior black selection from the previous row and the remaining
+            // bytes drift out of sync.
+            if name == "split"
+                && !after_raw_separator
+                && row_index > 0
+                && expr_starts_with_underset(cell)
+            {
+                // MathType emits an explicit default-color selector here even
+                // when the logical state is already default. The byte stream is
+                // therefore edge-triggered by the split-row transition, not by
+                // our tracked ColorState alone.
                 color_default(out);
                 state.color = ColorState::Default;
             }
@@ -4318,6 +4335,16 @@ fn expr_starts_with_stackrel(expr: &Expr) -> bool {
         Expr::Stackrel { .. } => true,
         Expr::Style { content, .. } => expr_starts_with_stackrel(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_stackrel),
+        _ => false,
+    }
+}
+
+/// Return true when the first visible node opens MathType's `\underset` tmLIM template.
+fn expr_starts_with_underset(expr: &Expr) -> bool {
+    match expr {
+        Expr::Underset { .. } => true,
+        Expr::Style { content, .. } => expr_starts_with_underset(content),
+        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_underset),
         _ => false,
     }
 }

@@ -910,25 +910,11 @@ fn write_expr(
         Expr::Subarray { rows, .. } => {
             // Keep current subarray rendering on the MATRIX path until the remaining
             // MathType mixed raw/native limit layout is fully modeled.
-            write_matrix(MatrixKind::Plain, rows, out, current_size, writer)?;
-            WriteState {
-                size: current_size,
-                color: ColorState::Black,
-            }
+            write_matrix(MatrixKind::Plain, rows, out, current_size, writer)?
         }
-        Expr::Matrix { kind, rows } => {
-            write_matrix(*kind, rows, out, current_size, writer)?;
-            WriteState {
-                size: current_size,
-                color: ColorState::Black,
-            }
-        }
+        Expr::Matrix { kind, rows } => write_matrix(*kind, rows, out, current_size, writer)?,
         Expr::Environment { kind, rows, trivia } => {
-            write_environment(*kind, rows, trivia, out, current_size, writer)?;
-            WriteState {
-                size: current_size,
-                color: ColorState::Black,
-            }
+            write_environment(*kind, rows, trivia, out, current_size, writer)?
         }
         Expr::Delimited {
             left,
@@ -2102,13 +2088,12 @@ fn write_matrix(
     out: &mut Vec<u8>,
     current_size: SizeState,
     writer: &mut MtefWriter,
-) -> Result<(), String> {
+) -> Result<WriteState, String> {
     let Some((left, right, selector)) = (match kind {
         MatrixKind::Plain => None,
         MatrixKind::Small => {
             write_size(current_size, out);
-            write_plain_matrix_record(rows, out, current_size, writer)?;
-            return Ok(());
+            return write_plain_matrix_record(rows, out, current_size, writer);
         }
         MatrixKind::Parenthesized => Some(('(', ')', 0x01)),
         MatrixKind::Bracketed => Some(('[', ']', 0x03)),
@@ -2116,11 +2101,13 @@ fn write_matrix(
         MatrixKind::Barred => Some(('|', '|', 0x04)),
         MatrixKind::DoubleBarred => Some(('\u{2016}', '\u{2016}', 0x05)),
     }) else {
-        write_plain_matrix_record(rows, out, current_size, writer)?;
-        return Ok(());
+        return write_plain_matrix_record(rows, out, current_size, writer);
     };
     write_fenced_matrix(selector, left, right, rows, out, current_size, writer)?;
-    Ok(())
+    Ok(WriteState {
+        size: current_size,
+        color: ColorState::Black,
+    })
 }
 
 /// Write alignment-like environments using MTEF layout records, not fixture bytes.
@@ -2131,19 +2118,16 @@ fn write_environment(
     out: &mut Vec<u8>,
     current_size: SizeState,
     writer: &mut MtefWriter,
-) -> Result<(), String> {
+) -> Result<WriteState, String> {
     match kind {
-        EnvironmentKind::Array => {
-            write_array_environment(rows, trivia, out, current_size, writer)
-        }
+        EnvironmentKind::Array => write_array_environment(rows, trivia, out, current_size, writer),
         EnvironmentKind::Align => {
             if let Some(cell) = transparent_failure_environment_cell(rows) {
-                write_expr(cell, out, current_size, writer)?;
-                Ok(())
+                write_expr(cell, out, current_size, writer)
             } else {
                 write_align_matrix_record(rows, out, current_size, writer)
             }
-        },
+        }
         EnvironmentKind::AlignAt => write_align_matrix_record(rows, out, current_size, writer),
         EnvironmentKind::Split => write_environment_fallback(
             "split",
@@ -2189,8 +2173,20 @@ fn write_environment(
             current_size,
             writer,
         ),
-        EnvironmentKind::Cases => write_left_fenced_matrix(rows, out, current_size, writer),
-        EnvironmentKind::RightCases => write_right_fenced_matrix(rows, out, current_size, writer),
+        EnvironmentKind::Cases => {
+            write_left_fenced_matrix(rows, out, current_size, writer)?;
+            Ok(WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            })
+        }
+        EnvironmentKind::RightCases => {
+            write_right_fenced_matrix(rows, out, current_size, writer)?;
+            Ok(WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            })
+        }
     }
 }
 
@@ -2201,7 +2197,7 @@ fn write_array_environment(
     out: &mut Vec<u8>,
     current_size: SizeState,
     writer: &mut MtefWriter,
-) -> Result<(), String> {
+) -> Result<WriteState, String> {
     write_plain_matrix_record_with_row_leading(rows, &trivia.row_leading, out, current_size, writer)
 }
 /// Emulate MathType TeX Input's fallback for unsupported alignment environments.
@@ -2218,7 +2214,7 @@ fn write_environment_fallback(
     out: &mut Vec<u8>,
     current_size: SizeState,
     writer: &mut MtefWriter,
-) -> Result<(), String> {
+) -> Result<WriteState, String> {
     write_raw_tex_text("\\begin", out)?;
     writer.ensure_black_color_def(out);
     let mut wrote_name_color = false;
@@ -2398,12 +2394,18 @@ fn write_environment_fallback(
         for ch in name.chars() {
             write_char(ch, out, writer)?;
         }
-        return Ok(());
+        return Ok(WriteState {
+            size: current_size,
+            color: ColorState::Black,
+        });
     }
     for ch in name.chars() {
         write_char(ch, out, writer)?;
     }
-    Ok(())
+    Ok(WriteState {
+        size: current_size,
+        color: ColorState::Black,
+    })
 }
 
 /// Write nested aligned environments inside split using MathType's split fallback separators.
@@ -2516,7 +2518,7 @@ fn write_align_matrix_record(
     out: &mut Vec<u8>,
     current_size: SizeState,
     writer: &mut MtefWriter,
-) -> Result<(), String> {
+) -> Result<WriteState, String> {
     let col_count = rows.iter().map(Vec::len).max().unwrap_or(0);
     let padded = rows
         .iter()
@@ -2619,9 +2621,8 @@ fn write_matrix_record(
     out: &mut Vec<u8>,
     current_size: SizeState,
     writer: &mut MtefWriter,
-) -> Result<(), String> {
-    write_matrix_record_with_header(rows, out, current_size, writer, MatrixHeaderStyle::Cases)?;
-    Ok(())
+) -> Result<WriteState, String> {
+    write_matrix_record_with_header(rows, out, current_size, writer, MatrixHeaderStyle::Cases)
 }
 
 /// Write standalone matrix/array environments using MathType's centered columns.
@@ -2630,9 +2631,8 @@ fn write_plain_matrix_record(
     out: &mut Vec<u8>,
     current_size: SizeState,
     writer: &mut MtefWriter,
-) -> Result<(), String> {
-    write_matrix_record_with_header(rows, out, current_size, writer, MatrixHeaderStyle::Plain)?;
-    Ok(())
+) -> Result<WriteState, String> {
+    write_matrix_record_with_header(rows, out, current_size, writer, MatrixHeaderStyle::Plain)
 }
 
 /// Write a plain array matrix while injecting probe-backed raw row controls.
@@ -2642,7 +2642,7 @@ fn write_plain_matrix_record_with_row_leading(
     out: &mut Vec<u8>,
     current_size: SizeState,
     writer: &mut MtefWriter,
-) -> Result<(), String> {
+) -> Result<WriteState, String> {
     let row_count = u8::try_from(rows.len()).map_err(|_| "matrix has too many rows".to_string())?;
     let col_count = rows.iter().map(Vec::len).max().unwrap_or(0);
     let col_count =
@@ -2653,6 +2653,7 @@ fn write_plain_matrix_record_with_row_leading(
     out.extend(std::iter::repeat(0x00).take(partition_byte_count(col_count)));
     let mut cell_ordinal = 0usize;
     let mut previous_cell_was_empty = false;
+    let mut previous_cell_forces_default = false;
     let total_cells = rows.len() * col_count as usize;
     let mut final_cell_state = WriteState {
         size: current_size,
@@ -2662,12 +2663,18 @@ fn write_plain_matrix_record_with_row_leading(
         let row_prefix = row_leading.get(row_index).map(String::as_str).unwrap_or("");
         for col_index in 0..col_count as usize {
             let prefix_cell = row_index > 0 && col_index == 0 && !row_prefix.is_empty();
-            if cell_ordinal > 0 && !previous_cell_was_empty {
+            if cell_ordinal > 0
+                && !previous_cell_was_empty
+                && (final_cell_state.color != ColorState::Default || previous_cell_forces_default)
+            {
+                // Array cells inherit default color unless the previous cell left an explicit
+                // non-default selection behind, so avoid emitting redundant selectors here.
                 color_default(out);
             }
             let is_last_cell = cell_ordinal + 1 == total_cells;
             if let Some(cell) = row.get(col_index) {
                 previous_cell_was_empty = expr_is_empty_sequence(cell);
+                previous_cell_forces_default = expr_contains_color_change(cell);
                 if prefix_cell {
                     let prefixed = row_prefixed_cell_expr(cell, row_prefix);
                     final_cell_state =
@@ -2677,6 +2684,7 @@ fn write_plain_matrix_record_with_row_leading(
                 }
             } else {
                 previous_cell_was_empty = true;
+                previous_cell_forces_default = false;
                 write_empty_matrix_cell_line(out);
                 final_cell_state = WriteState {
                     size: current_size,
@@ -2690,7 +2698,7 @@ fn write_plain_matrix_record_with_row_leading(
         }
     }
     out.push(0x00);
-    Ok(())
+    Ok(final_cell_state)
 }
 /// Merge an array row's raw prefix into the first visible cell line.
 fn row_prefixed_cell_expr(cell: &Expr, prefix: &str) -> Expr {
@@ -2728,6 +2736,7 @@ fn write_matrix_record_with_header(
     out.extend(std::iter::repeat(0x00).take(partition_byte_count(col_count)));
     let mut cell_ordinal = 0usize;
     let mut previous_cell_was_empty = false;
+    let mut previous_cell_forces_default = false;
     let total_cells = rows.len() * col_count as usize;
     let mut final_cell_state = WriteState {
         size: current_size,
@@ -2738,15 +2747,20 @@ fn write_matrix_record_with_header(
             if header_style != MatrixHeaderStyle::Fenced
                 && cell_ordinal > 0
                 && !previous_cell_was_empty
+                && (final_cell_state.color != ColorState::Default || previous_cell_forces_default)
             {
+                // Plain matrix cells only need an explicit default-color restore when the
+                // preceding cell changed the active selector.
                 color_default(out);
             }
             let is_last_cell = cell_ordinal + 1 == total_cells;
             if let Some(cell) = row.get(col_index) {
                 previous_cell_was_empty = expr_is_empty_sequence(cell);
+                previous_cell_forces_default = expr_contains_color_change(cell);
                 final_cell_state = write_matrix_cell_line(cell, out, current_size, writer)?;
             } else {
                 previous_cell_was_empty = true;
+                previous_cell_forces_default = false;
                 write_empty_matrix_cell_line(out);
                 final_cell_state = WriteState {
                     size: current_size,
@@ -3532,7 +3546,11 @@ fn write_sqrt(
     out.extend_from_slice(&[0x03, 0x00, 0x0a, 0x00, 0x00]);
     color_default(out);
     let radicand_state = write_line(radicand, out, current_size, writer)?;
-    if radicand_state.size != SizeState::Sub {
+    if radicand_state.size != SizeState::Sub
+        || expr_requires_explicit_sqrt_index_restore(radicand)
+    {
+        // Fractions whose denominator ends with a large-operator template can report sub size
+        // without emitting the nth-root slot restore MathType writes before the empty index line.
         write_size(SizeState::Sub, out);
     }
     if radicand_state.color != ColorState::Black {
@@ -3645,7 +3663,9 @@ fn write_big_op(
         SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
     };
     if upper.is_some() {
-        if body_state.size != limit_size {
+        if body_state.size != limit_size || expr_requires_explicit_big_op_limit_restore(body) {
+            // Some body templates still require an explicit limit-size restore before the
+            // following lower slot even when the reported trailing size already equals it.
             write_size(limit_size, out);
         }
         if body_state.size != limit_size || body_state.color != ColorState::Default {
@@ -4329,6 +4349,67 @@ fn expr_starts_with_line_layout_object(expr: &Expr) -> bool {
     }
 }
 
+/// Return true when any nested node changes MathType's active color selection.
+fn expr_contains_color_change(expr: &Expr) -> bool {
+    match expr {
+        Expr::Color { .. } => true,
+        Expr::Style { content, .. } => expr_contains_color_change(content),
+        Expr::Sequence(items) => items.iter().any(expr_contains_color_change),
+        Expr::Matrix { rows, .. } | Expr::Environment { rows, .. } => rows
+            .iter()
+            .flat_map(|row| row.iter())
+            .any(expr_contains_color_change),
+        Expr::Delimited { content, .. }
+        | Expr::Font { content, .. }
+        | Expr::Accent { content, .. }
+        | Expr::BarTemplate { content, .. } => expr_contains_color_change(content),
+        Expr::Fraction(numerator, denominator) => {
+            expr_contains_color_change(numerator) || expr_contains_color_change(denominator)
+        }
+        Expr::Sqrt(radicand) | Expr::Boxed(radicand) => expr_contains_color_change(radicand),
+        Expr::Script { base, sub, sup } => {
+            expr_contains_color_change(base)
+                || sub.as_deref().is_some_and(expr_contains_color_change)
+                || sup.as_deref().is_some_and(expr_contains_color_change)
+        }
+        Expr::BigOp {
+            body,
+            lower,
+            upper,
+            ..
+        } => {
+            body.as_deref().is_some_and(expr_contains_color_change)
+                || lower.as_deref().is_some_and(expr_contains_color_change)
+                || upper.as_deref().is_some_and(expr_contains_color_change)
+        }
+        Expr::Pile { upper, lower, .. } | Expr::Stackrel { upper, lower } => {
+            expr_contains_color_change(upper) || expr_contains_color_change(lower)
+        }
+        Expr::Brace {
+            content,
+            annotation,
+            ..
+        } => {
+            expr_contains_color_change(content)
+                || annotation
+                    .as_deref()
+                    .is_some_and(expr_contains_color_change)
+        }
+        Expr::Underset { lower, base } => {
+            expr_contains_color_change(lower) || expr_contains_color_change(base)
+        }
+        Expr::XArrow { label, under, .. } => {
+            expr_contains_color_change(label)
+                || under.as_deref().is_some_and(expr_contains_color_change)
+        }
+        Expr::Substack { rows } | Expr::Subarray { rows, .. } => rows
+            .iter()
+            .flat_map(|row| row.iter())
+            .any(expr_contains_color_change),
+        _ => false,
+    }
+}
+
 /// Return true when the first visible node is a stackrel-like template.
 fn expr_starts_with_stackrel(expr: &Expr) -> bool {
     match expr {
@@ -4345,6 +4426,106 @@ fn expr_starts_with_underset(expr: &Expr) -> bool {
         Expr::Underset { .. } => true,
         Expr::Style { content, .. } => expr_starts_with_underset(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_underset),
+        _ => false,
+    }
+}
+
+/// Return true when a sqrt radicand needs an explicit nth-index size restore after a fraction.
+fn expr_requires_explicit_sqrt_index_restore(expr: &Expr) -> bool {
+    match expr {
+        Expr::Fraction(_, denominator) => expr_ends_with_big_op(denominator),
+        Expr::Style { content, .. } => expr_requires_explicit_sqrt_index_restore(content),
+        Expr::Sequence(items) => items
+            .last()
+            .is_some_and(expr_requires_explicit_sqrt_index_restore),
+        _ => false,
+    }
+}
+
+/// Return true when the trailing visible node is a large-operator template.
+fn expr_ends_with_big_op(expr: &Expr) -> bool {
+    match expr {
+        Expr::BigOp { .. } => true,
+        Expr::Style { content, .. } => expr_ends_with_big_op(content),
+        Expr::Sequence(items) => items.last().is_some_and(expr_ends_with_big_op),
+        _ => false,
+    }
+}
+
+/// Return true when any nested visible node uses a large-operator template.
+fn expr_contains_big_op(expr: &Expr) -> bool {
+    match expr {
+        Expr::BigOp { .. } => true,
+        Expr::Style { content, .. }
+        | Expr::Font { content, .. }
+        | Expr::Accent { content, .. }
+        | Expr::BarTemplate { content, .. }
+        | Expr::Delimited { content, .. } => expr_contains_big_op(content),
+        Expr::Sequence(items) => items.iter().any(expr_contains_big_op),
+        Expr::Fraction(numerator, denominator) => {
+            expr_contains_big_op(numerator) || expr_contains_big_op(denominator)
+        }
+        Expr::Sqrt(radicand) | Expr::Boxed(radicand) => expr_contains_big_op(radicand),
+        Expr::Script { base, sub, sup } => {
+            expr_contains_big_op(base)
+                || sub.as_deref().is_some_and(expr_contains_big_op)
+                || sup.as_deref().is_some_and(expr_contains_big_op)
+        }
+        Expr::Pile { upper, lower, .. } | Expr::Stackrel { upper, lower } => {
+            expr_contains_big_op(upper) || expr_contains_big_op(lower)
+        }
+        Expr::Brace {
+            content,
+            annotation,
+            ..
+        } => {
+            expr_contains_big_op(content)
+                || annotation.as_deref().is_some_and(expr_contains_big_op)
+        }
+        Expr::Underset { lower, base } => {
+            expr_contains_big_op(lower) || expr_contains_big_op(base)
+        }
+        Expr::XArrow { label, under, .. } => {
+            expr_contains_big_op(label) || under.as_deref().is_some_and(expr_contains_big_op)
+        }
+        Expr::Matrix { rows, .. }
+        | Expr::Environment { rows, .. }
+        | Expr::Subarray { rows, .. }
+        | Expr::Substack { rows } => rows
+            .iter()
+            .flat_map(|row| row.iter())
+            .any(expr_contains_big_op),
+        _ => false,
+    }
+}
+
+/// Return true when a big-operator body needs an explicit size restore before the lower slot.
+fn expr_requires_explicit_big_op_limit_restore(expr: &Expr) -> bool {
+    expr_contains_big_op(expr) || expr_is_superscript_with_nested_script(expr)
+}
+
+/// Return true for superscripts whose payload itself ends in another script template.
+fn expr_is_superscript_with_nested_script(expr: &Expr) -> bool {
+    match expr {
+        Expr::Script {
+            sub: None,
+            sup: Some(sup),
+            ..
+        } => expr_ends_with_script(sup),
+        Expr::Style { content, .. } => expr_is_superscript_with_nested_script(content),
+        Expr::Sequence(items) => items
+            .last()
+            .is_some_and(expr_is_superscript_with_nested_script),
+        _ => false,
+    }
+}
+
+/// Return true when the trailing visible node is a script template.
+fn expr_ends_with_script(expr: &Expr) -> bool {
+    match expr {
+        Expr::Script { .. } => true,
+        Expr::Style { content, .. } => expr_ends_with_script(content),
+        Expr::Sequence(items) => items.last().is_some_and(expr_ends_with_script),
         _ => false,
     }
 }

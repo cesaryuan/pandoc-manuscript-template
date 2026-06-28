@@ -133,19 +133,19 @@ def test_generate_uncached_equation_parts_uses_set_data_method(monkeypatch, tmp_
     assert calls == ["set-data"]
 
 
-def test_generate_uncached_equation_parts_auto_falls_back_to_set_data(monkeypatch, tmp_path) -> None:
-    """Use MathType TeX import only after the Rust path fails in auto mode."""
+def test_generate_uncached_equation_parts_auto_falls_back_to_rust(monkeypatch, tmp_path) -> None:
+    """Use mathtype-rust only after the set-data path fails in auto mode."""
     calls = []
 
-    def fail_rust(*args, **kwargs):
-        calls.append("rust")
-        raise RuntimeError("rust failed")
+    def fail_set_data(*args, **kwargs):
+        calls.append("set-data")
+        raise RuntimeError("set-data failed")
 
-    monkeypatch.setattr(ole_parts, "make_ole_wmf_metadata_with_mathtype_rust", fail_rust)
+    monkeypatch.setattr(ole_parts, "make_ole_wmf_metadata_with_mathtype_set_data", fail_set_data)
     monkeypatch.setattr(
         ole_parts,
-        "make_ole_wmf_metadata_with_mathtype_set_data",
-        lambda *args, **kwargs: calls.append("set-data"),
+        "make_ole_wmf_metadata_with_mathtype_rust",
+        lambda *args, **kwargs: calls.append("rust"),
     )
 
     ole_parts.generate_uncached_equation_parts(
@@ -158,7 +158,7 @@ def test_generate_uncached_equation_parts_auto_falls_back_to_set_data(monkeypatc
         conversion_method="auto",
     )
 
-    assert calls == ["rust", "set-data"]
+    assert calls == ["set-data", "rust"]
 
 
 def test_normalize_conversion_method_accepts_style_aliases() -> None:
@@ -171,7 +171,7 @@ def test_normalize_conversion_method_accepts_style_aliases() -> None:
 
 
 def test_generate_equation_parts_both_uses_independent_backend_caches(monkeypatch, tmp_path) -> None:
-    """Generate both backends with separate cache methods and keep rust output."""
+    """Generate both backends with separate cache methods and keep set-data output."""
     calls = []
     warnings = []
 
@@ -201,8 +201,8 @@ def test_generate_equation_parts_both_uses_independent_backend_caches(monkeypatc
 
     assert calls == ["rust", "set-data"]
     assert equations[0].ole_path == tmp_path / "eq_001.ole.bin"
-    assert (tmp_path / "eq_001.ole.bin").read_bytes() == b"ole-rust"
-    assert (tmp_path / "eq_001.set-data.ole.bin").read_bytes() == b"ole-set-data"
+    assert (tmp_path / "eq_001.ole.bin").read_bytes() == b"ole-set-data"
+    assert (tmp_path / "eq_001.rust.ole.bin").read_bytes() == b"ole-rust"
     assert any("rust and set-data outputs differ" in message for message in warnings)
 
 

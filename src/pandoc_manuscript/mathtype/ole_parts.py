@@ -765,7 +765,7 @@ def generate_cached_equation_parts_auto(
     mtef_path: Path,
     prefs_file: Path | None,
 ) -> tuple[int, int]:
-    """Try the rust cache/generator first, then the set-data cache/generator."""
+    """Try the preferred set-data cache/generator first, then rust fallback."""
     try:
         hit = generate_cached_equation_parts_for_method(
             index,
@@ -781,13 +781,13 @@ def generate_cached_equation_parts_auto(
             metadata_path,
             mtef_path,
             prefs_file,
-            "rust",
+            "set-data",
         )
         return int(hit), int(not hit)
     except (RuntimeError, FileNotFoundError):
         log_warning(
-            f"[mathtype] mathtype-rust auto path failed for equation {index}; "
-            "trying MathType TeX input fallback"
+            f"[mathtype] MathType TeX input auto path failed for equation {index}; "
+            "trying mathtype-rust fallback"
         )
         hit = generate_cached_equation_parts_for_method(
             index,
@@ -803,7 +803,7 @@ def generate_cached_equation_parts_auto(
             metadata_path,
             mtef_path,
             prefs_file,
-            "set-data",
+            "rust",
         )
         return int(hit), 1 + int(not hit)
 
@@ -832,7 +832,7 @@ def warn_if_conversion_outputs_differ(
     if differing_parts:
         log_warning(
             f"[mathtype] warning: rust and set-data outputs differ for equation {index}: "
-            f"{', '.join(differing_parts)}; using rust output"
+            f"{', '.join(differing_parts)}; using set-data output"
         )
 
 
@@ -994,33 +994,33 @@ def generate_uncached_equation_parts(
         return
 
     try:
-        make_ole_wmf_metadata_with_mathtype_rust(
+        make_ole_wmf_metadata_with_mathtype_set_data(
             input_path,
             ole_path,
             wmf_path,
             metadata_path,
-            mtef_path,
             prefs_file=prefs_file,
         )
-        log_debug(f"[mathtype] mathtype-rust auto path succeeded for equation {index}")
+        log_debug(f"[mathtype] MathType TeX input auto path succeeded for equation {index}")
     except (RuntimeError, FileNotFoundError):
         log_warning(
-            f"[mathtype] mathtype-rust auto path failed for equation {index}; "
-            "trying MathType TeX input fallback"
+            f"[mathtype] MathType TeX input auto path failed for equation {index}; "
+            "trying mathtype-rust fallback"
         )
         try:
-            make_ole_wmf_metadata_with_mathtype_set_data(
+            make_ole_wmf_metadata_with_mathtype_rust(
                 input_path,
                 ole_path,
                 wmf_path,
                 metadata_path,
+                mtef_path,
                 prefs_file=prefs_file,
             )
-        except RuntimeError as fallback_exc:
+        except (RuntimeError, FileNotFoundError) as fallback_exc:
             raise RuntimeError(
-                f"mathtype-rust auto path and MathType TeX input fallback both failed for equation {index}"
+                f"MathType TeX input auto path and mathtype-rust fallback both failed for equation {index}"
             ) from fallback_exc
-        log_debug(f"[mathtype] MathType TeX input fallback succeeded for equation {index}")
+        log_debug(f"[mathtype] mathtype-rust fallback succeeded for equation {index}")
 
 
 def inspect_ole(path: Path) -> CompoundFile:
@@ -1077,10 +1077,10 @@ def generate_equation_parts(
         wmf_path = output_dir / f"eq_{index:03d}.wmf"
         metadata_path = output_dir / f"eq_{index:03d}.json"
         mtef_path = output_dir / f"eq_{index:03d}.mtef.bin"
-        set_data_ole_path = output_dir / f"eq_{index:03d}.set-data.ole.bin"
-        set_data_wmf_path = output_dir / f"eq_{index:03d}.set-data.wmf"
-        set_data_metadata_path = output_dir / f"eq_{index:03d}.set-data.json"
-        set_data_mtef_path = output_dir / f"eq_{index:03d}.set-data.mtef.bin"
+        rust_ole_path = output_dir / f"eq_{index:03d}.rust.ole.bin"
+        rust_wmf_path = output_dir / f"eq_{index:03d}.rust.wmf"
+        rust_metadata_path = output_dir / f"eq_{index:03d}.rust.json"
+        rust_mtef_path = output_dir / f"eq_{index:03d}.rust.mtef.bin"
         prefs_path: Path | None = None
         font_size_key = cache_font_size_key(request.font_size_pt, prefs_template)
 
@@ -1103,10 +1103,10 @@ def generate_equation_parts(
                 rust_source_digest,
                 rust_exe_digest,
                 input_path,
-                ole_path,
-                wmf_path,
-                metadata_path,
-                mtef_path,
+                rust_ole_path,
+                rust_wmf_path,
+                rust_metadata_path,
+                rust_mtef_path,
                 prefs_path,
                 "rust",
             )
@@ -1119,10 +1119,10 @@ def generate_equation_parts(
                 rust_source_digest,
                 rust_exe_digest,
                 input_path,
-                set_data_ole_path,
-                set_data_wmf_path,
-                set_data_metadata_path,
-                set_data_mtef_path,
+                ole_path,
+                wmf_path,
+                metadata_path,
+                mtef_path,
                 prefs_path,
                 "set-data",
             )
@@ -1130,10 +1130,10 @@ def generate_equation_parts(
             cache_misses += int(not rust_hit) + int(not set_data_hit)
             warn_if_conversion_outputs_differ(
                 index,
+                rust_ole_path,
+                rust_metadata_path,
                 ole_path,
                 metadata_path,
-                set_data_ole_path,
-                set_data_metadata_path,
             )
         elif conversion_method == "auto":
             hits, misses = generate_cached_equation_parts_auto(

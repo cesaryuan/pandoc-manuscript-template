@@ -14,8 +14,8 @@ mathtype: true
 # MathType conversion backend: rust, set-data, auto, or both.
 # rust: LaTeX -> mathtype-rust -> OLE/MTEF -> MathType SDK WMF/JSON.
 # set-data: LaTeX -> MathType OLE TeX input -> OLE/WMF/JSON.
-# auto: try rust first, then fall back to set-data.
-# both: generate both backends, warn if OLE/JSON differ, and use rust.
+# auto: try set-data first, then fall back to rust.
+# both: generate both backends, warn if OLE/JSON differ, and use set-data.
 mathtypeConversionMethod: both
 
 # Set to true to inline local child images inside referenced SVG files during

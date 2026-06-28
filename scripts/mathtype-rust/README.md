@@ -149,6 +149,48 @@ MTEF comparison samples: <passed>/<total> passed
 如果某个样本不一致，测试会报告样本编号、MathType/Rust MTEF 长度、第一个不同
 字节的位置，以及对应的 TeX 内容。
 
+## Import MathJax JSON Smoke Samples
+
+如果想先拿 MathJax 官方测试集里的少量公式做烟雾验证，可以先下载 JSON，再运行
+导入器。当前建议先取 `ParserDigitsTest.json` 和 `ParserBaseTest.json`，按这个顺序
+提取前 10 条公式：
+
+```powershell
+$jsonDir = "scripts\mathtype-rust\.pmt\mathjax-json"
+New-Item -ItemType Directory -Force -Path $jsonDir | Out-Null
+
+Invoke-WebRequest `
+  -Uri "https://raw.githubusercontent.com/mathjax/MathJax-Tests/main/json/ParserDigitsTest.json" `
+  -OutFile (Join-Path $jsonDir "ParserDigitsTest.json")
+
+Invoke-WebRequest `
+  -Uri "https://raw.githubusercontent.com/mathjax/MathJax-Tests/main/json/ParserBaseTest.json" `
+  -OutFile (Join-Path $jsonDir "ParserBaseTest.json")
+
+cargo run --bin import_mathjax_json_samples -- `
+  --source (Join-Path $jsonDir "ParserDigitsTest.json") `
+  --source (Join-Path $jsonDir "ParserBaseTest.json") `
+  --output-dir samples\mathjax-json-smoke `
+  --limit 10
+```
+
+这个导入器会：
+
+- 按 JSON 中测试项顺序提取 `tests[*].input`。
+- 把公式写成 `samples\mathjax-json-smoke\eq_*.tex`。
+- 调用现有 `MathTypeOleHelper.exe` 生成 `mt_eq_*.ole.bin` 真值。
+- 复制原始 JSON 到 `samples\mathjax-json-smoke\source\`，并写出
+  `samples\mathjax-json-smoke\manifest.json` 方便追溯。
+
+导入完成后，直接运行：
+
+```powershell
+cargo test -- --show-output
+```
+
+新生成的 `samples\mathjax-json-smoke` 会自动被现有回归测试递归扫描，不需要额外
+改测试入口。
+
 ## Manuscript Samples
 
 当前样本目录：

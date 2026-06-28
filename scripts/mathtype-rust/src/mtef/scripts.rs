@@ -116,10 +116,19 @@ pub(super) fn write_big_op(
 /// Return true when MathType restates sub-size before a lower-limit slot.
 fn big_op_body_needs_lower_size_restore(expr: &Expr) -> bool {
     match expr {
-        Expr::Font { kind: FontKind::Bold, content } => expr_is_single_char(content, '1'),
-        Expr::Script { base, sup: Some(_), .. } => matches!(base.as_ref(), Expr::Delimited { .. }),
-        Expr::Delimited { content, .. } => big_op_body_needs_lower_size_restore(content),
-        Expr::Sequence(items) => items.last().is_some_and(big_op_body_needs_lower_size_restore),
+        Expr::Char(_) => true,
+        Expr::Fraction(numerator, _) => expr_has_template_structure(numerator),
+        Expr::Font {
+            kind: FontKind::Bold,
+            content,
+        } => expr_is_single_char(content, '1'),
+        Expr::Script {
+            base, sup: Some(_), ..
+        } => matches!(base.as_ref(), Expr::Delimited { .. }),
+        Expr::Delimited { .. } => true,
+        Expr::Sequence(items) => items
+            .last()
+            .is_some_and(big_op_body_needs_lower_size_restore),
         _ => false,
     }
 }
@@ -128,7 +137,31 @@ fn big_op_body_needs_lower_size_restore(expr: &Expr) -> bool {
 fn expr_is_single_char(expr: &Expr, expected: char) -> bool {
     match expr {
         Expr::Char(ch) => *ch == expected,
-        Expr::Sequence(items) => matches!(items.as_slice(), [item] if expr_is_single_char(item, expected)),
+        Expr::Sequence(items) => {
+            matches!(items.as_slice(), [item] if expr_is_single_char(item, expected))
+        }
+        _ => false,
+    }
+}
+
+/// Return true when a fraction numerator contains MathType template structure.
+fn expr_has_template_structure(expr: &Expr) -> bool {
+    match expr {
+        Expr::Script { .. }
+        | Expr::Fraction(_, _)
+        | Expr::Sqrt(_)
+        | Expr::Accent { .. }
+        | Expr::BarTemplate { .. }
+        | Expr::Delimited { .. }
+        | Expr::BigOp { .. }
+        | Expr::Integral { .. }
+        | Expr::Pile { .. }
+        | Expr::Matrix { .. }
+        | Expr::Environment { .. } => true,
+        Expr::Style { content, .. } | Expr::Font { content, .. } => {
+            expr_has_template_structure(content)
+        }
+        Expr::Sequence(items) => items.iter().any(expr_has_template_structure),
         _ => false,
     }
 }

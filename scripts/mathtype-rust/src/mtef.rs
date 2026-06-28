@@ -370,7 +370,9 @@ fn write_expr(
                     ColorState::Black
                 },
             };
-            for (index, item) in items.iter().enumerate() {
+            let mut index = 0usize;
+            while index < items.len() {
+                let item = &items[index];
                 if state.size != current_size && !matches!(item, Expr::Integral { .. }) {
                     if expr_starts_with_euclid_math_one(item) {
                         writer.ensure_euclid_math_one(out);
@@ -387,6 +389,7 @@ fn write_expr(
                             size: state.size,
                             color: ColorState::Default,
                         };
+                        index += 1;
                         continue;
                     }
                 }
@@ -461,7 +464,23 @@ fn write_expr(
                 let previous_parent_sequence_has_previous_sibling =
                     writer.parent_sequence_has_previous_sibling;
                 writer.parent_sequence_has_previous_sibling = index > 0;
-                state = write_expr(item, out, state.size, writer)?;
+                if let Some(ch) = prime_embellished_sequence_char(items, index) {
+                    write_embellished_char_with_code(ch, EMBELL_PRIME, out, writer)?;
+                    state = WriteState {
+                        size: state.size,
+                        color: ColorState::Black,
+                    };
+                    index += 2;
+                } else {
+                    state = write_expr(item, out, state.size, writer)?;
+                    index += 1;
+                }
+                if display_fraction_sequence_item_needs_full_restore(item, items.get(index)) {
+                    // MathType's SetData path explicitly restores full size after a display
+                    // fraction when the same line continues with punctuation, as in cases cells.
+                    write_size(current_size, out);
+                    state.size = current_size;
+                }
                 writer.parent_sequence_has_previous_sibling =
                     previous_parent_sequence_has_previous_sibling;
             }
@@ -662,6 +681,28 @@ fn write_expr(
         )?,
     };
     Ok(next_state)
+}
+
+/// Return the base character for MathType's compact apostrophe-prime embellishment.
+fn prime_embellished_sequence_char(items: &[Expr], index: usize) -> Option<char> {
+    match (items.get(index), items.get(index + 1)) {
+        (Some(Expr::Char(ch)), Some(Expr::Char('\''))) => Some(*ch),
+        _ => None,
+    }
+}
+
+/// Return true for display fractions that MathType follows with an explicit full-size restore.
+fn display_fraction_sequence_item_needs_full_restore(item: &Expr, next: Option<&Expr>) -> bool {
+    matches!(
+        (unwrap_single_sequence(item), next.map(unwrap_single_sequence)),
+        (
+            Expr::Style {
+                kind: StyleKind::Display,
+                content,
+            },
+            Some(Expr::Char(',' | '.' | ';' | ':'))
+        ) if matches!(unwrap_single_sequence(content), Expr::Fraction(_, _))
+    )
 }
 
 /// Write the color record shape MathType emits for supported \color commands.

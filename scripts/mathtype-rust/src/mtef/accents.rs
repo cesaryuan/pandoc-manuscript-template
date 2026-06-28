@@ -43,13 +43,7 @@ pub(super) fn write_accent_expr(
                 });
             }
             (AccentKind::Bar, Some(FontKind::Bold)) => {
-                return write_bar_template(
-                    BarTemplateKind::Over,
-                    expr,
-                    out,
-                    current_size,
-                    writer,
-                );
+                return write_bar_template(BarTemplateKind::Over, expr, out, current_size, writer);
             }
             _ => {}
         }
@@ -357,6 +351,7 @@ fn embellishment_code(kind: AccentKind) -> u8 {
 
 /// MathType's `embNOT` overlay subtype used by `\not <relation>`.
 const EMBELL_NOT: u8 = 0x0a;
+pub(super) const EMBELL_PRIME: u8 = 0x05;
 
 /// Write a negated relation as the base relation glyph plus MathType's `embNOT`.
 pub(super) fn write_not_relation(
@@ -435,7 +430,7 @@ fn write_embellished_char(
 }
 
 /// Write a CHAR record with one explicitly probed EMBELL subtype attached.
-fn write_embellished_char_with_code(
+pub(super) fn write_embellished_char_with_code(
     ch: char,
     embellishment: u8,
     out: &mut Vec<u8>,

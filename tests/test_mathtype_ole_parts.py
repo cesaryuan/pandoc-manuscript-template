@@ -42,7 +42,7 @@ def test_make_ole_from_mathtype_rust_uses_file_input(monkeypatch, tmp_path) -> N
                 "--prefs-file",
                 str(prefs_path),
             ],
-            {"stderr_as_warning": False},
+            {"stderr_as_warning": False, "stdout_as_debug": True, "stderr_as_debug": True},
         )
     ]
 

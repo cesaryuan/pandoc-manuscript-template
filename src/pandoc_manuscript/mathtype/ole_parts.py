@@ -346,6 +346,8 @@ def run(
     command: list[str],
     echo_stdout: bool = True,
     stderr_as_warning: bool = True,
+    stdout_as_debug: bool = False,
+    stderr_as_debug: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run a command and echo its useful output for MathType logs."""
     result = subprocess.run(
@@ -356,9 +358,14 @@ def run(
     stdout = decode_process_output(result.stdout)
     stderr = decode_process_output(result.stderr)
     if echo_stdout and result.stdout.strip():
-        log_info(stdout.strip())
+        if stdout_as_debug:
+            log_debug(stdout.strip())
+        else:
+            log_info(stdout.strip())
     if stderr.strip():
-        if stderr_as_warning or result.returncode != 0:
+        if result.returncode == 0 and stderr_as_debug:
+            log_debug(stderr.strip())
+        elif stderr_as_warning or result.returncode != 0:
             log_warning(stderr.strip())
         else:
             log_info(stderr.strip())
@@ -886,7 +893,7 @@ def make_ole_from_mathtype_rust(
     ]
     if prefs_file is not None:
         command.extend(["--prefs-file", str(prefs_file)])
-    run(command, stderr_as_warning=False)
+    run(command, stderr_as_warning=False, stdout_as_debug=True, stderr_as_debug=True)
 
 
 def make_wmf_metadata_from_mtef(
@@ -972,7 +979,7 @@ def generate_uncached_equation_parts(
             mtef_path,
             prefs_file=prefs_file,
         )
-        log_info(f"[mathtype] mathtype-rust conversion succeeded for equation {index}")
+        log_debug(f"[mathtype] mathtype-rust conversion succeeded for equation {index}")
         return
 
     if conversion_method == "set-data":
@@ -983,7 +990,7 @@ def generate_uncached_equation_parts(
             metadata_path,
             prefs_file=prefs_file,
         )
-        log_info(f"[mathtype] MathType TeX input conversion succeeded for equation {index}")
+        log_debug(f"[mathtype] MathType TeX input conversion succeeded for equation {index}")
         return
 
     try:
@@ -995,7 +1002,7 @@ def generate_uncached_equation_parts(
             mtef_path,
             prefs_file=prefs_file,
         )
-        log_info(f"[mathtype] mathtype-rust auto path succeeded for equation {index}")
+        log_debug(f"[mathtype] mathtype-rust auto path succeeded for equation {index}")
     except (RuntimeError, FileNotFoundError):
         log_warning(
             f"[mathtype] mathtype-rust auto path failed for equation {index}; "
@@ -1013,7 +1020,7 @@ def generate_uncached_equation_parts(
             raise RuntimeError(
                 f"mathtype-rust auto path and MathType TeX input fallback both failed for equation {index}"
             ) from fallback_exc
-        log_info(f"[mathtype] MathType TeX input fallback succeeded for equation {index}")
+        log_debug(f"[mathtype] MathType TeX input fallback succeeded for equation {index}")
 
 
 def inspect_ole(path: Path) -> CompoundFile:

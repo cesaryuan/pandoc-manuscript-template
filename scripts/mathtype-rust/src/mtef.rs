@@ -1596,6 +1596,20 @@ fn write_font_expr(
                 color: ColorState::Black,
             })
         }
+        Expr::Accent {
+            kind: accent_kind,
+            content,
+        } if kind == FontKind::Bold
+            && matches!(accent_kind, AccentKind::Hat | AccentKind::WideHat)
+            && single_accent_char(content).is_some() =>
+        {
+            let ch = single_accent_char(content).expect("guard checked single accent char");
+            write_bold_embellished_char(ch, *accent_kind, out)?;
+            Ok(WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            })
+        }
         Expr::Script { base, sub, sup } => {
             // MathType keeps font-scoped scripts by applying the font to each visible script slot
             // instead of dropping back to an unscoped native Script record.

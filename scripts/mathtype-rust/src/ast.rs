@@ -123,6 +123,7 @@ pub(crate) enum Expr {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct EnvironmentTrivia {
+    pub(crate) column_spec: Option<String>,
     pub(crate) row_leading: Vec<String>,
     pub(crate) separator_leading: Vec<Vec<String>>,
     pub(crate) end_leading: String,

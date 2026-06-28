@@ -73,8 +73,13 @@ pub(super) fn write_big_op(
             color_default(out);
         }
     }
-    if upper.is_none() && body_state.color != ColorState::Default {
-        color_default(out);
+    if upper.is_none() {
+        if big_op_body_needs_lower_size_restore(body) {
+            write_size(limit_size, out);
+        }
+        if body_state.color != ColorState::Default {
+            color_default(out);
+        }
     }
     let lower_state = write_line(lower, out, limit_size, writer)?;
     let final_limit_state = if let Some(upper) = upper {
@@ -106,6 +111,26 @@ pub(super) fn write_big_op(
         size: limit_size,
         color: ColorState::Black,
     })
+}
+
+/// Return true when MathType restates sub-size before a lower-limit slot.
+fn big_op_body_needs_lower_size_restore(expr: &Expr) -> bool {
+    match expr {
+        Expr::Font { kind: FontKind::Bold, content } => expr_is_single_char(content, '1'),
+        Expr::Script { base, sup: Some(_), .. } => matches!(base.as_ref(), Expr::Delimited { .. }),
+        Expr::Delimited { content, .. } => big_op_body_needs_lower_size_restore(content),
+        Expr::Sequence(items) => items.last().is_some_and(big_op_body_needs_lower_size_restore),
+        _ => false,
+    }
+}
+
+/// Return true for a possibly wrapped one-character expression.
+fn expr_is_single_char(expr: &Expr, expected: char) -> bool {
+    match expr {
+        Expr::Char(ch) => *ch == expected,
+        Expr::Sequence(items) => matches!(items.as_slice(), [item] if expr_is_single_char(item, expected)),
+        _ => false,
+    }
 }
 
 /// Write a big-operator template whose body slot is intentionally empty.

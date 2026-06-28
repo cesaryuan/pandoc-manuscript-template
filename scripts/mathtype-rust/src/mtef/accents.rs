@@ -42,6 +42,15 @@ pub(super) fn write_accent_expr(
                     color: ColorState::Black,
                 });
             }
+            (AccentKind::Bar, Some(FontKind::Bold)) => {
+                return write_bar_template(
+                    BarTemplateKind::Over,
+                    expr,
+                    out,
+                    current_size,
+                    writer,
+                );
+            }
             _ => {}
         }
     }
@@ -210,6 +219,35 @@ fn single_font_char(expr: &Expr) -> Option<(Option<FontKind>, char)> {
         Expr::Font { kind, content } => single_font_char(content).map(|(_, ch)| (Some(*kind), ch)),
         _ => None,
     }
+}
+
+/// Return a single plain character inside an accent payload.
+pub(super) fn single_accent_char(expr: &Expr) -> Option<char> {
+    match expr {
+        Expr::Char(ch) => Some(*ch),
+        Expr::Sequence(items) if items.len() == 1 => single_accent_char(&items[0]),
+        _ => None,
+    }
+}
+
+/// Write MathType's compact form for `\mathbf{\hat{C}}`-style bold accents.
+pub(super) fn write_bold_embellished_char(
+    ch: char,
+    kind: AccentKind,
+    out: &mut Vec<u8>,
+) -> Result<(), String> {
+    let code = ch as u32;
+    if code > u16::MAX as u32 {
+        return Err(format!("bold accent character is outside BMP: {ch}"));
+    }
+    write_table_char_with_embellishments(
+        FN_VECTOR,
+        code as u16,
+        None,
+        &[embellishment_code(kind)],
+        out,
+    );
+    Ok(())
 }
 
 /// Return the first plain character inside a font command before emitting color.

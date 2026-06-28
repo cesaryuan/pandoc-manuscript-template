@@ -30,12 +30,13 @@ impl Parser {
                 // Preserve row-rule control words such as \hdashline so the writer can
                 // reproduce MathType's mixed native/raw array layout instead of flattening
                 // the whole environment into one raw fallback run.
-                self.parse_raw_group("array column specifier")?;
+                let column_spec = self.parse_raw_group("array column specifier")?;
                 parsed_rows = self.parse_array_rows(name)?;
                 return Ok(Expr::Environment {
                     kind: EnvironmentKind::Array,
                     rows: parsed_rows.rows,
                     trivia: EnvironmentTrivia {
+                        column_spec: Some(column_spec),
                         row_leading: parsed_rows.row_leading,
                         separator_leading: parsed_rows.separator_leading,
                         end_leading: parsed_rows.end_leading,
@@ -112,6 +113,7 @@ impl Parser {
             kind,
             rows: parsed_rows.rows,
             trivia: EnvironmentTrivia {
+                column_spec: None,
                 row_leading: parsed_rows.row_leading,
                 separator_leading: parsed_rows.separator_leading,
                 end_leading: parsed_rows.end_leading,

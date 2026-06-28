@@ -125,7 +125,14 @@ fn write_array_environment(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
-    write_plain_matrix_record_with_row_leading(rows, &trivia.row_leading, out, current_size, writer)
+    write_plain_matrix_record_with_row_leading(
+        rows,
+        trivia.column_spec.as_deref(),
+        &trivia.row_leading,
+        out,
+        current_size,
+        writer,
+    )
 }
 
 struct EnvironmentFallbackSpec<'a> {
@@ -586,6 +593,7 @@ fn write_plain_matrix_record(
 /// Write a plain array matrix while injecting probe-backed raw row controls.
 fn write_plain_matrix_record_with_row_leading(
     rows: &[Vec<Expr>],
+    column_spec: Option<&str>,
     row_leading: &[String],
     out: &mut Vec<u8>,
     current_size: SizeState,
@@ -596,7 +604,8 @@ fn write_plain_matrix_record_with_row_leading(
     let col_count =
         u8::try_from(col_count).map_err(|_| "matrix has too many columns".to_string())?;
 
-    out.extend_from_slice(&[0x05, 0x00, 0x01, 0x01, 0x01, row_count, col_count]);
+    let column_style = array_column_style(column_spec);
+    out.extend_from_slice(&[0x05, 0x00, 0x01, column_style, 0x01, row_count, col_count]);
     out.extend(std::iter::repeat_n(0x00, partition_byte_count(row_count)));
     out.extend(std::iter::repeat_n(0x00, partition_byte_count(col_count)));
     let mut cell_ordinal = 0usize;
@@ -647,6 +656,15 @@ fn write_plain_matrix_record_with_row_leading(
     }
     out.push(0x00);
     Ok(final_cell_state)
+}
+
+/// Return MathType's MATRIX column style byte for simple array column specs.
+fn array_column_style(column_spec: Option<&str>) -> u8 {
+    match column_spec.map(str::trim) {
+        // MathType marks a one-column `{r}` array as right-aligned in the MATRIX header.
+        Some("r") => 0x02,
+        _ => 0x01,
+    }
 }
 
 /// Merge an array row's raw prefix into the first visible cell line.

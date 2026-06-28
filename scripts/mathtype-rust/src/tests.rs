@@ -1,6 +1,6 @@
 use crate::ast::{EnvironmentKind, Expr, MatrixKind};
 use crate::cfb::read_regular_stream;
-use crate::mtef::write_mtef;
+use crate::mtef::{write_mtef, write_mtef_with_prefs};
 use crate::parser::{normalize_latex, Parser};
 use crate::typeface::{
     EXPLICIT_FONT_NEG_1, FN_FUNCTION, FN_MT_EXTRA, FN_SPACE, FN_SYMBOL, FN_TEXT_FE,
@@ -891,5 +891,11 @@ fn assert_no_raw_tex(expr: &Expr) {
 /// Render MTEF through the same parser/writer path as the CLI.
 fn render_mtef_for_test(latex: &str) -> Result<Vec<u8>, String> {
     let expr = Parser::new(latex).parse()?;
-    write_mtef(latex, &expr)
+    write_mtef_with_prefs(latex, &expr, Some(&sample_prefs_file()))
+}
+
+/// Return the shared MathType prefs used by every byte-for-byte sample test.
+fn sample_prefs_file() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../src/pandoc_manuscript/mathtype/Times+Symbol 12.eqp")
 }

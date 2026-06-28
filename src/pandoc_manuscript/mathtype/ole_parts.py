@@ -867,21 +867,26 @@ def make_ole_from_format(
     run(command)
 
 
-def make_ole_from_mathtype_rust(input_path: Path, output_path: Path, mtef_output: Path) -> None:
+def make_ole_from_mathtype_rust(
+    input_path: Path,
+    output_path: Path,
+    mtef_output: Path,
+    prefs_file: Path | None = None,
+) -> None:
     """Generate MathType OLE and bare MTEF from LaTeX via the Rust converter."""
     rust_exe = build_mathtype_rust_converter()
-    run(
-        [
-            str(rust_exe),
-            "--input",
-            str(input_path),
-            "--output",
-            str(output_path),
-            "--mtef-output",
-            str(mtef_output),
-        ],
-        stderr_as_warning=False,
-    )
+    command = [
+        str(rust_exe),
+        "--input",
+        str(input_path),
+        "--output",
+        str(output_path),
+        "--mtef-output",
+        str(mtef_output),
+    ]
+    if prefs_file is not None:
+        command.extend(["--prefs-file", str(prefs_file)])
+    run(command, stderr_as_warning=False)
 
 
 def make_wmf_metadata_from_mtef(
@@ -913,7 +918,7 @@ def make_ole_wmf_metadata_with_mathtype_rust(
     prefs_file: Path | None = None,
 ) -> None:
     """Generate OLE, WMF, and metadata through Rust MTEF conversion."""
-    make_ole_from_mathtype_rust(input_path, ole_path, mtef_path)
+    make_ole_from_mathtype_rust(input_path, ole_path, mtef_path, prefs_file=prefs_file)
     sdk_ole_path = ole_path.with_name(f"{ole_path.stem}.sdk{ole_path.suffix}")
     make_wmf_metadata_from_mtef(
         mtef_path,

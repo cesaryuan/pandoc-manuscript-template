@@ -22,11 +22,12 @@ def test_make_ole_from_mathtype_rust_uses_file_input(monkeypatch, tmp_path) -> N
     input_path = tmp_path / "eq.tex"
     ole_path = tmp_path / "eq.ole.bin"
     mtef_path = tmp_path / "eq.mtef.bin"
+    prefs_path = tmp_path / "size.eqp"
 
     monkeypatch.setattr(ole_parts, "build_mathtype_rust_converter", lambda: rust_exe)
     monkeypatch.setattr(ole_parts, "run", lambda command, **kwargs: calls.append((command, kwargs)))
 
-    ole_parts.make_ole_from_mathtype_rust(input_path, ole_path, mtef_path)
+    ole_parts.make_ole_from_mathtype_rust(input_path, ole_path, mtef_path, prefs_file=prefs_path)
 
     assert calls == [
         (
@@ -38,6 +39,8 @@ def test_make_ole_from_mathtype_rust_uses_file_input(monkeypatch, tmp_path) -> N
                 str(ole_path),
                 "--mtef-output",
                 str(mtef_path),
+                "--prefs-file",
+                str(prefs_path),
             ],
             {"stderr_as_warning": False},
         )

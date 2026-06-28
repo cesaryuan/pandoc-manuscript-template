@@ -14,6 +14,8 @@ mod delimiters;
 mod encoding;
 #[path = "mtef/environments.rs"]
 mod environments;
+#[path = "mtef/fixed_defs.rs"]
+mod fixed_defs;
 #[path = "mtef/predicates.rs"]
 mod predicates;
 #[path = "mtef/records.rs"]
@@ -33,22 +35,6 @@ use records::{
 };
 use scripts::*;
 use templates::*;
-
-const MTEF_FIXED_DEFS: &[u8] = &[
-    0x13, b'W', b'i', b'n', b'A', b'l', b'l', b'B', b'a', b's', b'i', b'c', b'C', b'o', b'd', b'e',
-    b'P', b'a', b'g', b'e', b's', 0x00, 0x11, 0x05, b'T', b'i', b'm', b'e', b's', b' ', b'N', b'e',
-    b'w', b' ', b'R', b'o', b'm', b'a', b'n', 0x00, 0x11, 0x03, b'S', b'y', b'm', b'b', b'o', b'l',
-    0x00, 0x11, 0x05, b'C', b'o', b'u', b'r', b'i', b'e', b'r', b' ', b'N', b'e', b'w', 0x00, 0x11,
-    0x04, b'M', b'T', b' ', b'E', b'x', b't', b'r', b'a', 0x00, 0x13, b'W', b'i', b'n', b'A', b'l',
-    b'l', b'C', b'o', b'd', b'e', b'P', b'a', b'g', b'e', b's', 0x00, 0x11, 0x06, 0xcb, 0xce, 0xcc,
-    0xe5, 0x00, 0x12, 0x00, 0x08, 0x21, 0x2f, 0x45, 0x8f, 0x44, 0x2f, 0x41, 0x50, 0xf4, 0x10, 0x0f,
-    0x47, 0x5f, 0x41, 0x50, 0xf2, 0x1f, 0x1e, 0x41, 0x50, 0xf4, 0x15, 0x0f, 0x41, 0x00, 0xf4, 0x45,
-    0xf4, 0x25, 0xf4, 0x8f, 0x42, 0x5f, 0x41, 0x00, 0xf4, 0x10, 0x0f, 0x43, 0x5f, 0x41, 0x00, 0xf4,
-    0x8f, 0x45, 0xf4, 0x2a, 0x5f, 0x48, 0xf4, 0x8f, 0x41, 0x00, 0xf4, 0x10, 0x0f, 0x40, 0xf4, 0x8f,
-    0x41, 0x7f, 0x48, 0xf4, 0x10, 0x0f, 0x41, 0x2a, 0x5f, 0x44, 0x5f, 0x45, 0xf4, 0x5f, 0x45, 0xf4,
-    0x5f, 0x41, 0x0f, 0x0c, 0x01, 0x00, 0x01, 0x00, 0x01, 0x02, 0x02, 0x02, 0x02, 0x00, 0x02, 0x00,
-    0x01, 0x01, 0x01, 0x00, 0x03, 0x00, 0x01, 0x00, 0x04, 0x00, 0x05, 0x00,
-];
 
 const EUCLID_MATH_ONE_DEFS: &[u8] = &[
     0x13, b'E', b'u', b'c', b'l', b'i', b'd', b'M', b'a', b't', b'h', b'1', 0x00, 0x11, 0x07, b'E',
@@ -210,6 +196,15 @@ impl MtefWriter {
 
 /// Build the MTEF stream, including MathType's TeX-source future record.
 pub(crate) fn write_mtef(source_latex: &str, expr: &Expr) -> Result<Vec<u8>, String> {
+    write_mtef_with_prefs(source_latex, expr, None)
+}
+
+/// Build the MTEF stream with optional per-equation MathType prefs.
+pub(crate) fn write_mtef_with_prefs(
+    source_latex: &str,
+    expr: &Expr,
+    prefs_file: Option<&std::path::Path>,
+) -> Result<Vec<u8>, String> {
     let mut out = vec![0x05, 0x01, 0x00, 0x07, 0x08];
     out.extend_from_slice(b"DSMT7\0");
     // MathType switches to a shorter failure-form header when TeX Input collapses
@@ -229,7 +224,11 @@ pub(crate) fn write_mtef(source_latex: &str, expr: &Expr) -> Result<Vec<u8>, Str
         out.extend_from_slice(&source);
     }
 
-    out.extend_from_slice(MTEF_FIXED_DEFS);
+    if let Some(path) = prefs_file {
+        out.extend_from_slice(&fixed_defs::fixed_defs_from_prefs_file(path)?);
+    } else {
+        out.extend_from_slice(fixed_defs::fixed_defs()?);
+    }
     write_equation_body(expr, &mut out)?;
     Ok(out)
 }

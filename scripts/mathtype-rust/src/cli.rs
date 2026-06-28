@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::mtef::{write_equation_native, write_mtef};
+use crate::mtef::{write_equation_native, write_mtef_with_prefs};
 use crate::ole::write_compound_file;
 use crate::parser::{normalize_latex, Parser};
 
@@ -12,6 +12,7 @@ struct Options {
     input: Option<PathBuf>,
     output: PathBuf,
     mtef_output: Option<PathBuf>,
+    prefs_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -37,7 +38,7 @@ pub(crate) fn run() -> Result<(), String> {
     };
     let latex = normalize_latex(&raw_latex);
     let expr = Parser::new(&latex).parse()?;
-    let mtef = write_mtef(&latex, &expr)?;
+    let mtef = write_mtef_with_prefs(&latex, &expr, options.prefs_file.as_deref())?;
     let native = write_equation_native(&mtef)?;
     let ole_bin = write_compound_file(&native)?;
 
@@ -64,6 +65,7 @@ where
     let mut input = None;
     let mut output = None;
     let mut mtef_output = None;
+    let mut prefs_file = None;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -71,6 +73,7 @@ where
             "--input" => input = args.next().map(PathBuf::from),
             "--output" => output = args.next().map(PathBuf::from),
             "--mtef-output" => mtef_output = args.next().map(PathBuf::from),
+            "--prefs-file" => prefs_file = args.next().map(PathBuf::from),
             "--help" | "-h" => return Ok(ParseAction::HelpRequested),
             other => return Err(format!("unknown argument: {other}\n{}", usage())),
         }
@@ -80,12 +83,13 @@ where
         input,
         output: output.ok_or_else(usage)?,
         mtef_output,
+        prefs_file,
     }))
 }
 
 /// Return the command usage shown for invalid invocations.
 fn usage() -> String {
-    "Usage: mathtype-rust (--latex <tex> | --input <file>) --output <ole.bin> [--mtef-output <mtef.bin>]"
+    "Usage: mathtype-rust (--latex <tex> | --input <file>) --output <ole.bin> [--mtef-output <mtef.bin>] [--prefs-file <prefs.eqp>]"
         .to_string()
 }
 
@@ -118,6 +122,31 @@ mod tests {
                 input: None,
                 output: PathBuf::from("out.bin"),
                 mtef_output: None,
+                prefs_file: None,
+            })
+        );
+    }
+
+    /// Accept a MathType `.eqp` file for per-equation fixed defs.
+    #[test]
+    fn prefs_file_argument_is_parsed() {
+        let action = parse_args([
+            "--latex".to_string(),
+            "$x$".to_string(),
+            "--output".to_string(),
+            "out.bin".to_string(),
+            "--prefs-file".to_string(),
+            "size.eqp".to_string(),
+        ])
+        .expect("prefs-file mode should parse");
+        assert_eq!(
+            action,
+            ParseAction::Run(Options {
+                latex: Some("$x$".to_string()),
+                input: None,
+                output: PathBuf::from("out.bin"),
+                mtef_output: None,
+                prefs_file: Some(PathBuf::from("size.eqp")),
             })
         );
     }

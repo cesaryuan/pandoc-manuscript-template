@@ -56,7 +56,8 @@ scripts\mathtype-rust\target\debug\mathtype-rust.exe `
 scripts\mathtype-rust\target\debug\mathtype-rust.exe `
   --input scripts\mathtype-rust\samples\manuscript\eq_001.tex `
   --output C:\tmp\eq_001.ole.bin `
-  --mtef-output C:\tmp\eq_001.mtef.bin
+  --mtef-output C:\tmp\eq_001.mtef.bin `
+  --prefs-file C:\tmp\full-10_5pt.eqp
 ```
 
 参数说明：
@@ -65,6 +66,7 @@ scripts\mathtype-rust\target\debug\mathtype-rust.exe `
 - `--input <file>`: 从文件读取公式。
 - `--output <ole.bin>`: 写出 MathType OLE `.bin` 文件。
 - `--mtef-output <mtef.bin>`: 可选，额外写出裸 MTEF 字节，方便测试和比对。
+- `--prefs-file <prefs.eqp>`: 可选，使用指定 MathType `.eqp` 生成 MTEF 中的字号、样式和间距偏好。
 
 `--latex` 和 `--input` 必须二选一。PowerShell 中建议用单引号包住 LaTeX，
 避免 `$` 被当成变量展开。

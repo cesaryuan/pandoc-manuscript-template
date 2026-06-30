@@ -26,15 +26,25 @@ class CustomBuildHook(BuildHookInterface):
             return
 
         if os.name != "nt":
-            raise RuntimeError("Build MathType-enabled wheels on Windows so mathtype-rust.exe is bundled.")
+            # MathType wheel bundling is a Windows-only release concern. Other
+            # platforms still need to build successfully without the helper.
+            return
 
         root = Path(self.root)
+        executable = self.build_mathtype_rust_executable(root)
+        build_data.setdefault("force_include", {})[str(executable)] = (
+            f"pandoc_manuscript/mathtype/bin/{executable.name}"
+        )
+
+    def build_mathtype_rust_executable(self, root: Path) -> Path:
+        """Build the Windows MathType helper and return the executable path."""
         manifest = root / "scripts" / "mathtype-rust" / "Cargo.toml"
         if not manifest.exists():
             raise FileNotFoundError(f"mathtype-rust manifest is missing: {manifest}")
         if shutil.which("cargo") is None:
             raise RuntimeError("Building a wheel with MathType fallback requires `cargo` on PATH.")
 
+        print("[pmt build] building Windows MathType helper with cargo", flush=True)
         subprocess.run(
             [
                 "cargo",
@@ -52,7 +62,4 @@ class CustomBuildHook(BuildHookInterface):
         executable = root / "scripts" / "mathtype-rust" / "target" / "debug" / exe_name
         if not executable.exists():
             raise FileNotFoundError(f"cargo did not create expected executable: {executable}")
-
-        build_data["force_include"][str(executable)] = (
-            f"pandoc_manuscript/mathtype/bin/{exe_name}"
-        )
+        return executable

@@ -5,9 +5,7 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from pandoc.filters.svg_embed_images import log_debug
-
-from ..runtime.logging import log_info
+from ..runtime.logging import log_info, log_debug
 from ..runtime.paths import PMT_MATHTYPE_WORK_DIR
 
 from .marked_docx import extract_marked_equation_requests, inspect_docx, replace_marked_omml_with_generated

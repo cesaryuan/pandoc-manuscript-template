@@ -12,9 +12,7 @@ import yaml
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, CliPositionalArg, CliSuppress, SettingsConfigDict
 
-from pandoc.filters.svg_embed_images import log_debug
-
-from ..runtime.logging import log_error, log_info, log_success, log_warning
+from ..runtime.logging import log_error, log_info, log_success, log_warning, log_debug
 from ..mathtype.preflight import warn_mathtype_hat_style_order
 from ..runtime.metadata import (
     MissingYamlFrontMatterError,

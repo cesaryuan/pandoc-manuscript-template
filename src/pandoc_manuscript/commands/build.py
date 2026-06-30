@@ -508,7 +508,7 @@ def project_metadata_csl() -> Any:
 
 def build_docx(*, warn_hat_order: bool = True):
     """Generate DOCX file with optional post-processing."""
-    log_info("\n[DOCX] Building DOCX...\n")
+    log_info("[DOCX] Building DOCX...\n")
 
     docx_file = manuscript_output_file(SETTINGS.docx_dir, "docx")
     ensure_output_parent(docx_file)

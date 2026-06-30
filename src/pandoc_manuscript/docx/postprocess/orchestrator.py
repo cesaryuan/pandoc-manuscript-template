@@ -119,9 +119,9 @@ def postprocess_docx(
 
     try:
         # Open document (shared across all steps)
-        log_info("[postprocess] Initializing document...")
+        # log_info("[postprocess] Initializing document...")
         doc = Document(str(docx_path_abs))
-        log_debug("[postprocess] Document opened successfully")
+        # log_debug("[postprocess] Document opened successfully")
 
         if skip_author_info:
             log_skip("author information", "disabled for this build")
@@ -261,7 +261,6 @@ def postprocess_docx(
         # ===================================================================
         # Save document (all changes from all scripts)
         # ===================================================================
-        log_info("[postprocess] Saving all changes to document...")
         doc.save(str(docx_path_abs))
         log_debug("[postprocess] Document saved successfully")
 

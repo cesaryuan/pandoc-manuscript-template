@@ -377,7 +377,7 @@ def run(
 def build_helper() -> None:
     """Ensure the small .NET OLE helper exists for MathType conversion."""
     if HELPER_EXE.exists():
-        log_info(f"[mathtype] helper executable found, skipping build: {HELPER_EXE}")
+        log_debug(f"[mathtype] helper executable found, skipping build: {HELPER_EXE}")
         return
     if shutil.which("dotnet") is None:
         raise RuntimeError(

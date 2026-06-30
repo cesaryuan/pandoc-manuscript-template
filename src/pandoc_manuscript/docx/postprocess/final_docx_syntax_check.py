@@ -179,8 +179,7 @@ def find_unrendered_pandoc_syntax(
 def validate_final_docx_syntax(docx_path: str | Path, max_findings: int = 20) -> list[SyntaxFinding]:
     """Log the final DOCX syntax check and return any suspicious findings."""
     docx_file = Path(docx_path).resolve()
-    print_info("Running final DOCX syntax check...")
-    print_info(f"Checking rendered text in: {docx_file}")
+    print_info(f"Running final DOCX syntax check in: {docx_file}")
 
     findings = find_unrendered_pandoc_syntax(docx_file, max_findings=max_findings)
     if not findings:

@@ -3,7 +3,9 @@
 
 verbosity: WARNING
 standalone: true
-csl: ${.}/csl/elsevier-vancouver.csl
+# Keep `csl` out of this defaults file. Pandoc 3.10 gives defaults-file `csl`
+# higher precedence than later `--csl` and `--metadata-file` overrides, so the
+# build command injects the effective DOCX CSL explicitly.
 reference-doc: ${.}/manuscript-template/reference-doc.docx
 # Custom XML template for DOCX formatting
 template: ${.}/templates/default.xml

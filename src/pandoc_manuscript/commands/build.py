@@ -46,6 +46,7 @@ from .common import project_directory
 
 
 DEFAULT_OUTPUT_DIR = "output"
+DEFAULT_DOCX_CSL = "pandoc/csl/elsevier-vancouver.csl"
 BuildTarget = Literal["docx", "latex", "json"]
 BUILD_CLI_CONFIG = SettingsConfigDict(
     cli_kebab_case=True,
@@ -432,6 +433,11 @@ def adjusted_docx_metadata_file(metadata: dict[str, Any]) -> Path:
     return metadata_file
 
 
+def default_docx_csl() -> Path:
+    """Return the bundled DOCX CSL used when project metadata does not pick one."""
+    return resource_path(DEFAULT_DOCX_CSL)
+
+
 def run_pandoc(
     defaults_file: Path,
     output_file: Path,
@@ -446,7 +452,7 @@ def run_pandoc(
         '--defaults',
         str(defaults_file),
         *style_metadata_args(metadata),
-        *project_csl_args(),
+        *csl_args(defaults_file),
         '--output',
         to_pandoc_path(output_file),
         *extra_args,
@@ -473,12 +479,18 @@ def style_metadata_args(metadata: dict[str, Any] | None = None) -> list[str]:
     ]
 
 
-def project_csl_args() -> list[str]:
-    """Return a project-relative --csl override when metadata explicitly sets CSL."""
+def csl_args(defaults_file: Path) -> list[str]:
+    """Return the effective --csl argument for the selected Pandoc defaults file.
+
+    Pandoc 3.10 gives a defaults-file `csl` higher precedence than later
+    `--csl` or `--metadata-file` values. Keep the DOCX default out of
+    `pandoc-docx.yml` and inject it here so manuscript/style metadata can still
+    override it.
+    """
     csl = project_metadata_csl()
-    if not csl:
-        return []
-    return ['--csl', str(csl)]
+    if csl:
+        return ['--csl', str(csl)]
+    return ['--csl', to_pandoc_path(default_docx_csl())]
 
 
 def project_metadata_csl() -> Any:

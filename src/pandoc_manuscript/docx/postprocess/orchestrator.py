@@ -104,7 +104,7 @@ def postprocess_docx(
         True if successful, False otherwise
     """
     # Validate inputs
-    log_info("[postprocess] Validating inputs...")
+    log_debug("[postprocess] Validating inputs...")
     docx_file = Path(docx_path)
     metadata = metadata or {}
 

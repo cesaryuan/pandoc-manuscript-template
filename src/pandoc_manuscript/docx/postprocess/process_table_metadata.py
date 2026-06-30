@@ -378,7 +378,7 @@ def apply_table_metadata(
             elif key_lower == 'cell_spacing':
                 # Note: python-docx doesn't directly support cell spacing
                 # This would require advanced XML manipulation
-                print_warning("cell_spacing is not fully supported in python-docx")
+                # print_warning("cell_spacing is not fully supported in python-docx")
                 applied_settings.append(f"cell_spacing={value} (limited support)")
 
             elif key_lower == 'row_height':

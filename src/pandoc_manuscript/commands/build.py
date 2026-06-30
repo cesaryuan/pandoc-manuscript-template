@@ -12,6 +12,8 @@ import yaml
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, CliPositionalArg, CliSuppress, SettingsConfigDict
 
+from pandoc.filters.svg_embed_images import log_debug
+
 from ..runtime.logging import log_error, log_info, log_success, log_warning
 from ..mathtype.preflight import warn_mathtype_hat_style_order
 from ..runtime.metadata import (
@@ -425,8 +427,8 @@ def adjusted_docx_metadata_file(metadata: dict[str, Any]) -> Path:
     )
     if tab_stops is not None:
         center_tab, right_tab = tab_stops
-        log_info(
-            "[INFO] Synced eqnBlockTemplate tab stops from docxPageMargins: "
+        log_debug(
+            "[DEBUG] Synced eqnBlockTemplate tab stops from docxPageMargins: "
             f"center={center_tab}, right={right_tab}"
         )
     return metadata_file

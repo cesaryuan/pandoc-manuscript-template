@@ -5,6 +5,8 @@ import argparse
 from pathlib import Path
 from typing import Any
 
+from pandoc.filters.svg_embed_images import log_debug
+
 from ..runtime.logging import log_info
 from ..runtime.paths import PMT_MATHTYPE_WORK_DIR
 
@@ -22,14 +24,14 @@ def convert_marked_docx(source: Path, target: Path, work_dir: Path, metadata: di
         )
 
     size_summary = sorted({request.font_size_pt for request in requests if request.font_size_pt is not None})
-    log_info(f"[mathtype] marked DOCX math nodes: {len(requests)}")
+    log_debug(f"[mathtype] marked DOCX math nodes: {len(requests)}")
     if size_summary:
-        log_info(f"[mathtype] detected Word font sizes (pt): {', '.join(f'{size:g}' for size in size_summary)}")
+        log_debug(f"[mathtype] detected Word font sizes (pt): {', '.join(f'{size:g}' for size in size_summary)}")
     conversion_method = normalize_conversion_method((metadata or {}).get("mathtypeConversionMethod"))
-    log_info(f"[mathtype] conversion method: {conversion_method}")
+    log_debug(f"[mathtype] conversion method: {conversion_method}")
     equations = generate_equation_parts(requests, work_dir, conversion_method=conversion_method)
     replaced = replace_marked_omml_with_generated(source, target, equations)
-    log_info(f"[mathtype] replaced top-level OMML nodes: {replaced}")
+    log_debug(f"[mathtype] replaced top-level OMML nodes: {replaced}")
     inspect_docx(target)
     return replaced
 

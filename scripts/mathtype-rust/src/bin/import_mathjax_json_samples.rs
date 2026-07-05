@@ -48,8 +48,8 @@ fn main() -> Result<(), String> {
     );
     recreate_output_dir(&options.output_dir)?;
     copy_source_json_files(&loaded_suites, &options.output_dir)?;
-    write_samples_and_truth(&selected_cases, &options)?;
-    write_manifest(&selected_cases, &loaded_suites, &options.output_dir)?;
+    let manifest_samples = write_samples_and_truth(&selected_cases, &options)?;
+    write_manifest(&loaded_suites, manifest_samples, &options.output_dir)?;
 
     eprintln!(
         "import_mathjax_json_samples: finished writing {} sample(s) under {}",
@@ -62,8 +62,10 @@ fn main() -> Result<(), String> {
 /// Command-line options for importing a small MathJax-based sample set.
 struct Options {
     sources: Vec<PathBuf>,
+    source_dirs: Vec<PathBuf>,
     output_dir: PathBuf,
     helper: PathBuf,
+    keep_going_on_helper_error: bool,
     pre_verb: String,
     limit: usize,
     timeout_ms: u64,
@@ -73,10 +75,12 @@ impl Options {
     /// Parse CLI options while keeping defaults aligned with the existing helper workflow.
     fn parse(args: Vec<String>) -> Result<Self, String> {
         let mut sources = Vec::new();
+        let mut source_dirs = Vec::new();
         let mut output_dir = PathBuf::from(r"samples\mathjax-json-smoke");
         let mut helper = PathBuf::from(
             r"..\..\src\pandoc_manuscript\mathtype\ole_helper\bin\Release\net48\MathTypeOleHelper.exe",
         );
+        let mut keep_going_on_helper_error = false;
         let mut pre_verb = "2".to_string();
         let mut limit = 10usize;
         let mut timeout_ms = 30_000u64;
@@ -88,6 +92,13 @@ impl Options {
                     sources.push(PathBuf::from(
                         args.get(index)
                             .ok_or_else(|| "--source requires a path".to_string())?,
+                    ));
+                }
+                "--source-dir" => {
+                    index += 1;
+                    source_dirs.push(PathBuf::from(
+                        args.get(index)
+                            .ok_or_else(|| "--source-dir requires a path".to_string())?,
                     ));
                 }
                 "--output-dir" => {
@@ -104,6 +115,7 @@ impl Options {
                             .ok_or_else(|| "--helper requires a path".to_string())?,
                     );
                 }
+                "--keep-going-on-helper-error" => keep_going_on_helper_error = true,
                 "--pre-verb" => {
                     index += 1;
                     pre_verb =
@@ -137,17 +149,19 @@ impl Options {
             index += 1;
         }
 
-        if sources.is_empty() {
+        if sources.is_empty() && source_dirs.is_empty() {
             return Err(format!(
-                "pass at least one --source <MathJax JSON path>\n{}",
+                "pass at least one --source <MathJax JSON path> or --source-dir <dir>\n{}",
                 usage()
             ));
         }
 
         Ok(Self {
             sources,
+            source_dirs,
             output_dir,
             helper,
+            keep_going_on_helper_error,
             pre_verb,
             limit,
             timeout_ms,
@@ -187,13 +201,17 @@ struct ManifestSource {
 /// One generated sample recorded in the generated manifest.
 #[derive(Serialize)]
 struct ManifestSample {
-    sample_id: String,
+    case_id: String,
+    sample_id: Option<String>,
+    status: String,
     suite_name: String,
     test_name: String,
     raw_input: String,
     wrapped_input: String,
-    tex_file: String,
-    truth_ole_file: String,
+    all_tex_file: String,
+    tex_file: Option<String>,
+    truth_ole_file: Option<String>,
+    helper_error_file: Option<String>,
 }
 
 /// Minimal shape of a MathJax test suite JSON file.
@@ -211,18 +229,18 @@ struct MathJaxTestCase {
 
 /// Return the CLI usage string for invalid invocations.
 fn usage() -> &'static str {
-    "Usage: import_mathjax_json_samples --source <json> [--source <json> ...] [--output-dir <dir>] [--limit <N>] [--helper <exe>] [--pre-verb 2] [--timeout-ms <N>]"
+    "Usage: import_mathjax_json_samples [--source <json> ...] [--source-dir <dir> ...] [--output-dir <dir>] [--limit <N>] [--helper <exe>] [--keep-going-on-helper-error] [--pre-verb 2] [--timeout-ms <N>]"
 }
 
 /// Load and parse all requested MathJax JSON suites in the order the user passed them.
 fn load_suites(options: &Options) -> Result<Vec<LoadedSuite>, String> {
     let mut suites = Vec::new();
-    for source_path in &options.sources {
+    for source_path in collect_source_paths(options)? {
         eprintln!(
             "import_mathjax_json_samples: loading {}",
             source_path.display()
         );
-        let content = fs::read_to_string(source_path)
+        let content = fs::read_to_string(&source_path)
             .map_err(|err| format!("failed to read {}: {err}", source_path.display()))?;
         let suite: MathJaxSuite = serde_json::from_str(&content)
             .map_err(|err| format!("failed to parse {}: {err}", source_path.display()))?;
@@ -246,6 +264,38 @@ fn load_suites(options: &Options) -> Result<Vec<LoadedSuite>, String> {
         });
     }
     Ok(suites)
+}
+
+/// Collect explicit files plus recursively discovered directory entries into one stable source list.
+fn collect_source_paths(options: &Options) -> Result<Vec<PathBuf>, String> {
+    let mut paths = options.sources.clone();
+    for source_dir in &options.source_dirs {
+        collect_json_paths(source_dir, &mut paths)?;
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
+/// Recursively collect `.json` files so package subdirectories are not skipped by accident.
+fn collect_json_paths(dir: &Path, paths: &mut Vec<PathBuf>) -> Result<(), String> {
+    for entry in
+        fs::read_dir(dir).map_err(|err| format!("failed to read {}: {err}", dir.display()))?
+    {
+        let path = entry
+            .map_err(|err| format!("failed to read entry in {}: {err}", dir.display()))?
+            .path();
+        if path.is_dir() {
+            collect_json_paths(&path, paths)?;
+        } else if path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+        {
+            paths.push(path);
+        }
+    }
+    Ok(())
 }
 
 /// Extract ordered LaTeX inputs from one suite while skipping entries without an `input` field.
@@ -327,36 +377,103 @@ fn copy_source_json_files(loaded_suites: &[LoadedSuite], output_dir: &Path) -> R
 fn write_samples_and_truth(
     selected_cases: &[SelectedCase],
     options: &Options,
-) -> Result<(), String> {
+) -> Result<Vec<ManifestSample>, String> {
+    let all_dir = options.output_dir.join("all");
+    let skipped_dir = options.output_dir.join("skipped");
+    fs::create_dir_all(&all_dir)
+        .map_err(|err| format!("failed to create {}: {err}", all_dir.display()))?;
+    fs::create_dir_all(&skipped_dir)
+        .map_err(|err| format!("failed to create {}: {err}", skipped_dir.display()))?;
+
+    let mut manifest_samples = Vec::new();
+    let mut success_count = 0usize;
     for (index, case) in selected_cases.iter().enumerate() {
-        let sample_number = index + 1;
-        let sample_id = format!("{sample_number:03}");
+        let case_number = index + 1;
+        let case_id = format!("{case_number:06}");
         let wrapped_input = mathtype_tex_payload(&case.raw_input);
-        let tex_path = options.output_dir.join(format!("eq_{sample_id}.tex"));
-        let ole_path = options
-            .output_dir
-            .join(format!("mt_eq_{sample_id}.ole.bin"));
+        let all_tex_name = format!("raw_eq_{case_id}.tex");
+        let all_tex_path = all_dir.join(&all_tex_name);
+        let probe_ole_path = options.output_dir.join("probe.ole.bin");
         eprintln!(
-            "import_mathjax_json_samples: sample={} suite={} test={}",
-            sample_id, case.suite_name, case.test_name
+            "import_mathjax_json_samples: case={} suite={} test={}",
+            case_id, case.suite_name, case.test_name
         );
-        fs::write(&tex_path, &wrapped_input)
-            .map_err(|err| format!("failed to write {}: {err}", tex_path.display()))?;
-        run_mathtype_helper(
+        fs::write(&all_tex_path, &wrapped_input)
+            .map_err(|err| format!("failed to write {}: {err}", all_tex_path.display()))?;
+
+        match run_mathtype_helper(
             &options.helper,
             &options.pre_verb,
             &wrapped_input,
-            &ole_path,
+            &probe_ole_path,
             options.timeout_ms,
-        )?;
+        ) {
+            Ok(()) => {
+                success_count += 1;
+                let sample_id = format!("{success_count:03}");
+                let tex_name = format!("eq_{sample_id}.tex");
+                let ole_name = format!("mt_eq_{sample_id}.ole.bin");
+                let tex_path = options.output_dir.join(&tex_name);
+                let ole_path = options.output_dir.join(&ole_name);
+                fs::copy(&all_tex_path, &tex_path).map_err(|err| {
+                    format!(
+                        "failed to copy {} to {}: {err}",
+                        all_tex_path.display(),
+                        tex_path.display()
+                    )
+                })?;
+                fs::rename(&probe_ole_path, &ole_path).map_err(|err| {
+                    format!(
+                        "failed to move {} to {}: {err}",
+                        probe_ole_path.display(),
+                        ole_path.display()
+                    )
+                })?;
+                manifest_samples.push(ManifestSample {
+                    case_id,
+                    sample_id: Some(sample_id),
+                    status: "included".to_string(),
+                    suite_name: case.suite_name.clone(),
+                    test_name: case.test_name.clone(),
+                    raw_input: case.raw_input.clone(),
+                    wrapped_input,
+                    all_tex_file: format!("all/{all_tex_name}"),
+                    tex_file: Some(tex_name),
+                    truth_ole_file: Some(ole_name),
+                    helper_error_file: None,
+                });
+            }
+            Err(err) if options.keep_going_on_helper_error => {
+                let error_name = format!("skip_eq_{case_id}.err.txt");
+                let error_path = skipped_dir.join(&error_name);
+                fs::write(&error_path, &err).map_err(|write_err| {
+                    format!("failed to write {}: {write_err}", error_path.display())
+                })?;
+                manifest_samples.push(ManifestSample {
+                    case_id,
+                    sample_id: None,
+                    status: "helper_error".to_string(),
+                    suite_name: case.suite_name.clone(),
+                    test_name: case.test_name.clone(),
+                    raw_input: case.raw_input.clone(),
+                    wrapped_input,
+                    all_tex_file: format!("all/{all_tex_name}"),
+                    tex_file: None,
+                    truth_ole_file: None,
+                    helper_error_file: Some(format!("skipped/{error_name}")),
+                });
+            }
+            Err(err) => return Err(err),
+        }
     }
-    Ok(())
+    let _ = fs::remove_file(options.output_dir.join("probe.ole.bin"));
+    Ok(manifest_samples)
 }
 
 /// Write a deterministic manifest so the generated smoke set stays easy to audit.
 fn write_manifest(
-    selected_cases: &[SelectedCase],
     loaded_suites: &[LoadedSuite],
+    manifest_samples: Vec<ManifestSample>,
     output_dir: &Path,
 ) -> Result<(), String> {
     let manifest = SampleManifest {
@@ -372,24 +489,7 @@ fn write_manifest(
                     .to_string(),
             })
             .collect(),
-        samples: selected_cases
-            .iter()
-            .enumerate()
-            .map(|(index, case)| {
-                let sample_number = index + 1;
-                let sample_id = format!("{sample_number:03}");
-                let wrapped_input = mathtype_tex_payload(&case.raw_input);
-                ManifestSample {
-                    sample_id: sample_id.clone(),
-                    suite_name: case.suite_name.clone(),
-                    test_name: case.test_name.clone(),
-                    raw_input: case.raw_input.clone(),
-                    wrapped_input,
-                    tex_file: format!("eq_{sample_id}.tex"),
-                    truth_ole_file: format!("mt_eq_{sample_id}.ole.bin"),
-                }
-            })
-            .collect(),
+        samples: manifest_samples,
     };
     let manifest_path = output_dir.join("manifest.json");
     let manifest_bytes = serde_json::to_vec_pretty(&manifest)
@@ -470,8 +570,10 @@ fn wait_with_timeout(
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_suite_cases, select_cases, LoadedSuite};
+    use super::{collect_json_paths, collect_suite_cases, select_cases, LoadedSuite};
     use serde_json::{json, Map, Value};
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     /// Keep suite extraction aligned with the JSON insertion order used by MathJax fixtures.
     #[test]
@@ -524,5 +626,30 @@ mod tests {
         assert_eq!(selected.len(), 2);
         assert_eq!(selected[0].test_name, "Integer");
         assert_eq!(selected[1].test_name, "Number");
+    }
+
+    /// Keep recursive source discovery aligned with the user's expectation that package subfolders count too.
+    #[test]
+    fn collect_json_paths_recurses_into_subdirectories() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock is after epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mathtype-rust-json-{unique}"));
+        let nested = root.join("nested");
+        fs::create_dir_all(&nested).expect("create nested directory");
+        fs::write(root.join("top.json"), "{}").expect("write top json");
+        fs::write(nested.join("inner.json"), "{}").expect("write nested json");
+        fs::write(nested.join("ignore.txt"), "x").expect("write non-json");
+
+        let mut paths = Vec::new();
+        collect_json_paths(&root, &mut paths).expect("collect recursive json paths");
+        paths.sort();
+
+        assert_eq!(paths.len(), 2);
+        assert!(paths.iter().any(|path| path.ends_with("top.json")));
+        assert!(paths.iter().any(|path| path.ends_with("inner.json")));
+
+        fs::remove_dir_all(&root).expect("remove temp tree");
     }
 }

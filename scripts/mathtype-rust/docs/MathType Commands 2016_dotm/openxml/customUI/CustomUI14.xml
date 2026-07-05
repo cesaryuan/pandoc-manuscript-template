@@ -1,0 +1,114 @@
+<!--Copyright (c) 2010 by Design Science, Inc.-->
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui" onLoad="MTCommand_OnRibbonLoaded">
+	<commands>
+		<command idMso="Paste"  onAction="DSIEditPaste"/>	
+	</commands> 
+	<ribbon>
+		<tabs>
+			<tab id="MathType_T_Math" insertAfterMso="TabView" label="MathType">
+
+				<group id="MathType_G_Insert" label="插入公式" getVisible="MTCallback_IsBeforeWin7" image="MT_GB_InsEqn" autoScale="true">
+					<box id="MathType_BX_Insert1" boxStyle="vertical">
+						<button id="MathType_B_InsInlineMTEqn" screentip="插入内嵌公式 (Ctrl+Alt+Q)" label="内嵌" image="MT_B_InsInlineMTEqn" onAction="MTCommand_OnInsertInlineEqn" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip" />
+						<button id="MathType_B_InsDispMTEqn" screentip="插入段间公式 (Alt+Q)" label="段间" image="MT_B_InsDispMTEqn" onAction="MTCommand_OnInsertDispEqn" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+						<splitButton id="MathType_SB_NumEqnR" size="normal" getVisible="MTCallback_GetNumEqVisible">
+							<menu id="MathType_M_InsMTNumEqnR" image="MT_B_InsDispMTEqnRightNum">
+								<button id="MathType_B_InsDispMTEqnRightNum" screentip="插入右编号公式 (Alt+Shift+Q)" label="右编号" image="MT_B_InsDispMTEqnRightNum" onAction="MTCommand_OnInsertRightNumberedDispEqn" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+								<button id="MathType_B_InsDispMTEqnLeftNum" screentip="插入左编号公式 (Ctrl+Alt+Shift+Q)" label="左编号   " image="MT_B_InsDispMTEqnLeftNum" onAction="MTCommand_OnInsertLeftNumberedDispEqn" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+							</menu>
+						</splitButton>
+						<splitButton id="MathType_SB_NumEqnL" size="normal" getVisible="MTCallback_GetNumEqVisible">
+							<menu id="MathType_M_InsMTNumEqnL" image="MT_B_InsDispMTEqnLeftNum">
+								<button id="MathType_B_InsDispMTEqnLeftNum2" screentip="插入左编号公式 (Ctrl+Alt+Shift+Q)" label="左编号   " image="MT_B_InsDispMTEqnLeftNum" onAction="MTCommand_OnInsertLeftNumberedDispEqn" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+				 				<button id="MathType_B_InsDispMTEqnRightNum2" screentip="插入右编号公式 (Alt+Shift+Q)" label="右编号" image="MT_B_InsDispMTEqnRightNum" onAction="MTCommand_OnInsertRightNumberedDispEqn" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+							</menu>
+						</splitButton>
+					</box>
+				</group>
+
+				<group id="MathType_G_Insert_Win7" label="插入公式" getVisible="MTCallback_IsWin7" image="MT_GB_InsEqn" autoScale="true">
+						<button id="MathType_B_InsInlineMTEqn3" screentip="插入内联公式 (Ctrl+Alt+Q)" label="内联" image="MT_B_InsInlineMTEqn" onAction="MTCommand_OnInsertInlineEqn" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip" />
+						<button id="MathType_B_InsDispMTEqnLeftNum3" screentip="插入左编号公式 (Ctrl+Alt+Shift+Q)" label="左编号   " image="MT_B_InsDispMTEqnLeftNum" onAction="MTCommand_OnInsertLeftNumberedDispEqn" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+						<button id="MathType_B_InsHandEqn" screentip="插入手写内联公式 (Ctrl+Shift+M)" label="打开手写输入面板" image="MT_B_InsHandMTEqn" onAction="MTCommand_OnInsHandEqn" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+						<button id="MathType_B_InsDispMTEqn3" screentip="插入段间公式 (Alt+Q)" label="段间" image="MT_B_InsDispMTEqn" onAction="MTCommand_OnInsertDispEqn" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+						<button id="MathType_B_InsDispMTEqnRightNum3" screentip="插入右编号公式 (Alt+Shift+Q)" label="右编号" image="MT_B_InsDispMTEqnRightNum" onAction="MTCommand_OnInsertRightNumberedDispEqn" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+				</group>
+
+				<group id="MathType_G_Symbols" label="符号" image="MT_GB_EqnSymbols" autoScale="true">
+					<gallery idMso="EquationSymbolsInsertGallery" label="数学"></gallery>
+					<gallery idMso="SymbolInsertGallery" label="其他"></gallery>
+				</group>
+
+				<group id="MathType_G_EqnNums" label="公式编号" image="MT_GB_EqnNum" autoScale="true">
+					<splitButton id="MathType_SB_InsertNumber" size="normal">
+						<button id="MathType_B_InsertNumber" label="插入编号" screentip="插入公式编号" image="MT_B_InsEqnNumber" onAction="MTCommand_OnInsertEquationNumber" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+						<menu id="MathType_M_InsertNumber" image="MT_M_InsNumber">
+							<button id="MathType_B_FormatEqnNums" label="格式化..." screentip="格式化公式编号" image="MT_B_FormatEqnNums" onAction="MTCommand_OnFormatEquationNumbers" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+							<button id="MathType_B_UpdateEqnNums" label="更新" screentip="更新公式编号" image="MT_B_UpdateEqnNums" onAction="MTCommand_OnUpdateEquationNumbers" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+						</menu>
+					</splitButton>
+					<button id="MathType_B_EquationReference" label="插入引用" screentip="插入公式引用" image="MT_B_InsEqnReference" onAction="MTCommand_OnEquationReference" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+					<menu id="MathType_M_EqnNumsChapsSects" label="章与节" image="MT_M_EqnNumsChapsSects" getSupertip="MTCallback_GetSupertip">
+						<button id="MathType_B_InsertNextSection" label="插入下一个分节符" screentip="开始新的节编号" image="MT_B_InsNextSection" onAction="MTCommand_OnInsertNextSection" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+						<button id="MathType_B_InsertNextChapter" label="插入下一章" screentip="开始新的章编号" image="MT_B_InsNextChapter" onAction="MTCommand_OnInsertNextChapter" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+						<button id="MathType_B_MoreBreaks" label="插入分隔符..." screentip="用更多选项插入分隔符" image="MT_B_MoreBreaks" onAction="MTCommand_OnInsertChapterSectionBreak" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+						<button id="MathType_B_ModifyBreak" label="修改分隔符..." screentip="修改分隔符" image="MT_B_ModifyBreak" onAction="MTCommand_OnModifyChapterSectionBreak" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+					</menu>
+				</group>
+
+				<group id="MathType_G_Browse" label="浏览" image="MT_GB_Browse" autoScale="true">
+					<button id="MathType_B_BrowsePrev" screentip="浏览上一个" label="上一个" imageMso="BrowsePrevious" showLabel="true" onAction="MTCommand_OnBrowsePrevious" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+					<dropDown sizeString ="Chapters/Sections" getSelectedItemIndex="MTCommand_OnSelectedIndexBrowseType" id="MathType_DD_BrowseType" label="选择浏览类型" imageMso="BrowseSelector" showLabel="false" onAction="MTCommand_OnBrowseType" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip">
+						<item id="MathType_I_BrowseEqns" image="MT_I_BrowseEqns" screentip="浏览公式" label="公式"/>
+						<item id="MathType_I_BrowseEqnNums" image="MT_I_BrowseNums" screentip="浏览公式编号" label="公式编号"/>
+						<item id="MathType_I_BrowseEqnBreaks" image="MT_I_BrowseBreaks" screentip="浏览章节分隔符" label="章/节"/>
+					</dropDown>
+					<button id="MathType_B_BrowseNext" screentip="浏览下一个" label="下一个" imageMso="BrowseNext" showLabel="true" onAction="MTCommand_OnBrowseNext" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+				</group>
+
+				<group id="MathType_G_Format" label="格式化" image="MT_GB_Format" autoScale="true">
+					<button id="MathType_B_SetEqnPrefs" label="公式偏好设置..." screentip="加载 MathType 偏好设置文件" image="MT_B_SetEqnPrefs" onAction="MTCommand_OnSetEquationPrefs" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+					<button id="MathType_B_FormatEqns" label="格式化公式..." screentip="格式化公式"  image="MT_B_FormatEqns" onAction="MTCommand_OnFormatEquations" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+					<button id="MathType_B_ConvertEqns" label="转换公式..." screentip="转换公式"  image="MT_B_ConvertEqns" onAction="MTCommand_OnConvertEquations" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+				</group>
+
+				<group id="MathType_G_Publish" label="发布" image="MT_GB_Publish" autoScale="true">
+					<button id="MathType_B_ExportEqns" label="导出公式..." screentip="将公式导出为图像文件" image="MT_B_ExportEqns" onAction="MTCommand_OnExportEquations" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+					<button id="MathType_B_MathPage" label="发布到 MathPage..." screentip="发布到 MathPage" image="MT_B_MathPage" onAction="MTCommand_OnMathPage" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+					<button id="MathType_B_TeXToggle" label="切换 TeX" screentip="在 TeX 和 MathType 公式之间切换 (Alt-\)" image="MT_B_TeXToggle" onAction="MTCommand_OnTexToggle" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+				</group>
+
+				<group id="MathType_G_Help" label="MathType" image="MT_GB_Help" autoScale="true">
+					<splitButton id="MathType_SB_Help" size="normal">
+						<button id="MathType_B_Help" label="MathType 帮助" screentip="MathType 帮助" image="MT_B_Help" onAction="MTCommand_OnHelpContents" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+						<menu id="MathType_M_Help" label="帮助" image="MT_M_Help">
+							<button id="MathType_B_HelpContents" label="目录..." screentip="MathType 帮助" image="MT_B_Help" onAction="MTCommand_OnHelpContents" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+							<button id="MathType_B_HelpMTInWord" label="在 Word 中使用 MathType..." screentip="与 Microsoft Word 一起使用 MathType 的帮助" image="MT_B_Help" onAction="MTCommand_OnHelpMTInWord" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+							<menuSeparator id="MathType_MS_Help1"/>
+							<button id="MathType_B_HelpUnlockReg" onAction="MTCommand_OnUnlockReg" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip" getLabel="MTCallback_GetLabel" getScreentip="MTCallback_GetScreenTip"/>
+							<menuSeparator id="MathType_MS_Help2"/>
+						<button id="MathType_B_HelpAboutMT" label="关于 MathType..." screentip="查看版本和产品密钥" onAction="MTCommand_OnAboutMT" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+						</menu>
+					</splitButton>
+					<splitButton id="MathType_SB_Web" size="normal">
+						<button id="MathType_B_Web" label="网络上的 MathType..." screentip="MathType 主页" image="MT_B_Web" onAction="MTCommand_OnWebHomePage" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+						<menu id="MathType_M_OnTheWeb" label="网络上的 MathType" image="MT_M_OnTheWeb">
+							<button id="MathType_B_WebHomePage" label="MathType 主页..." screentip="MathType 主页" image="MT_B_Web" onAction="MTCommand_OnWebHomePage" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+							<button id="MathType_B_WebSupport" label="在线支持..." screentip="在线支持" onAction="MTCommand_OnWebSupport" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+							<button id="MathType_B_WebEmailFeedback" label="通过电子邮件发送反馈..." screentip="通过电子邮件发送反馈" onAction="MTCommand_OnWebEmailFeedback" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+							<button id="MathType_B_WebOrderMT" label="购买 MathType..." screentip="转到 Design Science 的在线商店" onAction="MTCommand_OnWebOrderMathType" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+						</menu>
+					</splitButton>
+					<button id="MathType_B_FutureMT" label="未来的 MathType..." screentip="了解并贡献 MathType 的未来" image="MT_B_FutureMT" onAction="MTCommand_OnFutureMT" getEnabled="MTCallback_GetEnabled" getSupertip="MTCallback_GetSupertip"/>
+					<dialogBoxLauncher>
+						<button id="MathType_DL_MTOptions" screentip="MathType 选项" getSupertip="MTCallback_GetSupertip" getEnabled="MTCallback_GetEnabled"	onAction="MTCommand_OnMTOptions" />
+					</dialogBoxLauncher>
+					
+				</group>
+
+			</tab>
+		</tabs>
+		<!--<contextualTabs>
+		</contextualTabs>-->
+	</ribbon>
+</customUI>

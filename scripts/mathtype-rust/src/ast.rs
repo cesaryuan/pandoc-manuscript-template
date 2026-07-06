@@ -421,13 +421,14 @@ pub(crate) enum EnvironmentKind {
     Split,
     Aligned,
     AlignAt,
+    // Reserved for a native `alignedat` path if future MathType probes stop using fallback.
+    #[allow(dead_code)]
     AlignedAt,
     Cases,
     RightCases,
     Gather,
     Gathered,
 }
-
 
 
 

@@ -183,10 +183,6 @@ fn layout_environments_parse_and_render() {
             EnvironmentKind::Split,
         ),
         (
-            "\\begin{alignedat}{2}10&x+&3&y=2\\\\3&x+&13&y=4\\end{alignedat}",
-            EnvironmentKind::AlignedAt,
-        ),
-        (
             "\\begin{aligned}\\sum_{\\substack{0<i<m\\\\0<j<n}}\\end{aligned}",
             EnvironmentKind::Aligned,
         ),
@@ -212,6 +208,20 @@ fn layout_environments_parse_and_render() {
             "layout environment MTEF should include body bytes"
         );
     }
+
+    let alignedat = "\\begin{alignedat}{2}10&x+&3&y=2\\\\3&x+&13&y=4\\end{alignedat}";
+    let expr = Parser::new(alignedat)
+        .parse()
+        .expect("alignedat fallback environment parses");
+    assert!(
+        expr.contains_raw_tex(),
+        "MathType keeps alignedat on the fallback wrapper path"
+    );
+    let bytes = write_mtef(alignedat, &expr).expect("alignedat fallback renders");
+    assert!(
+        bytes.len() > 28,
+        "alignedat fallback MTEF should include body bytes"
+    );
 
     for latex in [
         "\\begin{array}{cc}a&b\\\\c&d\\end{array}",
@@ -360,14 +370,17 @@ fn char_hex_escape_preserves_raw_prefix() {
     );
 }
 
-/// Ensure \middle accepts a following delimiter while bare \middle stays raw.
+/// Ensure \middle preserves MathType's raw marker while leaving the delimiter visible.
 #[test]
 fn middle_delimiter_renders_natively_when_complete() {
     let latex = "\\left(x\\middle|y\\right)+\\left\\{a\\middle\\vert b\\right\\}+\\vert";
     let expr = Parser::new(latex)
         .parse()
         .expect("complete middle delimiters parse");
-    assert_no_raw_tex(&expr);
+    assert!(
+        expr.contains_raw_tex(),
+        "MathType preserves \\middle itself as raw source"
+    );
     let bytes = write_mtef(latex, &expr).expect("middle delimiters render");
     assert!(
         bytes.len() > 28,

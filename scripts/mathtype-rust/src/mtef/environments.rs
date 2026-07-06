@@ -47,7 +47,7 @@ pub(super) fn write_environment(
                 // Bug-fix: a one-cell non-starred `align` is transparent in MathType TeX Input,
                 // but it still predeclares the shared black COLOR_DEF block before the cell.
                 write_transparent_align_cell(cell, out, current_size, writer)
-            } else {
+            } else if align_annotations_require_pile(trivia) {
                 write_annotated_align_rows(
                     rows,
                     &trivia.row_annotations,
@@ -55,15 +55,29 @@ pub(super) fn write_environment(
                     current_size,
                     writer,
                 )
+            } else {
+                write_align_matrix_record(
+                    rows,
+                    trivia,
+                    out,
+                    current_size,
+                    writer,
+                )
             }
         }
-        EnvironmentKind::AlignAt | EnvironmentKind::AlignedAt => write_annotated_align_rows(
-            rows,
-            &trivia.row_annotations,
-            out,
-            current_size,
-            writer,
-        ),
+        EnvironmentKind::AlignAt | EnvironmentKind::AlignedAt => {
+            if align_annotations_require_pile(trivia) {
+                write_annotated_align_rows(
+                    rows,
+                    &trivia.row_annotations,
+                    out,
+                    current_size,
+                    writer,
+                )
+            } else {
+                write_align_matrix_record(rows, trivia, out, current_size, writer)
+            }
+        }
         EnvironmentKind::Split => write_environment_fallback(
             EnvironmentFallbackSpec {
                 name: "split",
@@ -605,6 +619,8 @@ fn write_align_matrix_record(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    // Bug-fix: MathType wraps native align-family MATRIX payloads in an outer LINE record.
+    out.extend_from_slice(&[0x01, 0x00]);
     let col_count = rows.iter().map(Vec::len).max().unwrap_or(0);
     let padded = rows
         .iter()
@@ -924,5 +940,3 @@ pub(super) fn write_empty_matrix_cell_line(out: &mut Vec<u8>) {
 pub(super) fn expr_is_empty_sequence(expr: &Expr) -> bool {
     matches!(expr, Expr::Sequence(items) if items.is_empty())
 }
-
-

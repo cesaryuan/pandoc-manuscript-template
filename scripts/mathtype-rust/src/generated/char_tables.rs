@@ -448,7 +448,7 @@ pub(crate) const SPECIAL_CHARS: &[StyledChar] = &[
     StyledChar { ch: '\u{22f1}', typeface: FN_MT_EXTRA, mtcode: 0x22f1, font_pos: Some(0x4f), explicit_font: None },
     StyledChar { ch: '\u{22ef}', typeface: FN_MT_EXTRA, mtcode: 0x22ef, font_pos: Some(0x4c), explicit_font: None },
     StyledChar { ch: '\u{2035}', typeface: FN_MT_EXTRA, mtcode: 0x2035, font_pos: Some(0x60), explicit_font: None },
-    StyledChar { ch: '\u{ef01}', typeface: FN_SYMBOL, mtcode: 0x222b, font_pos: Some(0xf2), explicit_font: None },
+    StyledChar { ch: '\u{ef01}', typeface: FN_SPACE, mtcode: 0xef01, font_pos: None, explicit_font: None },
 ];
 
 pub(crate) const COMMAND_SPECIFIC_CHARS: &[CommandStyledChar] = &[

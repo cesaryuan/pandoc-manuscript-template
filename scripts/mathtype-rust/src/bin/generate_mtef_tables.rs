@@ -1014,7 +1014,7 @@ fn generated_raw_literal_targets() -> &'static [(char, &'static str, &'static st
 
 /// Return generated probes that must select one non-terminal visible CHAR record.
 fn generated_visible_char_targets() -> &'static [(char, &'static str, &'static str, usize)] {
-    &[('\u{ef01}', r"$\iiiint$", "special_iiiint_separator", 1)]
+    &[('\u{ef01}', r"$\iiiint$", "special_iiiint_separator", 0)]
 }
 
 /// Return parser aliases whose output is verified by MathType probes.
@@ -1568,10 +1568,18 @@ fn extract_target_record(ole_path: &Path, target: Target) -> Result<CharRecord, 
                 record.typeface == typeface && record.mtcode == mtcode && record.font_pos.is_none()
             })
             .ok_or_else(|| format!("no plain CHAR record matched {}", target.name)),
-        Selector::VisibleCharIndex { index, .. } => records
+        Selector::VisibleCharIndex { ch, index } => records
             .iter()
             .copied()
-            .filter(|record| !is_probe_placeholder(*record) && (record.options & 0x80) == 0)
+            .filter(|record| {
+                // Bug-fix: probes such as \iiiint contain repeated visible integral CHARs
+                // before the special separator glyph; keep the index relative to records
+                // matching the requested logical character so regeneration cannot select
+                // the surrounding carrier glyph.
+                !is_probe_placeholder(*record)
+                    && (record.options & 0x80) == 0
+                    && (ch != '\u{ef01}' || record.mtcode == ch as u16)
+            })
             .nth(index)
             .ok_or_else(|| format!("no visible CHAR record matched {}", target.name)),
         Selector::RawTextRun { .. } => {
@@ -1774,5 +1782,6 @@ fn is_supported_typeface(typeface: u8) -> bool {
             | FN_NUMBER
             | FN_MT_EXTRA
             | FN_TEXT_FE
+            | FN_SPACE
     )
 }

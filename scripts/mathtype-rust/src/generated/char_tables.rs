@@ -2,7 +2,7 @@
 #![allow(dead_code, unused_imports)]
 use crate::typeface::{
     EXPLICIT_FONT_NEG_1, EXPLICIT_FONT_NEG_2, FN_FUNCTION, FN_LC_GREEK,
-    FN_MT_EXTRA, FN_SYMBOL, FN_TEXT_FE, FN_UC_GREEK, FN_VARIABLE,
+    FN_MT_EXTRA, FN_SPACE, FN_SYMBOL, FN_TEXT_FE, FN_UC_GREEK, FN_VARIABLE,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -214,7 +214,6 @@ pub(crate) const SPECIAL_CHARS: &[StyledChar] = &[
     StyledChar { ch: '\u{221e}', typeface: FN_SYMBOL, mtcode: 0x221e, font_pos: Some(0xa5), explicit_font: None },
     StyledChar { ch: '\u{2190}', typeface: FN_SYMBOL, mtcode: 0x2190, font_pos: Some(0xac), explicit_font: None },
     StyledChar { ch: '\u{2026}', typeface: FN_SYMBOL, mtcode: 0x2026, font_pos: Some(0xbc), explicit_font: None },
-    StyledChar { ch: '\u{ef01}', typeface: 0x98, mtcode: 0xef01, font_pos: None, explicit_font: None },
     StyledChar { ch: '\u{2260}', typeface: FN_SYMBOL, mtcode: 0x2260, font_pos: Some(0xb9), explicit_font: None },
     StyledChar { ch: '\u{2265}', typeface: FN_SYMBOL, mtcode: 0x2265, font_pos: Some(0xb3), explicit_font: None },
     StyledChar { ch: '\u{03b6}', typeface: FN_LC_GREEK, mtcode: 0x03b6, font_pos: Some(0x7a), explicit_font: None },
@@ -444,12 +443,12 @@ pub(crate) const SPECIAL_CHARS: &[StyledChar] = &[
     StyledChar { ch: '\u{222a}', typeface: FN_SYMBOL, mtcode: 0x222a, font_pos: Some(0xc8), explicit_font: None },
     StyledChar { ch: '\u{221e}', typeface: FN_SYMBOL, mtcode: 0x221e, font_pos: Some(0xa5), explicit_font: None },
     StyledChar { ch: '\u{2026}', typeface: FN_SYMBOL, mtcode: 0x2026, font_pos: Some(0xbc), explicit_font: None },
-    StyledChar { ch: '\u{ef01}', typeface: 0x98, mtcode: 0xef01, font_pos: None, explicit_font: None },
     StyledChar { ch: '\u{22ef}', typeface: FN_MT_EXTRA, mtcode: 0x22ef, font_pos: Some(0x4c), explicit_font: None },
     StyledChar { ch: '\u{22ee}', typeface: FN_MT_EXTRA, mtcode: 0x22ee, font_pos: Some(0x4d), explicit_font: None },
     StyledChar { ch: '\u{22f1}', typeface: FN_MT_EXTRA, mtcode: 0x22f1, font_pos: Some(0x4f), explicit_font: None },
     StyledChar { ch: '\u{22ef}', typeface: FN_MT_EXTRA, mtcode: 0x22ef, font_pos: Some(0x4c), explicit_font: None },
     StyledChar { ch: '\u{2035}', typeface: FN_MT_EXTRA, mtcode: 0x2035, font_pos: Some(0x60), explicit_font: None },
+    StyledChar { ch: '\u{ef01}', typeface: FN_SYMBOL, mtcode: 0x222b, font_pos: Some(0xf2), explicit_font: None },
 ];
 
 pub(crate) const COMMAND_SPECIFIC_CHARS: &[CommandStyledChar] = &[
@@ -887,6 +886,7 @@ pub(crate) const TEX_COMMAND_CHARS: &[TexCommandChar] = &[
     TexCommandChar { command: "ddots", ch: '\u{22f1}' },
     TexCommandChar { command: "dotsb", ch: '\u{22ef}' },
     TexCommandChar { command: "backprime", ch: '\u{2035}' },
+    TexCommandChar { command: "iiiint", ch: '\u{ef01}' },
     TexCommandChar { command: "rightarrow", ch: '\u{2192}' },
     TexCommandChar { command: "gets", ch: '\u{2190}' },
     TexCommandChar { command: "lt", ch: '<' },
@@ -1025,6 +1025,7 @@ pub(crate) const TEX_COMMAND_CHARS: &[TexCommandChar] = &[
     TexCommandChar { command: "minuso", ch: '\u{29b5}' },
     TexCommandChar { command: "minuscolon", ch: '\u{2239}' },
     TexCommandChar { command: "multimap", ch: '\u{22b8}' },
+    TexCommandChar { command: "pounds", ch: '\u{00a3}' },
     TexCommandChar { command: "ncong", ch: '\u{2246}' },
     TexCommandChar { command: "ngeq", ch: '\u{2271}' },
     TexCommandChar { command: "ngeqq", ch: '\u{2271}' },
@@ -1141,6 +1142,7 @@ pub(crate) const TEX_COMMAND_CHARS: &[TexCommandChar] = &[
     TexCommandChar { command: "veebar", ch: '\u{22bb}' },
     TexCommandChar { command: "weierp", ch: '\u{2118}' },
     TexCommandChar { command: "wr", ch: '\u{2240}' },
+    TexCommandChar { command: "yen", ch: '\u{00a5}' },
 ];
 
 pub(crate) const TEX_COMMAND_SEQUENCES: &[TexCommandSequence] = &[
@@ -1247,7 +1249,3 @@ pub(crate) const BIG_OPERATOR_GLYPHS: &[BigOperatorGlyph] = &[
     BigOperatorGlyph { name: "integral", typeface: FN_SYMBOL, mtcode: 0x222b, font_pos: 0xf2, explicit_font: None, font_style_selector: None },
     BigOperatorGlyph { name: "contour_loop", typeface: FN_MT_EXTRA, mtcode: 0xee11, font_pos: 0xd1, explicit_font: None, font_style_selector: None },
 ];
-
-
-
-

@@ -113,8 +113,7 @@ fn main() -> Result<(), String> {
 
 /// Generate or reuse one MathType probe row.
 fn generate_target_row(config: &Config, target: Target) -> Result<(Target, CharRecord), String> {
-    let ole_path = config.work_dir.join(format!("{}.ole.bin", target.name));
-    let tex_path = config.work_dir.join(format!("{}.tex", target.name));
+    let (ole_path, tex_path) = cache_artifact_paths(config, target);
     fs::write(&tex_path, mathtype_tex_payload(target.formula))
         .map_err(|err| format!("failed to write {}: {err}", tex_path.display()))?;
     let record = if config.reuse_existing && ole_path.exists() {
@@ -151,8 +150,7 @@ fn generate_target_row(config: &Config, target: Target) -> Result<(Target, CharR
 
 /// Generate or reuse one raw-literal byte row from a stable MathType fallback probe.
 fn generate_raw_literal_row(config: &Config, target: Target) -> Result<(Target, Vec<u8>), String> {
-    let ole_path = config.work_dir.join(format!("{}.ole.bin", target.name));
-    let tex_path = config.work_dir.join(format!("{}.tex", target.name));
+    let (ole_path, tex_path) = cache_artifact_paths(config, target);
     fs::write(&tex_path, mathtype_tex_payload(target.formula))
         .map_err(|err| format!("failed to write {}: {err}", tex_path.display()))?;
     let bytes = if config.reuse_existing && ole_path.exists() {
@@ -189,9 +187,11 @@ fn generate_raw_literal_row(config: &Config, target: Target) -> Result<(Target, 
 
 struct Config {
     helper: PathBuf,
+    helper_hash: String,
     output: PathBuf,
     work_dir: PathBuf,
     pre_verb: String,
+    helper_args_key: String,
     reuse_existing: bool,
     report_existing: bool,
     existing_only: bool,
@@ -322,12 +322,17 @@ impl Config {
             }),
             (None, _) => None,
         };
+        let helper_hash = file_content_hash(&helper)
+            .map_err(|err| format!("failed to hash {}: {err}", helper.display()))?;
+        let helper_args_key = cache_helper_args_key(&pre_verb);
 
         Ok(Self {
             helper,
+            helper_hash,
             output,
             work_dir,
             pre_verb,
+            helper_args_key,
             reuse_existing,
             report_existing,
             existing_only,
@@ -368,7 +373,7 @@ fn report_existing_targets(config: &Config) -> Result<(), String> {
     let mut invalid = Vec::new();
     let targets = config.selected_targets()?;
     for target in &targets {
-        let ole_path = config.work_dir.join(format!("{}.ole.bin", target.name));
+        let (ole_path, _) = cache_artifact_paths(config, *target);
         if !ole_path.exists() {
             missing.push(*target);
             continue;
@@ -428,8 +433,7 @@ fn write_probe_manifest(config: &Config) -> Result<(), String> {
     };
     let mut lines = String::new();
     for target in &targets {
-        let ole_path = config.work_dir.join(format!("{}.ole.bin", target.name));
-        let tex_path = config.work_dir.join(format!("{}.tex", target.name));
+        let (ole_path, tex_path) = cache_artifact_paths(config, *target);
         // Manifest rows are also runnable probe inputs, so keep the .tex cache materialized.
         fs::write(&tex_path, mathtype_tex_payload(target.formula))
             .map_err(|err| format!("failed to write {}: {err}", tex_path.display()))?;
@@ -480,6 +484,81 @@ fn probe_manifest_cache_status(ole_path: &Path, target: Target) -> &'static str 
     } else {
         "invalid"
     }
+}
+
+/// Return the cache paths for one probe while binding reuse to the current helper setup.
+fn cache_artifact_paths(config: &Config, target: Target) -> (PathBuf, PathBuf) {
+    let stem = format!("{}-{}", target.name, probe_cache_key(config, target));
+    (
+        config.work_dir.join(format!("{stem}.ole.bin")),
+        config.work_dir.join(format!("{stem}.tex")),
+    )
+}
+
+/// Build a stable cache key from the probe formula, helper binary, and effective helper flags.
+fn probe_cache_key(config: &Config, target: Target) -> String {
+    let formula_hash = stable_hash_hex(target.formula.as_bytes());
+    let material = format!(
+        "formula_hash={formula_hash}\nformula={}\nhelper_hash={}\nhelper_args={}\n",
+        target.formula, config.helper_hash, config.helper_args_key
+    );
+    stable_hash_hex(material.as_bytes())
+}
+
+/// Hash one file with a deterministic digest so cache keys remain stable across runs.
+fn file_content_hash(path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path).map_err(|err| err.to_string())?;
+    Ok(stable_hash_hex(&bytes))
+}
+
+/// Serialize helper CLI arguments for cache keys with normalized probe paths.
+///
+/// The concrete input/output cache paths depend on the cache key itself, so this keeps the
+/// effective flags exact while replacing those two path values with stable placeholders.
+fn cache_helper_args_key(pre_verb: &str) -> String {
+    mathtype_helper_args(
+        pre_verb,
+        Path::new("<formula-tex>"),
+        Path::new("<probe-ole>"),
+    )
+    .join("\n")
+}
+
+/// Return the exact helper argument vector used for one MathType probe invocation.
+fn mathtype_helper_args(pre_verb: &str, tex_path: &Path, ole_path: &Path) -> Vec<String> {
+    vec![
+        "--method".to_string(),
+        "set-data".to_string(),
+        "--pre-verb".to_string(),
+        pre_verb.to_string(),
+        "--format".to_string(),
+        "TeX Input Language".to_string(),
+        "--input".to_string(),
+        tex_path.to_string_lossy().into_owned(),
+        "--output".to_string(),
+        ole_path.to_string_lossy().into_owned(),
+        "--encoding".to_string(),
+        "utf16le".to_string(),
+        "--no-verb".to_string(),
+    ]
+}
+
+/// Return a short deterministic hex digest for cache-path naming.
+fn stable_hash_hex(bytes: &[u8]) -> String {
+    format!("{:016x}", stable_hash_u64(bytes))
+}
+
+/// Compute a deterministic FNV-1a hash without pulling in an extra dependency for the generator.
+fn stable_hash_u64(bytes: &[u8]) -> u64 {
+    const OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+    const PRIME: u64 = 0x100000001b3;
+
+    let mut hash = OFFSET_BASIS;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(PRIME);
+    }
+    hash
 }
 
 /// Print section counts for doc-derived Supported Functions probe targets.
@@ -641,7 +720,7 @@ fn build_targets(
         });
     }
     for &(command, logical) in SUPPORTED_SYMBOL_ALIASES {
-        if command_has_non_alias_generated_target(command) {
+        if !should_probe_supported_symbol_alias(command) {
             continue;
         }
         let formula = Box::leak(format!("$\\{command}$").into_boxed_str());
@@ -829,6 +908,15 @@ fn build_targets(
     Ok(targets)
 }
 
+/// Return true when a semantic Supported Functions alias should learn a command-specific CHAR.
+fn should_probe_supported_symbol_alias(command: &str) -> bool {
+    // Some KaTeX-style aliases are useful semantic parser aliases even though MathType TeX
+    // Input preserves the source command as raw text. Probing those as native CHAR records
+    // would fail with no visible target glyph.
+    !command_has_non_alias_generated_target(command)
+        && !raw_fallback::is_known_mathtype_raw_command(command)
+}
+
 /// Build opt-in probe targets from Supported Functions single-command snippets.
 fn supported_function_symbol_targets(
     supported: &SupportedFunctionsConfig,
@@ -1000,9 +1088,6 @@ fn command_has_non_alias_generated_target(command: &str) -> bool {
         || generated_big_symbol_targets()
             .iter()
             .any(|(_, formula, _)| tex_command_from_formula(formula) == Some(command))
-        || delimiter_command_aliases()
-            .iter()
-            .any(|(alias, _)| *alias == command)
         || tex_command_aliases()
             .iter()
             .any(|(alias, _)| *alias == command)
@@ -1376,14 +1461,9 @@ fn run_mathtype_helper(
 ) -> Result<(), String> {
     let _ = fs::remove_file(ole_path);
     let mut command = Command::new(helper);
-    command.args(["--method", "set-data"]);
-    command.args(["--pre-verb", pre_verb]);
+    let args = mathtype_helper_args(pre_verb, tex_path, ole_path);
     let mut child = command
-        .args(["--format", "TeX Input Language", "--input"])
-        .arg(tex_path)
-        .args(["--output"])
-        .arg(ole_path)
-        .args(["--encoding", "utf16le", "--no-verb"])
+        .args(&args)
         .spawn()
         .map_err(|err| format!("failed to run {}: {err}", helper.display()))?;
     let status = match wait_with_timeout(&mut child, Duration::from_millis(timeout_ms)) {
@@ -1696,5 +1776,3 @@ fn is_supported_typeface(typeface: u8) -> bool {
             | FN_TEXT_FE
     )
 }
-
-

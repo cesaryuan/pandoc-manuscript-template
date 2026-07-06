@@ -213,7 +213,7 @@ impl Config {
         let mut output = PathBuf::from(r"src\generated\char_tables.rs");
         let mut work_dir = PathBuf::from(r".pmt\mtef-table-generation");
         let mut pre_verb = "2".to_string();
-        let mut reuse_existing = false;
+        let mut reuse_existing = true;
         let mut report_existing = false;
         let mut existing_only = false;
         let mut timeout_ms = 30_000u64;
@@ -258,6 +258,12 @@ impl Config {
                         })?)?;
                 }
                 "--reuse-existing" => reuse_existing = true,
+                "--no-reuse-existing" => {
+                    // Default behavior reuses cached OLE probes when they are
+                    // already extractable. Keep one explicit escape hatch for
+                    // forced regeneration during table-audit work.
+                    reuse_existing = false;
+                }
                 "--existing-only" => {
                     reuse_existing = true;
                     existing_only = true;
@@ -610,6 +616,14 @@ fn build_targets(
             selector: Selector::LastChar { ch: logical },
         });
     }
+    for &(logical, tex, name, index) in generated_visible_char_targets() {
+        targets.push(Target {
+            name,
+            category: Category::Special,
+            formula: tex,
+            selector: Selector::VisibleCharIndex { ch: logical, index },
+        });
+    }
     for &(logical, tex, name) in generated_command_specific_targets() {
         targets.push(Target {
             name,
@@ -908,6 +922,11 @@ fn generated_raw_literal_targets() -> &'static [(char, &'static str, &'static st
         "raw_literal_oplus",
         3,
     )]
+}
+
+/// Return generated probes that must select one non-terminal visible CHAR record.
+fn generated_visible_char_targets() -> &'static [(char, &'static str, &'static str, usize)] {
+    &[('\u{ef01}', r"$\iiiint$", "special_iiiint_separator", 1)]
 }
 
 /// Return parser aliases whose output is verified by MathType probes.
@@ -1677,3 +1696,5 @@ fn is_supported_typeface(typeface: u8) -> bool {
             | FN_TEXT_FE
     )
 }
+
+

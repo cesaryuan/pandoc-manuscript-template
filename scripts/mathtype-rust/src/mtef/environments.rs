@@ -42,17 +42,34 @@ pub(super) fn write_environment(
         EnvironmentKind::Array => write_array_environment(rows, trivia, out, current_size, writer),
         EnvironmentKind::Align => {
             if let Some(cell) = transparent_failure_environment_cell(rows) {
-                write_expr(cell, out, current_size, writer)
+                write_transparent_align_cell(cell, out, current_size, writer)
+            } else if let Some(cell) = transparent_environment_cell(rows) {
+                // Bug-fix: a one-cell non-starred `align` is transparent in MathType TeX Input,
+                // but it still predeclares the shared black COLOR_DEF block before the cell.
+                write_transparent_align_cell(cell, out, current_size, writer)
             } else {
-                write_align_matrix_record(rows, out, current_size, writer)
+                write_annotated_align_rows(
+                    rows,
+                    &trivia.row_annotations,
+                    out,
+                    current_size,
+                    writer,
+                )
             }
         }
-        EnvironmentKind::AlignAt => write_align_matrix_record(rows, out, current_size, writer),
+        EnvironmentKind::AlignAt | EnvironmentKind::AlignedAt => write_annotated_align_rows(
+            rows,
+            &trivia.row_annotations,
+            out,
+            current_size,
+            writer,
+        ),
         EnvironmentKind::Split => write_environment_fallback(
             EnvironmentFallbackSpec {
                 name: "split",
                 separator: "&",
                 end_command: "\\end",
+                preserve_separatorless_row_breaks: true,
                 rows,
                 trivia,
             },
@@ -68,6 +85,7 @@ pub(super) fn write_environment(
                 name: "aligned",
                 separator: "&",
                 end_command: "\\end",
+                preserve_separatorless_row_breaks: true,
                 rows,
                 trivia,
             },
@@ -75,12 +93,12 @@ pub(super) fn write_environment(
             current_size,
             writer,
         ),
-        EnvironmentKind::AlignedAt => write_align_matrix_record(rows, out, current_size, writer),
         EnvironmentKind::Gather => write_environment_fallback(
             EnvironmentFallbackSpec {
                 name: "gather",
                 separator: "",
                 end_command: "\\end",
+                preserve_separatorless_row_breaks: true,
                 rows,
                 trivia,
             },
@@ -93,6 +111,7 @@ pub(super) fn write_environment(
                 name: "gathered",
                 separator: "",
                 end_command: "\\end",
+                preserve_separatorless_row_breaks: false,
                 rows,
                 trivia,
             },
@@ -114,6 +133,78 @@ pub(super) fn write_environment(
                 color: ColorState::Black,
             })
         }
+    }
+}
+
+/// Return true when MathType stops using native align-column layout for row-annotated multirow alignments.
+fn align_annotations_require_pile(trivia: &EnvironmentTrivia) -> bool {
+    trivia.row_annotations.len() > 1
+        && trivia.row_annotations.iter().any(|annotation| {
+            annotation.tag.is_some() || annotation.has_label || annotation.suppress_number
+        })
+}
+
+/// Write align rows using MathType's dedicated row-stack PILE header.
+fn write_annotated_align_rows(
+    rows: &[Vec<Expr>],
+    annotations: &[EnvironmentRowAnnotation],
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    // Bug-fix: native `align`-family environments stack visible rows in a
+    // dedicated PILE structure instead of reusing a plain MATRIX cell grid.
+    out.extend_from_slice(&[0x04, 0x00, 0x01, 0x01]);
+    let mut state = WriteState {
+        size: current_size,
+        color: ColorState::Default,
+    };
+    for (row_index, row) in rows.iter().enumerate() {
+        if row_index > 0 {
+            if state.size != current_size {
+                write_size(current_size, out);
+            }
+            color_default(out);
+        }
+        let annotation = annotations.get(row_index).cloned().unwrap_or_default();
+        state = write_line(
+            &annotated_align_row_expr(row, &annotation),
+            out,
+            current_size,
+            writer,
+        )?;
+    }
+    Ok(state)
+}
+
+/// Build one visible row line for MathType's annotated-align row-stack path.
+fn annotated_align_row_expr(cells: &[Expr], annotation: &EnvironmentRowAnnotation) -> Expr {
+    let mut items = Vec::new();
+    for cell in cells {
+        append_sequence_items(&mut items, cell);
+    }
+    if let Some(tag) = &annotation.tag {
+        items.push(Expr::RawTex("\\tag".to_string()));
+        append_sequence_items(&mut items, tag);
+    }
+    collapse_sequence_items(items)
+}
+
+/// Flatten one row fragment without dropping raw or hybrid fallback items.
+fn append_sequence_items(items: &mut Vec<Expr>, expr: &Expr) {
+    match expr {
+        Expr::Sequence(sequence) => items.extend(sequence.iter().cloned()),
+        other if expr_is_empty_sequence(other) => {}
+        other => items.push(other.clone()),
+    }
+}
+
+/// Collapse one temporary item list back into the most compact expression form.
+fn collapse_sequence_items(items: Vec<Expr>) -> Expr {
+    match items.as_slice() {
+        [] => Expr::Sequence(Vec::new()),
+        [item] => item.clone(),
+        _ => Expr::Sequence(items),
     }
 }
 
@@ -139,6 +230,7 @@ struct EnvironmentFallbackSpec<'a> {
     name: &'a str,
     separator: &'a str,
     end_command: &'a str,
+    preserve_separatorless_row_breaks: bool,
     rows: &'a [Vec<Expr>],
     trivia: &'a EnvironmentTrivia,
 }
@@ -154,6 +246,19 @@ fn write_environment_fallback(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    let consumed_begin_prefix = writer.parent_sequence_has_previous_sibling
+        && spec
+            .trivia
+            .row_leading
+            .first()
+            .is_some_and(|prefix| !prefix.is_empty());
+    if consumed_begin_prefix {
+        let begin_prefix = spec.trivia.row_leading.first().map(String::as_str).unwrap_or("");
+        // Bug-fix: when one fallback environment appears inline after a visible
+        // sibling, MathType keeps the same-line source space in the raw run
+        // immediately before the nested `\begin`.
+        write_raw_tex_text(begin_prefix, out)?;
+    }
     write_raw_tex_text("\\begin", out)?;
     writer.ensure_black_color_def(out);
     let mut wrote_name_color = false;
@@ -176,6 +281,11 @@ fn write_environment_fallback(
             .get(row_index)
             .map(String::as_str)
             .unwrap_or("");
+        let row_prefix = if row_index == 0 && consumed_begin_prefix {
+            ""
+        } else {
+            row_prefix
+        };
         let separator_prefixes = spec
             .trivia
             .separator_leading
@@ -189,8 +299,10 @@ fn write_environment_fallback(
                 continue;
             }
             let mut after_raw_separator = false;
-            let needs_row_leading_prefix =
-                row_index > 0 && cell_index == 0 && !row_prefix.is_empty();
+            let needs_row_leading_prefix = row_index > 0
+                && cell_index == 0
+                && !row_prefix.is_empty()
+                && (!spec.separator.is_empty() || spec.preserve_separatorless_row_breaks);
             if cell_index > 0 {
                 if state.size != current_size {
                     write_size(current_size, out);
@@ -221,16 +333,18 @@ fn write_environment_fallback(
                     color_black(out);
                 }
             } else if row_index > 0 && cell_index == 0 && spec.separator.is_empty() {
-                if state.color != ColorState::Default {
+                if spec.preserve_separatorless_row_breaks && state.color != ColorState::Default {
                     color_default(out);
                 }
-                if !row_prefix.is_empty() {
+                if spec.preserve_separatorless_row_breaks && !row_prefix.is_empty() {
                     write_raw_tex_text(row_prefix, out)?;
                 }
-                write_raw_tex_text("\\\\", out)?;
-                after_raw_separator = true;
-                if !expr_starts_with_space(cell) && !expr_starts_with_line_layout_object(cell) {
-                    color_black(out);
+                if spec.preserve_separatorless_row_breaks {
+                    write_raw_tex_text("\\\\", out)?;
+                    after_raw_separator = true;
+                    if !expr_starts_with_space(cell) && !expr_starts_with_line_layout_object(cell) {
+                        color_black(out);
+                    }
                 }
             } else if needs_row_leading_prefix {
                 if state.color != ColorState::Default {
@@ -373,6 +487,7 @@ fn write_nested_aligned_fallback(
             name: "aligned",
             separator: "&",
             end_command: "\\end",
+            preserve_separatorless_row_breaks: true,
             rows,
             trivia,
         },
@@ -418,6 +533,22 @@ fn transparent_environment_cell(rows: &[Vec<Expr>]) -> Option<&Expr> {
 fn transparent_failure_environment_cell(rows: &[Vec<Expr>]) -> Option<&Expr> {
     let cell = transparent_environment_cell(rows)?;
     expr_is_translation_failed_placeholder(cell).then_some(cell)
+}
+
+/// Write one transparent `align` cell while keeping MathType's shared COLOR_DEF prelude.
+fn write_transparent_align_cell(
+    cell: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    if !expr_starts_with_self_opening(cell) {
+        // Bug-fix: transparent one-cell `align` formulas that start with a raw fallback
+        // command such as `\shoveleft` should reuse that command's own opening bytes.
+        writer.ensure_black_color_def(out);
+        color_black(out);
+    }
+    write_expr(cell, out, current_size, writer)
 }
 
 /// Return true for the exact MathType failure placeholder, allowing thin wrappers.
@@ -466,10 +597,10 @@ fn write_fallback_cell_after_default_space(
     }
     write_expr(expr, out, current_size, writer)
 }
-
 /// Write align rows, padding omitted leading alignment cells on continuation rows.
 fn write_align_matrix_record(
     rows: &[Vec<Expr>],
+    _trivia: &EnvironmentTrivia,
     out: &mut Vec<u8>,
     current_size: SizeState,
     writer: &mut MtefWriter,
@@ -491,6 +622,7 @@ fn write_align_matrix_record(
     write_matrix_record(&padded, out, current_size, writer)
 }
 
+/// Write one multirow alignment whose row endings carry MathType numbering metadata.
 /// Write a two-sided fence template whose main slot is a MATRIX record.
 fn write_fenced_matrix(
     selector: u8,
@@ -521,6 +653,11 @@ fn write_left_fenced_matrix(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<(), String> {
+    if writer.emit_top_fenced_matrix_color {
+        writer.emit_top_fenced_matrix_color = false;
+        writer.ensure_black_color_def(out);
+        color_black(out);
+    }
     out.extend_from_slice(&[0x03, 0x00, 0x02, 0x01, 0x00]);
     color_default(out);
     write_matrix_slot_line(rows, out, current_size, writer, MatrixHeaderStyle::Cases)?;
@@ -536,6 +673,11 @@ fn write_right_fenced_matrix(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<(), String> {
+    if writer.emit_top_fenced_matrix_color {
+        writer.emit_top_fenced_matrix_color = false;
+        writer.ensure_black_color_def(out);
+        color_black(out);
+    }
     out.extend_from_slice(&[0x03, 0x00, 0x02, 0x02, 0x00]);
     color_default(out);
     write_matrix_slot_line(rows, out, current_size, writer, MatrixHeaderStyle::Cases)?;
@@ -782,3 +924,5 @@ pub(super) fn write_empty_matrix_cell_line(out: &mut Vec<u8>) {
 pub(super) fn expr_is_empty_sequence(expr: &Expr) -> bool {
     matches!(expr, Expr::Sequence(items) if items.is_empty())
 }
+
+

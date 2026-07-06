@@ -23,6 +23,8 @@ mod mathtype_input;
 mod mtef;
 #[path = "../parser.rs"]
 mod parser;
+
+use ast::HybridPart;
 #[path = "../raw_fallback.rs"]
 mod raw_fallback;
 #[path = "../typeface.rs"]
@@ -1303,6 +1305,19 @@ fn collect_raw_commands(expr: &Expr, commands: &mut Vec<String>) {
                 commands.push(command);
             }
         }
+        Expr::DefaultColor(content) => collect_raw_commands(content, commands),
+        Expr::HybridLayout(parts) => {
+            for part in parts {
+                match part {
+                    HybridPart::Raw(text) => {
+                        if let Some(command) = raw_text_command(text) {
+                            commands.push(command);
+                        }
+                    }
+                    HybridPart::Line(expr) => collect_raw_commands(expr, commands),
+                }
+            }
+        }
         Expr::Sequence(items) => items
             .iter()
             .for_each(|item| collect_raw_commands(item, commands)),
@@ -1313,9 +1328,11 @@ fn collect_raw_commands(expr: &Expr, commands: &mut Vec<String>) {
         | Expr::ArrowAccent { content, .. }
         | Expr::BarTemplate { content, .. }
         | Expr::Strike { content, .. }
+        | Expr::Marked(content)
         | Expr::NotRelation(content)
         | Expr::Sqrt(content)
-        | Expr::Delimited { content, .. } => collect_raw_commands(content, commands),
+        | Expr::Delimited { content, .. }
+        | Expr::OneSidedDelimited { content, .. } => collect_raw_commands(content, commands),
         Expr::Script { base, sub, sup } => {
             collect_raw_commands(base, commands);
             if let Some(sub) = sub {
@@ -1370,7 +1387,24 @@ fn collect_raw_commands(expr: &Expr, commands: &mut Vec<String>) {
                 .into_iter()
                 .for_each(|expr| collect_raw_commands(expr, commands));
         }
+        Expr::FallbackBigOp { body, .. } => collect_raw_commands(body, commands),
         Expr::Limit { lower, upper, .. } => {
+            lower
+                .as_deref()
+                .into_iter()
+                .for_each(|expr| collect_raw_commands(expr, commands));
+            upper
+                .as_deref()
+                .into_iter()
+                .for_each(|expr| collect_raw_commands(expr, commands));
+        }
+        Expr::MathOp {
+            content,
+            lower,
+            upper,
+            ..
+        } => {
+            collect_raw_commands(content, commands);
             lower
                 .as_deref()
                 .into_iter()
@@ -1403,6 +1437,7 @@ fn collect_raw_commands(expr: &Expr, commands: &mut Vec<String>) {
         | Expr::CommandSymbol { .. }
         | Expr::BigSymbol(_)
         | Expr::SumOperatorSymbol(_)
+        | Expr::RawBoundary
         | Expr::Space(_)
         | Expr::FunctionName(_)
         | Expr::Text(_)

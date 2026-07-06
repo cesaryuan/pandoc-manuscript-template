@@ -241,6 +241,16 @@ fn layout_environments_parse_and_render() {
 /// Check the top-level matrix kind without tying the test to row internals.
 fn assert_matrix_kind(expr: &Expr, expected: MatrixKind) {
     match expr {
+        Expr::HybridLayout(parts) => {
+            let matrix = parts
+                .iter()
+                .find_map(|part| match part {
+                    crate::ast::HybridPart::Line(expr) => Some(expr.as_ref()),
+                    crate::ast::HybridPart::Raw(_) => None,
+                })
+                .expect("hybrid matrix expression should still contain visible content");
+            assert_matrix_kind(matrix, expected);
+        }
         Expr::Sequence(items) if items.len() == 1 => assert_matrix_kind(&items[0], expected),
         Expr::Sequence(items) => {
             let matrix = items
@@ -276,6 +286,16 @@ fn assert_matrix_kind(expr: &Expr, expected: MatrixKind) {
 /// Check the top-level environment kind without tying the test to row internals.
 fn assert_environment_kind(expr: &Expr, expected: EnvironmentKind) {
     match expr {
+        Expr::HybridLayout(parts) => {
+            let environment = parts
+                .iter()
+                .find_map(|part| match part {
+                    crate::ast::HybridPart::Line(expr) => Some(expr.as_ref()),
+                    crate::ast::HybridPart::Raw(_) => None,
+                })
+                .expect("hybrid environment expression should still contain visible content");
+            assert_environment_kind(environment, expected);
+        }
         Expr::Sequence(items) if items.len() == 1 => assert_environment_kind(&items[0], expected),
         Expr::Environment { kind, .. } => assert_eq!(*kind, expected),
         other => panic!("expected environment expression, found {other:?}"),
@@ -488,6 +508,7 @@ fn known_raw_simple_aliases_stay_raw_fallback() {
         );
     }
 }
+
 
 /// Ensure Supported Functions relation aliases parse through the generated table.
 #[test]
@@ -804,6 +825,13 @@ fn unsupported_environment_renders_as_raw_fallback() {
 fn assert_no_raw_tex(expr: &Expr) {
     match expr {
         Expr::RawTex(text) => panic!("unexpected raw TeX fallback: {text}"),
+        Expr::DefaultColor(content) => assert_no_raw_tex(content),
+        Expr::HybridLayout(parts) => parts.iter().for_each(|part| match part {
+            crate::ast::HybridPart::Raw(text) => {
+                panic!("unexpected raw TeX fallback in hybrid layout: {text}")
+            }
+            crate::ast::HybridPart::Line(expr) => assert_no_raw_tex(expr),
+        }),
         Expr::Sequence(items) => items.iter().for_each(assert_no_raw_tex),
         Expr::Color { content, .. }
         | Expr::Style { content, .. }
@@ -814,7 +842,8 @@ fn assert_no_raw_tex(expr: &Expr) {
         | Expr::Strike { content, .. }
         | Expr::NotRelation(content)
         | Expr::Sqrt(content)
-        | Expr::Delimited { content, .. } => assert_no_raw_tex(content),
+        | Expr::Delimited { content, .. }
+        | Expr::OneSidedDelimited { content, .. } => assert_no_raw_tex(content),
         Expr::Script { base, sub, sup } => {
             assert_no_raw_tex(base);
             sub.as_deref().into_iter().for_each(assert_no_raw_tex);
@@ -850,7 +879,18 @@ fn assert_no_raw_tex(expr: &Expr) {
             upper.as_deref().into_iter().for_each(assert_no_raw_tex);
             body.as_deref().into_iter().for_each(assert_no_raw_tex);
         }
+        Expr::FallbackBigOp { body, .. } => assert_no_raw_tex(body),
         Expr::Limit { lower, upper, .. } => {
+            lower.as_deref().into_iter().for_each(assert_no_raw_tex);
+            upper.as_deref().into_iter().for_each(assert_no_raw_tex);
+        }
+        Expr::MathOp {
+            content,
+            lower,
+            upper,
+            ..
+        } => {
+            assert_no_raw_tex(content);
             lower.as_deref().into_iter().for_each(assert_no_raw_tex);
             upper.as_deref().into_iter().for_each(assert_no_raw_tex);
         }
@@ -876,6 +916,8 @@ fn assert_no_raw_tex(expr: &Expr) {
             .iter()
             .flat_map(|row| row.iter())
             .for_each(assert_no_raw_tex),
+        Expr::Marked(content) => assert_no_raw_tex(content),
+        Expr::RawBoundary => {},
         Expr::Char(_)
         | Expr::MarkedChar(_)
         | Expr::CommandSymbol { .. }

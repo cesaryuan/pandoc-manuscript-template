@@ -1,5 +1,6 @@
 use super::*;
 use crate::typeface::FN_EXPAND;
+use std::collections::HashMap;
 
 /// Write simple MathType embellishments such as \bar{I} and \hat{P}.
 pub(super) fn write_accent_expr(
@@ -20,6 +21,7 @@ pub(super) fn write_accent_expr(
             (
                 AccentKind::Bar
                 | AccentKind::Hat
+                | AccentKind::WideHat
                 | AccentKind::Breve
                 | AccentKind::Dot
                 | AccentKind::Ddot
@@ -109,13 +111,39 @@ pub(super) fn write_arrow_accent_template(
     if under && expr_is_lim_function(expr) {
         return write_lim_arrow_template(kind, expr, out, current_size, writer);
     }
-    if kind == ArrowAccentKind::Right && !under {
-        if let Some((None, ch)) = single_font_char(expr) {
-            write_embellished_char_with_code(ch, 0x0b, out, writer)?;
-            return Ok(WriteState {
-                size: current_size,
-                color: ColorState::Black,
-            });
+    if !under {
+        if let Some((font_kind, ch, repeat_count)) = repeated_arrow_accent_char(expr, kind, under) {
+            let embellishment = match kind {
+                ArrowAccentKind::Right => 0x0b,
+                ArrowAccentKind::Left => 0x0c,
+                ArrowAccentKind::LeftRight => 0x0d,
+            };
+            let embellishments = std::iter::repeat_n(embellishment, repeat_count).collect::<Vec<_>>();
+            match font_kind {
+                None => {
+                    write_embellished_char_codes(ch, &embellishments, out, writer)?;
+                    return Ok(WriteState {
+                        size: current_size,
+                        color: ColorState::Black,
+                    });
+                }
+                Some(FontKind::RomanText) => {
+                    // Bug-fix: one-character text-font vectors such as
+                    // `\mathrm{\vec{a}}` stay on MathType's compact EMBELL path.
+                    write_font_embellished_char_codes(
+                        FontKind::RomanText,
+                        ch,
+                        &embellishments,
+                        out,
+                        writer,
+                    )?;
+                    return Ok(WriteState {
+                        size: current_size,
+                        color: ColorState::Black,
+                    });
+                }
+                _ => {}
+            }
         }
     }
     out.extend_from_slice(&[0x03, 0x00, 0x1f, arrow_accent_variation(kind, under), 0x00]);
@@ -133,6 +161,69 @@ pub(super) fn write_arrow_accent_template(
         size: current_size,
         color: ColorState::Black,
     })
+}
+
+/// Write one font-wrapped compact embellishment without opening a full accent template.
+pub(super) fn write_font_embellished_char(
+    kind: FontKind,
+    ch: char,
+    embellishment: u8,
+    out: &mut Vec<u8>,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    write_font_embellished_char_codes(kind, ch, &[embellishment], out, writer)
+}
+
+/// Write one font-wrapped compact embellishment run without opening a full accent template.
+pub(super) fn write_font_embellished_char_codes(
+    kind: FontKind,
+    ch: char,
+    embellishments: &[u8],
+    out: &mut Vec<u8>,
+    writer: &mut MtefWriter,
+) -> Result<(), String> {
+    let code = ch as u32;
+    if code > u16::MAX as u32 {
+        return Err(format!("font accent character is outside BMP: {ch}"));
+    }
+    match kind {
+        FontKind::RomanText => {
+            write_styled_table_char_with_embellishments(
+                FN_TEXT,
+                code as u16,
+                None,
+                None,
+                embellishments,
+                out,
+                writer,
+            );
+            Ok(())
+        }
+        _ => Err(format!("unsupported font embellishment path for {kind:?}")),
+    }
+}
+
+/// Return one single-character arrow-accent stack, preserving font information and repeat count.
+fn repeated_arrow_accent_char(
+    expr: &Expr,
+    kind: ArrowAccentKind,
+    under: bool,
+) -> Option<(Option<FontKind>, char, usize)> {
+    match expr {
+        Expr::Char(ch) => Some((None, *ch, 1)),
+        Expr::Sequence(items) if items.len() == 1 => {
+            repeated_arrow_accent_char(&items[0], kind, under)
+        }
+        Expr::Font { kind: font_kind, content } => repeated_arrow_accent_char(content, kind, under)
+            .map(|(_, ch, count)| (Some(*font_kind), ch, count)),
+        Expr::ArrowAccent {
+            kind: inner_kind,
+            under: inner_under,
+            content,
+        } if *inner_kind == kind && *inner_under == under => repeated_arrow_accent_char(content, kind, under)
+            .map(|(font_kind, ch, count)| (font_kind, ch, count + 1)),
+        _ => None,
+    }
 }
 
 /// Write the MathType structure used by `\varinjlim` and `\varprojlim`.
@@ -158,7 +249,10 @@ fn write_lim_arrow_template(
     out.push(0x00);
     Ok(WriteState {
         size: current_size,
-        color: ColorState::Black,
+        // Bug-fix: `\varinjlim` / `\varprojlim` leave MathType on the
+        // template's default-color path, so following inline content selects
+        // black explicitly instead of inheriting it from the arrow glyph slot.
+        color: ColorState::Default,
     })
 }
 
@@ -184,6 +278,34 @@ fn arrow_accent_glyph(kind: ArrowAccentKind, under: bool) -> char {
     }
 }
 
+/// Collapse one bodyless operator into the visible glyph form template slots expect.
+pub(super) fn bodyless_operator_template_content(expr: &Expr) -> Option<Expr> {
+    match unwrap_single_sequence(expr) {
+        Expr::BigOp {
+            kind,
+            lower: None,
+            upper: None,
+            body: None,
+            ..
+        } => Some(match kind {
+            BigOpKind::Sum => Expr::SumOperatorSymbol('\u{2211}'),
+            BigOpKind::Product => Expr::BigSymbol('\u{220f}'),
+            BigOpKind::Coproduct => Expr::BigSymbol('\u{2210}'),
+            BigOpKind::Union => Expr::BigSymbol('\u{22c3}'),
+            BigOpKind::Intersection => Expr::BigSymbol('\u{22c2}'),
+        }),
+        Expr::Integral { kind } => Some(Expr::Integral { kind: *kind }),
+        Expr::IntegralOp {
+            kind,
+            lower: None,
+            upper: None,
+            body: None,
+            ..
+        } => Some(Expr::Integral { kind: *kind }),
+        _ => None,
+    }
+}
+
 /// Write long overline/underline templates for multi-character content.
 pub(super) fn write_bar_template(
     kind: BarTemplateKind,
@@ -192,6 +314,20 @@ pub(super) fn write_bar_template(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    if let Some((None, ch)) = single_font_char(content) {
+        // Bug-fix: one-character overline/underline shorthands use a compact EMBELL record
+        // instead of opening the full bar template that multi-character content needs.
+        match kind {
+            BarTemplateKind::Over => write_embellished_char(ch, &[AccentKind::Bar], out, writer)?,
+            BarTemplateKind::Under => write_embellished_char_with_code(ch, 0x1d, out, writer)?,
+        }
+        return Ok(WriteState {
+            size: current_size,
+            color: ColorState::Black,
+        });
+    }
+    let simplified_content = bodyless_operator_template_content(content);
+    let content = simplified_content.as_ref().unwrap_or(content);
     let selector = match kind {
         BarTemplateKind::Under => 0x0c,
         BarTemplateKind::Over => 0x0d,
@@ -200,9 +336,46 @@ pub(super) fn write_bar_template(
     if !expr_is_lim_function(content) {
         color_default(out);
     }
-    let content_state = write_line(content, out, current_size, writer)?;
+    if expr_is_empty_sequence(content) {
+        // Bug-fix: MathType writes an empty overline/underline slot as a null line
+        // without forcing an extra black selection on the way back out.
+        write_null_line(out);
+        out.push(0x00);
+        return Ok(WriteState {
+            size: current_size,
+            color: ColorState::Default,
+        });
+    }
+    let content_state = if let Some((prefix, followup)) = split_bar_template_raw_followup(content) {
+        // Bug-fix: raw definition fallbacks split by `RawBoundary` only keep the
+        // definition prefix inside the bar slot; MathType resumes the raw
+        // replacement text after the template closes.
+        let prefix_expr = Expr::RawTex(prefix.to_string());
+        let state = write_line(&prefix_expr, out, current_size, writer)?;
+        out.push(0x00);
+        write_raw_tex_text(followup, out)?;
+        return Ok(WriteState {
+            size: state.size,
+            color: ColorState::Default,
+        });
+    } else {
+        write_line(content, out, current_size, writer)?
+    };
     out.push(0x00);
     Ok(content_state)
+}
+
+/// Split a raw-definition fallback so the replacement suffix can leave the bar slot.
+fn split_bar_template_raw_followup(expr: &Expr) -> Option<(&str, &str)> {
+    let Expr::Sequence(items) = expr else {
+        return None;
+    };
+    match items.as_slice() {
+        [Expr::RawTex(prefix), Expr::RawBoundary, Expr::RawTex(followup)] => {
+            Some((prefix.as_str(), followup.as_str()))
+        }
+        _ => None,
+    }
 }
 
 /// Extract a single character, preserving simple font wrapper information.
@@ -290,16 +463,23 @@ fn write_hat_template_for_bold_char(ch: char, out: &mut Vec<u8>) -> Result<(), S
             typewriter_group_active: false,
             big_symbol_line_marker_pending: false,
             suppress_next_pile_color_default: false,
+            suppress_next_pile_black_selector: false,
             suppress_next_stackrel_color_default: false,
             emit_top_fenced_matrix_color: false,
             suppress_next_style_restore: false,
+            force_next_no_limits_integral_style_restore: false,
             suppress_next_limit_restore: false,
             emit_top_color_selector_one: false,
+            next_color_selector: 1,
+            named_color_selectors: HashMap::new(),
+            pending_raw_follow_selector: None,
             top_sequence_starts_default: false,
             fallback_environment_active: false,
             suppress_next_line_black: false,
             line_starts_default: false,
             parent_sequence_has_previous_sibling: false,
+            parent_sequence_previous_was_raw: false,
+            suppress_next_marked_char_marker: false,
         },
     )?;
     out.push(0x00);
@@ -352,6 +532,7 @@ fn embellishment_code(kind: AccentKind) -> u8 {
 /// MathType's `embNOT` overlay subtype used by `\not <relation>`.
 const EMBELL_NOT: u8 = 0x0a;
 pub(super) const EMBELL_PRIME: u8 = 0x05;
+pub(super) const EMBELL_DOUBLE_PRIME: u8 = 0x06;
 
 /// Write a negated relation as the base relation glyph plus MathType's `embNOT`.
 pub(super) fn write_not_relation(
@@ -363,6 +544,15 @@ pub(super) fn write_not_relation(
         Expr::Char(ch) => write_embellished_char_with_code(*ch, EMBELL_NOT, out, writer),
         Expr::CommandSymbol { command, ch } => {
             write_command_symbol_with_embellishments(command, *ch, &[EMBELL_NOT], out, writer)
+        }
+        Expr::OneSidedDelimited {
+            delimiter,
+            content,
+            ..
+        } if expr_is_empty_sequence(content) => {
+            // Bug-fix: MathType keeps `\not\left(\right.` on the native overlay
+            // path by slashing the visible fence glyph directly.
+            write_embellished_char_with_code(*delimiter, EMBELL_NOT, out, writer)
         }
         Expr::Sequence(items) if items.len() == 1 => write_not_relation(&items[0], out, writer),
         Expr::Style { content, .. } => write_not_relation(content, out, writer),
@@ -440,7 +630,7 @@ pub(super) fn write_embellished_char_with_code(
 }
 
 /// Write a CHAR record with one or more raw EMBELL subtype bytes attached.
-fn write_embellished_char_codes(
+pub(super) fn write_embellished_char_codes(
     ch: char,
     embellishments: &[u8],
     out: &mut Vec<u8>,
@@ -484,3 +674,10 @@ pub(super) fn is_math_symbol_char(ch: char) -> bool {
             | 0x2900..=0x2aff
     )
 }
+
+
+
+
+
+
+

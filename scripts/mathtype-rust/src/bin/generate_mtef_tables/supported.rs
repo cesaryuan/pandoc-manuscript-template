@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
-use super::ast::Expr;
+use super::ast::{Expr, HybridPart};
 use super::parser::{normalize_latex, Parser};
 use super::raw_fallback::is_known_mathtype_raw_command;
 
@@ -349,6 +349,19 @@ fn collect_raw_commands(expr: &Expr, commands: &mut BTreeMap<String, ()>) {
                 commands.insert(command.to_string(), ());
             }
         }
+        Expr::DefaultColor(content) => collect_raw_commands(content, commands),
+        Expr::HybridLayout(parts) => {
+            for part in parts {
+                match part {
+                    HybridPart::Raw(raw) => {
+                        if let Some(command) = raw.strip_prefix('\\').and_then(bare_control_word) {
+                            commands.insert(command.to_string(), ());
+                        }
+                    }
+                    HybridPart::Line(expr) => collect_raw_commands(expr, commands),
+                }
+            }
+        }
         Expr::Sequence(items) => {
             for item in items {
                 collect_raw_commands(item, commands);
@@ -361,9 +374,11 @@ fn collect_raw_commands(expr: &Expr, commands: &mut BTreeMap<String, ()>) {
         | Expr::ArrowAccent { content, .. }
         | Expr::BarTemplate { content, .. }
         | Expr::Strike { content, .. }
+        | Expr::Marked(content)
         | Expr::NotRelation(content)
         | Expr::Sqrt(content)
-        | Expr::Delimited { content, .. } => collect_raw_commands(content, commands),
+        | Expr::Delimited { content, .. }
+        | Expr::OneSidedDelimited { content, .. } => collect_raw_commands(content, commands),
         Expr::Script { base, sub, sup } => {
             collect_raw_commands(base, commands);
             if let Some(sub) = sub {
@@ -410,7 +425,19 @@ fn collect_raw_commands(expr: &Expr, commands: &mut BTreeMap<String, ()>) {
                 collect_raw_commands(item, commands);
             }
         }
+        Expr::FallbackBigOp { body, .. } => collect_raw_commands(body, commands),
         Expr::Limit { lower, upper, .. } => {
+            for item in [lower, upper].into_iter().flatten() {
+                collect_raw_commands(item, commands);
+            }
+        }
+        Expr::MathOp {
+            content,
+            lower,
+            upper,
+            ..
+        } => {
+            collect_raw_commands(content, commands);
             for item in [lower, upper].into_iter().flatten() {
                 collect_raw_commands(item, commands);
             }
@@ -438,6 +465,7 @@ fn collect_raw_commands(expr: &Expr, commands: &mut BTreeMap<String, ()>) {
         | Expr::CommandSymbol { .. }
         | Expr::BigSymbol(_)
         | Expr::SumOperatorSymbol(_)
+        | Expr::RawBoundary
         | Expr::Space(_)
         | Expr::FunctionName(_)
         | Expr::Text(_)

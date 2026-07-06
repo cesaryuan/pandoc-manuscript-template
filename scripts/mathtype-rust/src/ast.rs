@@ -1,15 +1,24 @@
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Expr {
     Sequence(Vec<Expr>),
+    /// Preserve visible runs that MathType writes under the default color selector instead of black.
+    DefaultColor(Box<Expr>),
+    /// Preserve MathType's hybrid fallback runs that interleave raw TeX text
+    /// with standalone LINE records, as seen in physics matrix-like macros.
+    HybridLayout(Vec<HybridPart>),
     Char(char),
     /// Preserve MathType's rare "line marker + visible CHAR" form for standalone glyph hints.
     MarkedChar(char),
+    /// Preserve MathType's "line marker + existing inline object" form used by fallback glyphs.
+    Marked(Box<Expr>),
     CommandSymbol {
         command: String,
         ch: char,
     },
     BigSymbol(char),
     SumOperatorSymbol(char),
+    /// Force two adjacent raw fallback fragments to stay in separate MathType runs.
+    RawBoundary,
     RawTex(String),
     Space(u8),
     FunctionName(String),
@@ -55,11 +64,26 @@ pub(crate) enum Expr {
         lower: Option<Box<Expr>>,
         upper: Option<Box<Expr>>,
         body: Option<Box<Expr>>,
+        placement: LimitPlacement,
+    },
+    /// Preserve MathType's fallback-line big-operator template variant used inside definitions.
+    FallbackBigOp {
+        kind: BigOpKind,
+        body: Box<Expr>,
     },
     Limit {
         name: String,
         lower: Option<Box<Expr>>,
         upper: Option<Box<Expr>>,
+        placement: LimitPlacement,
+    },
+    /// Preserve `\mathop` bodies so later scripts can become MathType tmLIM templates.
+    MathOp {
+        content: Box<Expr>,
+        lower: Option<Box<Expr>>,
+        upper: Option<Box<Expr>>,
+        placement: LimitPlacement,
+        leading_space: bool,
     },
     Integral {
         kind: IntegralKind,
@@ -69,6 +93,7 @@ pub(crate) enum Expr {
         lower: Option<Box<Expr>>,
         upper: Option<Box<Expr>>,
         body: Option<Box<Expr>>,
+        placement: LimitPlacement,
     },
     Pile {
         kind: PileKind,
@@ -114,11 +139,28 @@ pub(crate) enum Expr {
         right: char,
         content: Box<Expr>,
     },
+    OneSidedDelimited {
+        side: OneSidedDelimiterSide,
+        delimiter: char,
+        content: Box<Expr>,
+    },
     Script {
         base: Box<Expr>,
         sub: Option<Box<Expr>>,
         sup: Option<Box<Expr>>,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum HybridPart {
+    Raw(String),
+    Line(Box<Expr>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum OneSidedDelimiterSide {
+    LeftVisible,
+    RightVisible,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -127,6 +169,15 @@ pub(crate) struct EnvironmentTrivia {
     pub(crate) row_leading: Vec<String>,
     pub(crate) separator_leading: Vec<Vec<String>>,
     pub(crate) end_leading: String,
+    pub(crate) row_annotations: Vec<EnvironmentRowAnnotation>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct EnvironmentRowAnnotation {
+    pub(crate) tag: Option<Expr>,
+    pub(crate) has_label: bool,
+    pub(crate) suppress_number: bool,
+    pub(crate) suppress_command: Option<String>,
 }
 
 impl Expr {
@@ -134,7 +185,13 @@ impl Expr {
     #[allow(dead_code)]
     pub(crate) fn contains_raw_tex(&self) -> bool {
         match self {
+            Expr::RawBoundary => false,
             Expr::RawTex(_) => true,
+            Expr::DefaultColor(content) => content.contains_raw_tex(),
+            Expr::HybridLayout(parts) => parts.iter().any(|part| match part {
+                HybridPart::Raw(_) => true,
+                HybridPart::Line(expr) => expr.contains_raw_tex(),
+            }),
             Expr::Sequence(items) => items.iter().any(Expr::contains_raw_tex),
             Expr::Color { content, .. }
             | Expr::Style { content, .. }
@@ -143,9 +200,11 @@ impl Expr {
             | Expr::ArrowAccent { content, .. }
             | Expr::BarTemplate { content, .. }
             | Expr::Strike { content, .. }
+            | Expr::Marked(content)
             | Expr::NotRelation(content)
             | Expr::Sqrt(content)
-            | Expr::Delimited { content, .. } => content.contains_raw_tex(),
+            | Expr::Delimited { content, .. }
+            | Expr::OneSidedDelimited { content, .. } => content.contains_raw_tex(),
             Expr::Script { base, sub, sup } => {
                 base.contains_raw_tex()
                     || sub.as_deref().is_some_and(Expr::contains_raw_tex)
@@ -173,6 +232,13 @@ impl Expr {
             }
             Expr::BigOp {
                 lower, upper, body, ..
+            } => {
+                lower.as_deref().is_some_and(Expr::contains_raw_tex)
+                    || upper.as_deref().is_some_and(Expr::contains_raw_tex)
+                    || body.as_deref().is_some_and(Expr::contains_raw_tex)
+            }
+            Expr::FallbackBigOp { body, .. } => {
+                body.contains_raw_tex()
             }
             | Expr::IntegralOp {
                 lower, upper, body, ..
@@ -183,6 +249,16 @@ impl Expr {
             }
             Expr::Limit { lower, upper, .. } => {
                 lower.as_deref().is_some_and(Expr::contains_raw_tex)
+                    || upper.as_deref().is_some_and(Expr::contains_raw_tex)
+            }
+            Expr::MathOp {
+                content,
+                lower,
+                upper,
+                ..
+            } => {
+                content.contains_raw_tex()
+                    || lower.as_deref().is_some_and(Expr::contains_raw_tex)
                     || upper.as_deref().is_some_and(Expr::contains_raw_tex)
             }
             Expr::Brace {
@@ -211,6 +287,11 @@ impl Expr {
             | Expr::Integral { .. } => false,
         }
     }
+
+    /// Return true when this node is one named color group other than black.
+    pub(crate) fn is_non_black_color_expr(&self) -> bool {
+        matches!(self, Expr::Color { name, .. } if name != "black")
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -219,6 +300,12 @@ pub(crate) enum StyleKind {
     Text,
     Script,
     ScriptScript,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LimitPlacement {
+    Limits,
+    NoLimits,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -340,3 +427,7 @@ pub(crate) enum EnvironmentKind {
     Gather,
     Gathered,
 }
+
+
+
+

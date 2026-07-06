@@ -17,7 +17,7 @@ pub(super) fn render_tables(
          #![allow(dead_code, unused_imports)]\n\
          use crate::typeface::{\n\
          \x20   EXPLICIT_FONT_NEG_1, EXPLICIT_FONT_NEG_2, FN_FUNCTION, FN_LC_GREEK,\n\
-         \x20   FN_MT_EXTRA, FN_SYMBOL, FN_TEXT_FE, FN_UC_GREEK, FN_VARIABLE,\n\
+         \x20   FN_MT_EXTRA, FN_SPACE, FN_SYMBOL, FN_TEXT_FE, FN_UC_GREEK, FN_VARIABLE,\n\
          };\n\
          \n\
          #[derive(Clone, Copy, Debug, Eq, PartialEq)]\n\
@@ -416,6 +416,18 @@ pub(super) fn delimiter_command_aliases() -> &'static [(&'static str, char)] {
         ("rfloor", '⌋'),
         ("lceil", '⌈'),
         ("rceil", '⌉'),
+        ("ulcorner", '⌜'),
+        ("urcorner", '⌝'),
+        ("llcorner", '⌞'),
+        ("lrcorner", '⌟'),
+        ("lgroup", '⟮'),
+        ("rgroup", '⟯'),
+        ("uparrow", '↑'),
+        ("downarrow", '↓'),
+        ("updownarrow", '↕'),
+        ("Uparrow", '⇑'),
+        ("Downarrow", '⇓'),
+        ("Updownarrow", '⇕'),
     ]
 }
 

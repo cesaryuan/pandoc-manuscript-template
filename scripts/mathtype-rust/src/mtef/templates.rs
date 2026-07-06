@@ -13,13 +13,19 @@ pub(super) fn write_pile(
         return write_binom_pile(upper, lower, out, current_size, writer);
     }
     let suppress_initial_color = writer.suppress_next_pile_color_default;
+    let suppress_black_selector = writer.suppress_next_pile_black_selector;
     if suppress_initial_color {
         writer.suppress_next_pile_color_default = false;
+    }
+    if suppress_black_selector {
+        writer.suppress_next_pile_black_selector = false;
     }
     let delimiters = pile_delimiters(kind);
     if delimiters.is_some() {
         writer.ensure_black_color_def(out);
-        color_black(out);
+        if !suppress_black_selector {
+            color_black(out);
+        }
     } else if suppress_initial_color {
         writer.ensure_black_color_def(out);
     } else {
@@ -46,7 +52,11 @@ pub(super) fn write_pile(
     }
     Ok(WriteState {
         size: current_size,
-        color: ColorState::Default,
+        color: if delimiters.is_some() {
+            ColorState::Black
+        } else {
+            ColorState::Default
+        },
     })
 }
 /// Return the optional delimiter pair around a two-row pile.
@@ -103,9 +113,11 @@ fn write_horizontal_fence_template(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    let simplified_content = bodyless_operator_template_content(template.content);
+    let content = simplified_content.as_ref().unwrap_or(template.content);
     out.extend_from_slice(&[0x03, 0x00, template.selector, template.variation, 0x00]);
     color_default(out);
-    let content_state = write_line(template.content, out, current_size, writer)?;
+    let content_state = write_line(content, out, current_size, writer)?;
     let annotation_size = match current_size {
         SizeState::Full => SizeState::Sub,
         SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
@@ -178,6 +190,12 @@ pub(super) fn write_underset(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    if expr_starts_with_raw_tex(base) {
+        // Bug-fix: raw-prefixed bases such as `\ce{...}` reopen tmLIM from the
+        // inherited/default color path, while ordinary native `\underset`
+        // bodies do not emit this extra selector.
+        color_default(out);
+    }
     out.extend_from_slice(&[0x03, 0x00, 0x17, 0x10, 0x00]);
     let base_state = write_line(base, out, current_size, writer)?;
     let stack_size = match current_size {
@@ -349,6 +367,15 @@ pub(super) fn write_sqrt(
     out.extend_from_slice(&[0x03, 0x00, 0x0a, 0x00, 0x00]);
     color_default(out);
     let radicand_state = write_line(radicand, out, current_size, writer)?;
+    if expr_is_empty_sequence(radicand) {
+        // Bug-fix: an empty visible `\sqrt` target, as exposed by `\let` fallback,
+        // keeps only the empty radicand slot. MathType does not add the trailing
+        // null-index line before the same-line content that follows.
+        return Ok(WriteState {
+            size: SizeState::Sub,
+            color: ColorState::Black,
+        });
+    }
     if radicand_state.size != SizeState::Sub || expr_requires_explicit_sqrt_index_restore(radicand)
     {
         // Fractions whose denominator ends with a large-operator template can report sub size
@@ -386,3 +413,4 @@ pub(super) fn write_strike_template(
     out.push(0x00);
     Ok(content_state)
 }
+

@@ -6,6 +6,7 @@
 // Usage:
 //   cargo run --bin inspect_expr -- --input samples\generated\eq_033.tex
 //   cargo run --bin inspect_expr -- --latex "\\begin{split}...\\end{split}"
+//   cargo run --bin inspect_expr -- --latex "α β" --unmerged
 
 use std::env;
 use std::fs;
@@ -30,11 +31,13 @@ use parser::{normalize_latex, Parser};
 fn main() -> Result<(), String> {
     let mut latex = None;
     let mut input = None;
+    let mut unmerged = false;
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--latex" => latex = args.next(),
             "--input" => input = args.next().map(PathBuf::from),
+            "--unmerged" => unmerged = true,
             "--help" | "-h" => return Err(usage()),
             other => return Err(format!("unknown argument: {other}\n{}", usage())),
         }
@@ -46,7 +49,11 @@ fn main() -> Result<(), String> {
         _ => return Err("pass exactly one of --latex or --input".to_string()),
     };
     let normalized = normalize_latex(&raw);
-    let expr = Parser::new(&normalized).parse()?;
+    let expr = if unmerged {
+        Parser::new(&normalized).parse_unmerged()?
+    } else {
+        Parser::new(&normalized).parse()?
+    };
     println!("normalized={normalized}");
     println!("ast={expr:#?}");
     Ok(())
@@ -54,5 +61,5 @@ fn main() -> Result<(), String> {
 
 /// Return usage for invalid inspect_expr invocations.
 fn usage() -> String {
-    "Usage: inspect_expr (--latex <tex> | --input <file>)".to_string()
+    "Usage: inspect_expr (--latex <tex> | --input <file>) [--unmerged]".to_string()
 }

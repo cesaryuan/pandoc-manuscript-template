@@ -10,12 +10,21 @@ pub(super) fn expr_starts_with_top_matrix(expr: &Expr) -> bool {
                 | EnvironmentKind::Aligned
                 | EnvironmentKind::AlignAt
                 | EnvironmentKind::AlignedAt
-                | EnvironmentKind::Split,
+                | EnvironmentKind::Split
+                | EnvironmentKind::Cases
+                | EnvironmentKind::RightCases,
             ..
         } => true,
+        Expr::MathOp {
+            lower, upper, ..
+        } => lower.is_some() || upper.is_some(),
         Expr::Limit { .. } => true,
         Expr::Underset { .. } => true,
         Expr::Matrix { .. } => true,
+        Expr::HybridLayout(parts) => parts.first().is_some_and(|part| match part {
+            HybridPart::Raw(_) => false,
+            HybridPart::Line(expr) => expr_starts_with_top_matrix(expr),
+        }),
         Expr::Style { content, .. } => expr_starts_with_top_matrix(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_top_matrix),
         _ => false,
@@ -32,6 +41,10 @@ pub(super) fn expr_starts_with_top_fenced_matrix(expr: &Expr) -> bool {
                 | MatrixKind::Braced
                 | MatrixKind::Barred
                 | MatrixKind::DoubleBarred,
+            ..
+        } => true,
+        Expr::Environment {
+            kind: EnvironmentKind::Cases | EnvironmentKind::RightCases,
             ..
         } => true,
         Expr::Style { content, .. } => expr_starts_with_top_fenced_matrix(content),
@@ -58,7 +71,41 @@ pub(super) fn expr_starts_with_top_pile_template(expr: &Expr) -> bool {
 pub(super) fn expr_starts_with_top_style(expr: &Expr) -> bool {
     match expr {
         Expr::Style { .. } => true,
+        Expr::HybridLayout(parts) => parts.first().is_some_and(|part| match part {
+            HybridPart::Raw(_) => false,
+            HybridPart::Line(expr) => expr_starts_with_top_style(expr),
+        }),
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_top_style),
+        _ => false,
+    }
+}
+
+/// Return true when a line-leading text-style node writes its own opening color/size bytes.
+pub(super) fn expr_starts_with_self_opening_text_style(expr: &Expr) -> bool {
+    match expr {
+        Expr::Style {
+            kind: StyleKind::Text,
+            content,
+        } => match content.as_ref() {
+            Expr::Fraction(_, _) => true,
+            Expr::Pile {
+                kind: PileKind::Parenthesized | PileKind::Binom,
+                ..
+            } => true,
+            Expr::BigOp {
+                body: None,
+                lower,
+                upper,
+                ..
+            } => lower.is_some() || upper.is_some(),
+            _ => false,
+        },
+        Expr::Sequence(items) => items
+            .first()
+            .is_some_and(expr_starts_with_self_opening_text_style),
+        Expr::DefaultColor(content) | Expr::Style { content, .. } => {
+            expr_starts_with_self_opening_text_style(content)
+        }
         _ => false,
     }
 }
@@ -67,6 +114,10 @@ pub(super) fn expr_starts_with_top_style(expr: &Expr) -> bool {
 pub(super) fn expr_starts_with_top_color(expr: &Expr) -> bool {
     match expr {
         Expr::Color { .. } => true,
+        Expr::HybridLayout(parts) => parts.first().is_some_and(|part| match part {
+            HybridPart::Raw(_) => false,
+            HybridPart::Line(expr) => expr_starts_with_top_color(expr),
+        }),
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_top_color),
         _ => false,
     }
@@ -76,7 +127,11 @@ pub(super) fn expr_starts_with_top_color(expr: &Expr) -> bool {
 pub(super) fn expr_starts_with_environment_fallback(expr: &Expr) -> bool {
     match expr {
         Expr::Environment {
-            kind: EnvironmentKind::Aligned | EnvironmentKind::Split,
+            kind:
+                EnvironmentKind::Aligned
+                | EnvironmentKind::Split
+                | EnvironmentKind::Gather
+                | EnvironmentKind::Gathered,
             ..
         } => true,
         Expr::Style { content, .. } => expr_starts_with_environment_fallback(content),
@@ -91,7 +146,14 @@ pub(super) fn expr_starts_with_environment_fallback(expr: &Expr) -> bool {
 pub(super) fn expr_starts_with_raw_tex(expr: &Expr) -> bool {
     match expr {
         Expr::RawTex(_) => true,
-        Expr::Style { content, .. } => expr_starts_with_raw_tex(content),
+        Expr::Subarray { .. } => true,
+        Expr::HybridLayout(parts) => parts.first().is_some_and(|part| match part {
+            HybridPart::Raw(_) => true,
+            HybridPart::Line(expr) => expr_starts_with_raw_tex(expr),
+        }),
+        Expr::Style { content, .. } | Expr::Font { content, .. } => {
+            expr_starts_with_raw_tex(content)
+        }
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_raw_tex),
         Expr::Script { base, .. } => expr_starts_with_raw_tex(base),
         _ => false,
@@ -129,6 +191,10 @@ pub(super) fn expr_starts_with_explicit_accent_template(expr: &Expr) -> bool {
 pub(super) fn expr_starts_with_sum_operator_script_base(expr: &Expr) -> bool {
     match expr {
         Expr::Script { base, .. } => matches!(base.as_ref(), Expr::SumOperatorSymbol(_)),
+        Expr::HybridLayout(parts) => parts.first().is_some_and(|part| match part {
+            HybridPart::Raw(_) => false,
+            HybridPart::Line(expr) => expr_starts_with_sum_operator_script_base(expr),
+        }),
         Expr::Style { content, .. } => expr_starts_with_sum_operator_script_base(content),
         Expr::Sequence(items) => items
             .first()
@@ -146,6 +212,9 @@ pub(super) fn expr_starts_with_bodyless_big_op_script(expr: &Expr) -> bool {
             upper,
             ..
         } => lower.is_some() || upper.is_some(),
+        Expr::MathOp {
+            lower, upper, ..
+        } => lower.is_some() || upper.is_some(),
         Expr::Style { content, .. } => expr_starts_with_bodyless_big_op_script(content),
         Expr::Sequence(items) => items
             .first()
@@ -158,10 +227,21 @@ pub(super) fn expr_starts_with_bodyless_big_op_script(expr: &Expr) -> bool {
 pub(super) fn expr_starts_with_standalone_big_glyph(expr: &Expr) -> bool {
     match expr {
         Expr::BigSymbol(_) | Expr::SumOperatorSymbol(_) => true,
+        Expr::Marked(content) => expr_starts_with_standalone_big_glyph(content),
         Expr::Style { content, .. } => expr_starts_with_standalone_big_glyph(content),
         Expr::Sequence(items) => items
             .first()
             .is_some_and(expr_starts_with_standalone_big_glyph),
+        _ => false,
+    }
+}
+
+/// Return true when MathType must emit a line marker before the first visible char.
+pub(super) fn expr_starts_with_marked_char(expr: &Expr) -> bool {
+    match expr {
+        Expr::MarkedChar(_) | Expr::Marked(_) => true,
+        Expr::Style { content, .. } => expr_starts_with_marked_char(content),
+        Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_marked_char),
         _ => false,
     }
 }
@@ -195,16 +275,18 @@ pub(super) fn expr_starts_with_euclid_math_one(expr: &Expr) -> bool {
         Expr::Font {
             kind: FontKind::MathCal | FontKind::MathScr,
             content,
-        } => first_plain_char(content).is_some_and(|ch| {
+        } if !expr_starts_with_raw_tex(content) => first_plain_char(content).is_some_and(|ch| {
             encoding::mathcal_char(ch).is_ok_and(|entry| {
                 entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
             })
         }),
         // Accent templates such as `\hat{\mathcal O}` open their own TMPL bytes first,
         // so their nested explicit font definitions must stay inside the accent slot.
-        Expr::Font { content, .. } | Expr::Style { content, .. } => {
-            expr_starts_with_euclid_math_one(content)
-        }
+        Expr::Font { kind, content } => match kind {
+            FontKind::MathCal | FontKind::MathScr if expr_starts_with_raw_tex(content) => false,
+            _ => expr_starts_with_euclid_math_one(content),
+        },
+        Expr::Style { content, .. } => expr_starts_with_euclid_math_one(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_euclid_math_one),
         Expr::Script { base, .. } => expr_starts_with_euclid_math_one(base),
         _ => false,
@@ -225,16 +307,18 @@ pub(super) fn expr_starts_with_euclid_math_two(expr: &Expr) -> bool {
         Expr::Font {
             kind: FontKind::MathBb,
             content,
-        } => first_plain_char(content).is_some_and(|ch| {
+        } if !expr_starts_with_raw_tex(content) => first_plain_char(content).is_some_and(|ch| {
             encoding::mathbb_char(ch).is_ok_and(|entry| {
                 entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
             })
         }),
         // Keep explicit Euclid fonts inside accent templates instead of pulling
         // them ahead of the opening accent TMPL record.
-        Expr::Font { content, .. } | Expr::Style { content, .. } => {
-            expr_starts_with_euclid_math_two(content)
-        }
+        Expr::Font { kind, content } => match kind {
+            FontKind::MathBb if expr_starts_with_raw_tex(content) => false,
+            _ => expr_starts_with_euclid_math_two(content),
+        },
+        Expr::Style { content, .. } => expr_starts_with_euclid_math_two(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_euclid_math_two),
         Expr::Script { base, .. } => expr_starts_with_euclid_math_two(base),
         _ => false,
@@ -247,11 +331,15 @@ pub(super) fn expr_starts_with_euclid_fraktur(expr: &Expr) -> bool {
         Expr::Font {
             kind: FontKind::MathFrak,
             content,
-        } => first_plain_char(content).is_some_and(|ch| {
+        } if !expr_starts_with_raw_tex(content) => first_plain_char(content).is_some_and(|ch| {
             encoding::mathfrak_char(ch).is_ok_and(|entry| {
                 entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
             })
         }),
+        Expr::Font { kind, content } => match kind {
+            FontKind::MathFrak if expr_starts_with_raw_tex(content) => false,
+            _ => expr_starts_with_euclid_fraktur(content),
+        },
         Expr::Style { content, .. } => expr_starts_with_euclid_fraktur(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_euclid_fraktur),
         Expr::Script { base, .. } => expr_starts_with_euclid_fraktur(base),
@@ -292,6 +380,10 @@ pub(super) fn expr_starts_with_line_layout_object(expr: &Expr) -> bool {
         | Expr::Stackrel { .. }
         | Expr::Underset { .. }
         | Expr::XArrow { .. } => true,
+        Expr::HybridLayout(parts) => parts.first().is_some_and(|part| match part {
+            HybridPart::Raw(_) => false,
+            HybridPart::Line(expr) => expr_starts_with_line_layout_object(expr),
+        }),
         Expr::Style { content, .. } => expr_starts_with_line_layout_object(content),
         Expr::Sequence(items) => items
             .first()
@@ -303,7 +395,12 @@ pub(super) fn expr_starts_with_line_layout_object(expr: &Expr) -> bool {
 /// Return true when any nested node changes MathType's active color selection.
 pub(super) fn expr_contains_color_change(expr: &Expr) -> bool {
     match expr {
+        Expr::DefaultColor(_) => true,
         Expr::Color { .. } => true,
+        Expr::HybridLayout(parts) => parts.iter().any(|part| match part {
+            HybridPart::Raw(_) => false,
+            HybridPart::Line(expr) => expr_contains_color_change(expr),
+        }),
         Expr::Style { content, .. } => expr_contains_color_change(content),
         Expr::Sequence(items) => items.iter().any(expr_contains_color_change),
         Expr::Matrix { rows, .. } | Expr::Environment { rows, .. } => rows
@@ -311,6 +408,7 @@ pub(super) fn expr_contains_color_change(expr: &Expr) -> bool {
             .flat_map(|row| row.iter())
             .any(expr_contains_color_change),
         Expr::Delimited { content, .. }
+        | Expr::OneSidedDelimited { content, .. }
         | Expr::Font { content, .. }
         | Expr::Accent { content, .. }
         | Expr::BarTemplate { content, .. } => expr_contains_color_change(content),
@@ -327,6 +425,16 @@ pub(super) fn expr_contains_color_change(expr: &Expr) -> bool {
             body, lower, upper, ..
         } => {
             body.as_deref().is_some_and(expr_contains_color_change)
+                || lower.as_deref().is_some_and(expr_contains_color_change)
+                || upper.as_deref().is_some_and(expr_contains_color_change)
+        }
+        Expr::MathOp {
+            content,
+            lower,
+            upper,
+            ..
+        } => {
+            expr_contains_color_change(content)
                 || lower.as_deref().is_some_and(expr_contains_color_change)
                 || upper.as_deref().is_some_and(expr_contains_color_change)
         }
@@ -362,6 +470,10 @@ pub(super) fn expr_contains_color_change(expr: &Expr) -> bool {
 pub(super) fn expr_starts_with_stackrel(expr: &Expr) -> bool {
     match expr {
         Expr::Stackrel { .. } => true,
+        Expr::HybridLayout(parts) => parts.first().is_some_and(|part| match part {
+            HybridPart::Raw(_) => false,
+            HybridPart::Line(expr) => expr_starts_with_stackrel(expr),
+        }),
         Expr::Style { content, .. } => expr_starts_with_stackrel(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_stackrel),
         _ => false,
@@ -372,6 +484,10 @@ pub(super) fn expr_starts_with_stackrel(expr: &Expr) -> bool {
 pub(super) fn expr_starts_with_underset(expr: &Expr) -> bool {
     match expr {
         Expr::Underset { .. } => true,
+        Expr::HybridLayout(parts) => parts.first().is_some_and(|part| match part {
+            HybridPart::Raw(_) => false,
+            HybridPart::Line(expr) => expr_starts_with_underset(expr),
+        }),
         Expr::Style { content, .. } => expr_starts_with_underset(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_underset),
         _ => false,
@@ -382,6 +498,7 @@ pub(super) fn expr_starts_with_underset(expr: &Expr) -> bool {
 pub(super) fn expr_requires_explicit_sqrt_index_restore(expr: &Expr) -> bool {
     match expr {
         Expr::Fraction(_, denominator) => expr_ends_with_big_op(denominator),
+        Expr::BigOp { .. } | Expr::MathOp { .. } => true,
         Expr::Style { content, .. } => expr_requires_explicit_sqrt_index_restore(content),
         Expr::Sequence(items) => items
             .last()
@@ -393,7 +510,9 @@ pub(super) fn expr_requires_explicit_sqrt_index_restore(expr: &Expr) -> bool {
 /// Return true when the trailing visible node is a large-operator template.
 pub(super) fn expr_ends_with_big_op(expr: &Expr) -> bool {
     match expr {
+        Expr::DefaultColor(content) => expr_ends_with_big_op(content),
         Expr::BigOp { .. } => true,
+        Expr::MathOp { .. } => true,
         Expr::Style { content, .. } => expr_ends_with_big_op(content),
         Expr::Sequence(items) => items.last().is_some_and(expr_ends_with_big_op),
         _ => false,
@@ -403,12 +522,15 @@ pub(super) fn expr_ends_with_big_op(expr: &Expr) -> bool {
 /// Return true when any nested visible node uses a large-operator template.
 pub(super) fn expr_contains_big_op(expr: &Expr) -> bool {
     match expr {
+        Expr::DefaultColor(content) => expr_contains_big_op(content),
         Expr::BigOp { .. } => true,
+        Expr::MathOp { .. } => true,
         Expr::Style { content, .. }
         | Expr::Font { content, .. }
         | Expr::Accent { content, .. }
         | Expr::BarTemplate { content, .. }
-        | Expr::Delimited { content, .. } => expr_contains_big_op(content),
+        | Expr::Delimited { content, .. }
+        | Expr::OneSidedDelimited { content, .. } => expr_contains_big_op(content),
         Expr::Sequence(items) => items.iter().any(expr_contains_big_op),
         Expr::Fraction(numerator, denominator) => {
             expr_contains_big_op(numerator) || expr_contains_big_op(denominator)
@@ -478,9 +600,14 @@ pub(super) fn expr_ends_with_script(expr: &Expr) -> bool {
 /// Return true when an item starts with MathType's empty-base superscript template form.
 pub(super) fn expr_starts_with_empty_base_superscript(expr: &Expr) -> bool {
     match expr {
+        Expr::DefaultColor(content) => expr_starts_with_empty_base_superscript(content),
         Expr::Script { base, sub, sup } => {
             sub.is_none() && sup.is_some() && expr_is_empty_sequence(base)
         }
+        Expr::HybridLayout(parts) => parts.first().is_some_and(|part| match part {
+            HybridPart::Raw(_) => false,
+            HybridPart::Line(expr) => expr_starts_with_empty_base_superscript(expr),
+        }),
         Expr::Style { content, .. } => expr_starts_with_empty_base_superscript(content),
         Expr::Sequence(items) => items
             .first()
@@ -493,18 +620,42 @@ pub(super) fn expr_starts_with_empty_base_superscript(expr: &Expr) -> bool {
 pub(super) fn expr_starts_with_self_opening(expr: &Expr) -> bool {
     expr_starts_with_line_layout_object(expr)
         || expr_starts_with_line_font_def(expr)
+        || expr_starts_with_top_color(expr)
+        || expr_starts_with_self_opening_text_style(expr)
         || expr_starts_with_split_function_name(expr)
         || expr_starts_with_raw_tex(expr)
         || expr_starts_with_explicit_accent_template(expr)
         || expr_starts_with_lim_decoration(expr)
         || expr_starts_with_sum_operator_script_base(expr)
+        || expr_starts_with_bodyless_big_op_script(expr)
+        || expr_starts_with_side_script_integral(expr)
         || expr_starts_with_empty_base_script(expr)
+}
+
+/// Return true when a bodyless integral opens with its own template bytes.
+pub(super) fn expr_starts_with_side_script_integral(expr: &Expr) -> bool {
+    match expr {
+        Expr::IntegralOp {
+            body: None,
+            ..
+        } => true,
+        Expr::Style { content, .. } => expr_starts_with_side_script_integral(content),
+        Expr::Sequence(items) => items
+            .first()
+            .is_some_and(expr_starts_with_side_script_integral),
+        _ => false,
+    }
 }
 
 /// Return true when MathType opens a script template directly because the base is empty.
 pub(super) fn expr_starts_with_empty_base_script(expr: &Expr) -> bool {
     match expr {
+        Expr::DefaultColor(content) => expr_starts_with_empty_base_script(content),
         Expr::Script { base, .. } => expr_is_empty_sequence(base),
+        Expr::HybridLayout(parts) => parts.first().is_some_and(|part| match part {
+            HybridPart::Raw(_) => false,
+            HybridPart::Line(expr) => expr_starts_with_empty_base_script(expr),
+        }),
         Expr::Style { content, .. } => expr_starts_with_empty_base_script(content),
         Expr::Sequence(items) => items
             .first()
@@ -516,6 +667,7 @@ pub(super) fn expr_starts_with_empty_base_script(expr: &Expr) -> bool {
 /// Return true for MathType's `var*lim` wrappers, which open with their own template bytes.
 pub(super) fn expr_starts_with_lim_decoration(expr: &Expr) -> bool {
     match expr {
+        Expr::DefaultColor(content) => expr_starts_with_lim_decoration(content),
         Expr::BarTemplate { content, .. } => expr_is_lim_function(content),
         Expr::ArrowAccent {
             kind: ArrowAccentKind::Left | ArrowAccentKind::Right,
@@ -540,6 +692,7 @@ pub(super) fn expr_is_lim_function(expr: &Expr) -> bool {
 /// Return true when a LINE contains only one bare integral sign without operands or limits.
 pub(super) fn expr_starts_with_standalone_integral(expr: &Expr) -> bool {
     match expr {
+        Expr::DefaultColor(content) => expr_starts_with_standalone_integral(content),
         Expr::Integral { .. } => true,
         Expr::Style { content, .. } => expr_starts_with_standalone_integral(content),
         Expr::Sequence(items) => {
@@ -562,10 +715,31 @@ pub(super) fn expr_starts_with_binom_pile(expr: &Expr) -> bool {
     }
 }
 
+/// Return true when a sequence item starts with MathType's parenthesized pile template.
+pub(super) fn expr_starts_with_parenthesized_pile(expr: &Expr) -> bool {
+    match expr {
+        Expr::Pile {
+            kind: PileKind::Parenthesized,
+            ..
+        } => true,
+        Expr::Style { content, .. } => expr_starts_with_parenthesized_pile(content),
+        Expr::Sequence(items) => items
+            .first()
+            .is_some_and(expr_starts_with_parenthesized_pile),
+        _ => false,
+    }
+}
+
 /// Return true when the next sequence item begins with MathType's tmLIM template family.
 pub(super) fn expr_starts_with_limit(expr: &Expr) -> bool {
     match expr {
+        Expr::DefaultColor(content) => expr_starts_with_limit(content),
         Expr::Limit { .. } => true,
+        Expr::MathOp { .. } => true,
+        Expr::HybridLayout(parts) => parts.first().is_some_and(|part| match part {
+            HybridPart::Raw(_) => false,
+            HybridPart::Line(expr) => expr_starts_with_limit(expr),
+        }),
         Expr::Style { content, .. } => expr_starts_with_limit(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_limit),
         _ => false,
@@ -575,7 +749,12 @@ pub(super) fn expr_starts_with_limit(expr: &Expr) -> bool {
 /// Return true when a function name owns its own mid-run black selector ordering.
 pub(super) fn expr_starts_with_split_function_name(expr: &Expr) -> bool {
     match expr {
+        Expr::DefaultColor(content) => expr_starts_with_split_function_name(content),
         Expr::FunctionName(name) => split_lim_family_function_name(name).is_some(),
+        Expr::HybridLayout(parts) => parts.first().is_some_and(|part| match part {
+            HybridPart::Raw(_) => false,
+            HybridPart::Line(expr) => expr_starts_with_split_function_name(expr),
+        }),
         Expr::Style { content, .. } => expr_starts_with_split_function_name(content),
         Expr::Sequence(items) => items
             .first()
@@ -587,9 +766,36 @@ pub(super) fn expr_starts_with_split_function_name(expr: &Expr) -> bool {
 /// Return true when the whole LINE consists of one limit template and no following siblings.
 pub(super) fn expr_is_standalone_limit(expr: &Expr) -> bool {
     match expr {
+        Expr::MathOp {
+            lower, upper, ..
+        } => lower.is_some() || upper.is_some(),
         Expr::Limit { .. } => true,
         Expr::Style { content, .. } => expr_is_standalone_limit(content),
         Expr::Sequence(items) => items.len() == 1 && expr_is_standalone_limit(&items[0]),
+        _ => false,
+    }
+}
+
+/// Return true when this expression ends with one native limit-like template.
+///
+/// Bug-fix: when a parsed `\limits` / `\nolimits` fallback fragment follows on the
+/// same line, MathType skips the usual trailing black-selector restore after the
+/// template so the raw bytes can continue immediately.
+pub(super) fn expr_ends_with_limit_like_template(expr: &Expr) -> bool {
+    match expr {
+        Expr::Limit { .. } => true,
+        Expr::MathOp { placement, .. } => *placement == LimitPlacement::Limits,
+        Expr::IntegralOp { placement, .. } => *placement == LimitPlacement::Limits,
+        Expr::BigOp {
+            lower,
+            upper,
+            placement,
+            ..
+        } => *placement == LimitPlacement::Limits && (lower.is_some() || upper.is_some()),
+        Expr::Style { content, .. } => expr_ends_with_limit_like_template(content),
+        Expr::Sequence(items) => items
+            .last()
+            .is_some_and(expr_ends_with_limit_like_template),
         _ => false,
     }
 }
@@ -639,8 +845,18 @@ pub(super) fn expr_starts_with_line_font_def(expr: &Expr) -> bool {
             kind: FontKind::MathSf | FontKind::TypewriterText,
             ..
         } => true,
+        Expr::HybridLayout(parts) => parts.first().is_some_and(|part| match part {
+            HybridPart::Raw(_) => false,
+            HybridPart::Line(expr) => expr_starts_with_line_font_def(expr),
+        }),
         Expr::Style { content, .. } => expr_starts_with_line_font_def(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_starts_with_line_font_def),
         _ => false,
     }
 }
+
+
+
+
+
+

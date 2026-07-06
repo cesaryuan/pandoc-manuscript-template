@@ -1,10 +1,12 @@
 use crate::ast::*;
+use crate::generated::color_tables::named_color_def;
 use crate::generated::char_tables::ExplicitFont;
 use crate::mathtype_ansi::{encode_mathtype_source, encode_mathtype_text};
 use crate::typeface::{
     EXPLICIT_FONT_NEG_1, EXPLICIT_FONT_NEG_2, FN_FUNCTION, FN_MT_EXTRA, FN_NUMBER, FN_SPACE,
     FN_SYMBOL, FN_TEXT, FN_VARIABLE, FN_VECTOR,
 };
+use std::collections::HashMap;
 
 #[path = "mtef/accents.rs"]
 mod accents;
@@ -113,16 +115,23 @@ struct MtefWriter {
     typewriter_group_active: bool,
     big_symbol_line_marker_pending: bool,
     suppress_next_pile_color_default: bool,
+    suppress_next_pile_black_selector: bool,
     suppress_next_stackrel_color_default: bool,
     emit_top_fenced_matrix_color: bool,
     suppress_next_style_restore: bool,
+    force_next_no_limits_integral_style_restore: bool,
     suppress_next_limit_restore: bool,
     emit_top_color_selector_one: bool,
+    next_color_selector: u8,
+    named_color_selectors: HashMap<String, u8>,
+    pending_raw_follow_selector: Option<u8>,
     top_sequence_starts_default: bool,
     fallback_environment_active: bool,
     suppress_next_line_black: bool,
     line_starts_default: bool,
     parent_sequence_has_previous_sibling: bool,
+    parent_sequence_previous_was_raw: bool,
+    suppress_next_marked_char_marker: bool,
 }
 
 impl MtefWriter {
@@ -218,7 +227,7 @@ pub(crate) fn write_mtef_with_prefs(
 
     if !expr_is_translation_failed_placeholder(expr) {
         let mut source = b"TeX Input Language\0".to_vec();
-        source.extend_from_slice(&encode_mathtype_source(source_latex)?);
+        source.extend_from_slice(&encode_mathtype_source(source_latex_header_text(source_latex, expr))?);
         source.push(0x00);
         write_unsigned(source.len(), &mut out)?;
         out.extend_from_slice(&source);
@@ -231,6 +240,23 @@ pub(crate) fn write_mtef_with_prefs(
     }
     write_equation_body(expr, &mut out)?;
     Ok(out)
+}
+
+/// Return the TeX-source string MathType stores in the future record.
+///
+/// Bug-fix: when the entire formula is one dropped escaped delimiter shim such as
+/// `\]`, MathType omits the original source text from the header as well.
+fn source_latex_header_text<'a>(source_latex: &'a str, expr: &Expr) -> &'a str {
+    if expr_is_empty_sequence(expr) && is_dropped_escaped_shim_source(source_latex) {
+        ""
+    } else {
+        source_latex
+    }
+}
+
+/// Return true when the whole input is one escaped shim that MathType drops completely.
+fn is_dropped_escaped_shim_source(source_latex: &str) -> bool {
+    matches!(source_latex, "\\]")
 }
 
 /// Write the outer Equation Native stream and keep its embedded MTEF length valid.
@@ -247,7 +273,18 @@ pub(crate) fn write_equation_native(mtef: &[u8]) -> Result<Vec<u8>, String> {
 
 /// Write the top-level line, default black color, and equation terminators.
 fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
-    out.extend_from_slice(&[0x0a, 0x01, 0x00]);
+    if matches!(expr, Expr::Sequence(items) if items.is_empty()) {
+        // Bug-fix: a fully ignored formula such as `\hline` keeps only the
+        // top-level size byte and final END marker; MathType does not emit an
+        // empty LINE record in between.
+        out.extend_from_slice(&[0x0a, 0x00]);
+        return Ok(());
+    }
+    if expr_starts_with_top_annotated_align_pile(expr) {
+        out.push(0x0a);
+    } else {
+        out.extend_from_slice(&[0x0a, 0x01, 0x00]);
+    }
     let mut writer = MtefWriter {
         euclid_math_one_defined: false,
         euclid_math_two_defined: false,
@@ -262,16 +299,23 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
         typewriter_group_active: false,
         big_symbol_line_marker_pending: false,
         suppress_next_pile_color_default: false,
+        suppress_next_pile_black_selector: false,
         suppress_next_stackrel_color_default: false,
         emit_top_fenced_matrix_color: false,
         suppress_next_style_restore: false,
+        force_next_no_limits_integral_style_restore: false,
         suppress_next_limit_restore: false,
         emit_top_color_selector_one: false,
+        next_color_selector: 1,
+        named_color_selectors: HashMap::new(),
+        pending_raw_follow_selector: None,
         top_sequence_starts_default: false,
         fallback_environment_active: false,
         suppress_next_line_black: false,
         line_starts_default: false,
         parent_sequence_has_previous_sibling: false,
+        parent_sequence_previous_was_raw: false,
+        suppress_next_marked_char_marker: false,
     };
     if expr_is_only_spaces(expr) {
         write_only_spaces(expr, out)?;
@@ -295,6 +339,9 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
         if starts_with_big_symbol_script {
             out.push(0x0d);
             writer.big_symbol_line_marker_pending = true;
+        } else if expr_starts_with_marked_char(expr) {
+            out.push(0x0d);
+            writer.suppress_next_marked_char_marker = true;
         } else if expr_starts_with_standalone_integral(expr)
             || expr_starts_with_standalone_big_glyph(expr)
         {
@@ -344,6 +391,22 @@ fn write_equation_body(expr: &Expr, out: &mut Vec<u8>) -> Result<(), String> {
     Ok(())
 }
 
+/// Return true when the equation body starts with MathType's align-family row-stack PILE form.
+fn expr_starts_with_top_annotated_align_pile(expr: &Expr) -> bool {
+    match expr {
+        Expr::Environment {
+            kind: EnvironmentKind::Align | EnvironmentKind::AlignAt | EnvironmentKind::AlignedAt,
+            rows,
+            ..
+        } => !matches!(rows.as_slice(), [row] if matches!(row.as_slice(), [_])),
+        Expr::Style { content, .. } => expr_starts_with_top_annotated_align_pile(content),
+        Expr::Sequence(items) => items
+            .first()
+            .is_some_and(expr_starts_with_top_annotated_align_pile),
+        _ => false,
+    }
+}
+
 /// Write an expression in MathType's record order for the supported subset.
 fn write_expr(
     expr: &Expr,
@@ -372,7 +435,14 @@ fn write_expr(
             };
             let mut index = 0usize;
             while index < items.len() {
-                let item = &items[index];
+                let spacing_override = script_mod_spacing_expr(&items[index], current_size);
+                let item = spacing_override.as_ref().unwrap_or(&items[index]);
+                if index > 0
+                    && !matches!(items[index - 1], Expr::RawTex(_))
+                    && !(expr_starts_with_raw_tex(item) && items[index - 1].is_non_black_color_expr())
+                {
+                    writer.pending_raw_follow_selector = None;
+                }
                 if state.size != current_size && !matches!(item, Expr::Integral { .. }) {
                     if expr_starts_with_euclid_math_one(item) {
                         writer.ensure_euclid_math_one(out);
@@ -383,7 +453,12 @@ fn write_expr(
                     state.size = current_size;
                 }
                 if let Expr::Space(width) = item {
-                    if state.color == ColorState::Default {
+                    if state.color == ColorState::Default
+                        || (index > 0
+                            && matches!(items.get(index - 1), Some(Expr::Space(_))))
+                    {
+                        // Bug-fix: adjacent spacing commands such as `\!\!2` stay on
+                        // MathType's default-color path until the next visible glyph.
                         write_space_without_color(*width, out);
                         state = WriteState {
                             size: state.size,
@@ -396,19 +471,64 @@ fn write_expr(
                 let needs_black_selector = !(state.color == ColorState::Black
                     || (index == 0 && start_default)
                     || expr_starts_with_line_font_def(item)
+                    || expr_style_defers_leading_space_open(item)
                     || expr_starts_with_empty_base_superscript(item)
                     || expr_sets_own_color(item));
-                if needs_black_selector {
-                    if expr_starts_with_euclid_math_one(item) {
-                        writer.ensure_euclid_math_one(out);
-                    } else if expr_starts_with_euclid_math_two(item) {
-                        writer.ensure_euclid_math_two(out);
-                    } else if expr_starts_with_euclid_fraktur(item) {
-                        writer.ensure_euclid_fraktur(out);
+                if index > 0
+                    && matches!(items.get(index - 1), Some(Expr::RawTex(raw)) if raw.starts_with("\\left"))
+                    && expr_starts_with_standalone_big_glyph(item)
+                {
+                    // Bug-fix: raw/native hybrids such as `\left( \sum_1^n \right)^{2}`
+                    // still keep MathType's line marker on the visible standalone
+                    // big-operator glyph that follows the raw fence shell.
+                    out.push(0x0d);
+                }
+                if matches!(item, Expr::MarkedChar(_) | Expr::Marked(_)) {
+                    if writer.suppress_next_marked_char_marker {
+                        writer.suppress_next_marked_char_marker = false;
+                    } else {
+                        out.push(0x0d);
                     }
-                    writer.ensure_black_color_def(out);
-                    color_black(out);
-                    state.color = ColorState::Black;
+                }
+                if needs_black_selector {
+                    if matches!(items.get(index.saturating_sub(1)), Some(Expr::RawTex(_))) {
+                        if let Some(selector) = writer.pending_raw_follow_selector.take() {
+                            out.extend_from_slice(&[0x0f, selector]);
+                            state.color = ColorState::Black;
+                        } else {
+                            if expr_starts_with_euclid_math_one(item) {
+                                writer.ensure_euclid_math_one(out);
+                            } else if expr_starts_with_euclid_math_two(item) {
+                                writer.ensure_euclid_math_two(out);
+                            } else if expr_starts_with_euclid_fraktur(item) {
+                                writer.ensure_euclid_fraktur(out);
+                            }
+                            if !raw_fallback_reuses_black_selector(items, index) {
+                                writer.ensure_black_color_def(out);
+                            }
+                            color_black(out);
+                            if writer.next_color_selector == 1 {
+                                writer.next_color_selector = 2;
+                            }
+                            state.color = ColorState::Black;
+                        }
+                    } else {
+                        if expr_starts_with_euclid_math_one(item) {
+                            writer.ensure_euclid_math_one(out);
+                        } else if expr_starts_with_euclid_math_two(item) {
+                            writer.ensure_euclid_math_two(out);
+                        } else if expr_starts_with_euclid_fraktur(item) {
+                            writer.ensure_euclid_fraktur(out);
+                        }
+                        if !raw_fallback_reuses_black_selector(items, index) {
+                            writer.ensure_black_color_def(out);
+                        }
+                        color_black(out);
+                        if writer.next_color_selector == 1 {
+                            writer.next_color_selector = 2;
+                        }
+                        state.color = ColorState::Black;
+                    }
                 }
                 if state.color == ColorState::Black
                     && expr_starts_with_sum_operator_script_base(item)
@@ -425,16 +545,42 @@ fn write_expr(
                     color_default(out);
                     state.color = ColorState::Default;
                 }
-                if index > 0 && state.color == ColorState::Black && expr_starts_with_raw_tex(item) {
+                if index > 0
+                    && expr_starts_with_raw_tex(item)
+                    && items[index - 1].is_non_black_color_expr()
+                {
+                    // Bug-fix: after a non-black `\color{...}` group, MathType emits
+                    // an explicit default-color selector before a raw fallback segment
+                    // such as `\kern`, even though the logical writer state has already
+                    // transitioned away from the colored child expression.
+                    color_default(out);
+                    state.color = ColorState::Default;
+                } else if index > 0
+                    && state.color == ColorState::Black
+                    && expr_starts_with_raw_tex(item)
+                {
+                    // Bug-fix: MathType closes a named-color run before a raw fallback
+                    // fragment such as `\kern`, then reuses that selector on the next
+                    // visible token that belongs to the same fallback segment.
                     color_default(out);
                     state.color = ColorState::Default;
                 }
+
                 if index > 0
                     && state.color == ColorState::Black
                     && expr_starts_with_binom_pile(item)
                 {
                     color_default(out);
                     state.color = ColorState::Default;
+                }
+                if index > 0
+                    && state.color == ColorState::Black
+                    && expr_starts_with_parenthesized_pile(item)
+                {
+                    // Bug-fix: inline old-TeX `\choose` piles continue the
+                    // already-open visible black run instead of emitting an
+                    // extra selector before the parenthesized pile template.
+                    writer.suppress_next_pile_black_selector = true;
                 }
                 if index > 0
                     && state.color == ColorState::Black
@@ -463,17 +609,92 @@ fn write_expr(
                 }
                 let previous_parent_sequence_has_previous_sibling =
                     writer.parent_sequence_has_previous_sibling;
+                let previous_parent_sequence_previous_was_raw =
+                    writer.parent_sequence_previous_was_raw;
+                let suppress_limit_restore_for_following_raw =
+                    items.get(index + 1).is_some_and(expr_starts_with_raw_tex)
+                        && expr_ends_with_limit_like_template(item);
+                if suppress_limit_restore_for_following_raw {
+                    // Bug-fix: MathType keeps the default-color path open when a native
+                    // limit template is immediately followed by one raw `\limits` /
+                    // `\nolimits` fragment on the same line.
+                    writer.suppress_next_limit_restore = true;
+                }
+                if items.get(index + 1).is_some_and(expr_starts_with_raw_tex)
+                    && matches!(
+                        unwrap_single_sequence(item),
+                        Expr::IntegralOp {
+                            body: None,
+                            placement: LimitPlacement::NoLimits,
+                            ..
+                        }
+                    )
+                {
+                    // Bug-fix: side-script integrals still restore full size before one
+                    // following raw `\limits_` fragment, unlike the standalone no-limits
+                    // line-ending case that stays on the compact tmINTOP path.
+                    writer.force_next_no_limits_integral_style_restore = true;
+                }
                 writer.parent_sequence_has_previous_sibling = index > 0;
-                if let Some(ch) = prime_embellished_sequence_char(items, index) {
-                    write_embellished_char_with_code(ch, EMBELL_PRIME, out, writer)?;
+                writer.parent_sequence_previous_was_raw =
+                    index > 0 && matches!(items[index - 1], Expr::RawTex(_));
+                if let Some(source) = prime_embellished_sequence_char(items, index) {
+                    match source {
+                        PrimeEmbellishedSource::Char { ch, prime_count } => {
+                            write_embellished_char_codes(
+                                ch,
+                                &prime_embellishment_codes(prime_count),
+                                out,
+                                writer,
+                            )?;
+                            index += 1 + prime_count;
+                        }
+                        PrimeEmbellishedSource::Command {
+                            command,
+                            ch,
+                            prime_count,
+                        } => {
+                            write_command_symbol_with_embellishments(
+                                &command,
+                                ch,
+                                &prime_embellishment_codes(prime_count),
+                                out,
+                                writer,
+                            )?;
+                            index += 1 + prime_count;
+                        }
+                    }
                     state = WriteState {
                         size: state.size,
                         color: ColorState::Black,
                     };
-                    index += 2;
                 } else {
                     state = write_expr(item, out, state.size, writer)?;
                     index += 1;
+                }
+                if matches!(item, Expr::MarkedChar(_) | Expr::Marked(_)) && index < items.len() {
+                    if matches!(items.get(index), Some(Expr::MarkedChar(_) | Expr::Marked(_))) {
+                        // Bug-fix: a run of consecutive delimiter-size hints keeps just one
+                        // initial line marker, so each following marked fence suppresses its
+                        // own marker until the run returns to ordinary same-line content.
+                        writer.suppress_next_marked_char_marker = true;
+                    } else {
+                        // Bug-fix: delimiter-size hints such as `\Bigg[` leave MathType's
+                        // line marker on the first fence and then explicitly restore the
+                        // current logical size before the remaining same-line content.
+                        write_size(current_size, out);
+                        state.size = current_size;
+                    }
+                }
+                if matches!(item, Expr::SumOperatorSymbol(_) | Expr::BigSymbol(_))
+                    && items
+                        .get(index)
+                        .is_some_and(|next| matches!(next, Expr::RawTex(raw) if raw == "^" || raw == "_"))
+                {
+                    // Bug-fix: bodyless big operators restore full size before the raw
+                    // repeated-script marker that MathType stores after the glyph.
+                    write_size(current_size, out);
+                    state.size = current_size;
                 }
                 if display_fraction_sequence_item_needs_full_restore(item, items.get(index)) {
                     // MathType's SetData path explicitly restores full size after a display
@@ -483,9 +704,20 @@ fn write_expr(
                 }
                 writer.parent_sequence_has_previous_sibling =
                     previous_parent_sequence_has_previous_sibling;
+                writer.parent_sequence_previous_was_raw =
+                    previous_parent_sequence_previous_was_raw;
             }
             state
         }
+        Expr::DefaultColor(content) => {
+            color_default(out);
+            let state = write_expr(content, out, current_size, writer)?;
+            WriteState {
+                size: state.size,
+                color: ColorState::Default,
+            }
+        }
+        Expr::HybridLayout(parts) => write_hybrid_layout(parts, out, current_size, writer)?,
         Expr::Char(ch) => {
             write_char(*ch, out, writer)?;
             WriteState {
@@ -494,15 +726,13 @@ fn write_expr(
             }
         }
         Expr::MarkedChar(ch) => {
-            // Some MathType delimiter-size hints collapse into a plain visible glyph that still
-            // keeps the standalone line marker byte in front of the CHAR record.
-            out.push(0x0d);
             write_char(*ch, out, writer)?;
             WriteState {
                 size: current_size,
                 color: ColorState::Black,
             }
         }
+        Expr::Marked(content) => write_expr(content, out, current_size, writer)?,
         Expr::NotRelation(content) => {
             write_not_relation(content, out, writer)?;
             WriteState {
@@ -529,6 +759,16 @@ fn write_expr(
             WriteState {
                 size: current_size,
                 color: ColorState::Black,
+            }
+        }
+        Expr::RawBoundary => {
+            // Bug-fix: MathType sometimes closes one raw fallback segment and
+            // immediately starts another without any visible separator, such as
+            // zero-argument raw macro definitions followed by a raw replacement.
+            out.extend_from_slice(&[0x00, 0x00]);
+            WriteState {
+                size: current_size,
+                color: ColorState::Default,
             }
         }
         Expr::RawTex(text) => {
@@ -592,19 +832,53 @@ fn write_expr(
             lower,
             upper,
             body,
-        } => write_big_op(
-            *kind,
-            body.as_deref(),
+            placement,
+        } => {
+            if *placement == LimitPlacement::NoLimits && (lower.is_some() || upper.is_some()) {
+                let expr = no_limits_big_op_expr(*kind, lower.as_deref(), upper.as_deref(), body.as_deref());
+                writer.suppress_next_style_restore = true;
+                write_expr(&expr, out, current_size, writer)?
+            } else {
+                write_big_op(
+                    *kind,
+                    body.as_deref(),
+                    lower.as_deref(),
+                    upper.as_deref(),
+                    out,
+                    current_size,
+                    writer,
+                )?
+            }
+        },
+        Expr::FallbackBigOp { kind, body } => {
+            write_fallback_big_op_body(*kind, body, out, current_size, writer)?
+        }
+        Expr::Limit {
+            name,
+            lower,
+            upper,
+            placement,
+        } => write_limit_expr(
+            name,
             lower.as_deref(),
             upper.as_deref(),
+            *placement,
             out,
             current_size,
             writer,
         )?,
-        Expr::Limit { name, lower, upper } => write_limit(
-            name,
+        Expr::MathOp {
+            content,
+            lower,
+            upper,
+            placement,
+            leading_space,
+        } => write_math_op_expr(
+            content,
             lower.as_deref(),
             upper.as_deref(),
+            *placement,
+            *leading_space,
             out,
             current_size,
             writer,
@@ -621,11 +895,13 @@ fn write_expr(
             lower,
             upper,
             body,
-        } => write_integral_op(
+            placement,
+        } => write_integral_expr(
             *kind,
             body.as_deref(),
             lower.as_deref(),
             upper.as_deref(),
+            *placement,
             out,
             current_size,
             writer,
@@ -657,10 +933,8 @@ fn write_expr(
                 color: ColorState::Black,
             }
         }
-        Expr::Subarray { rows, .. } => {
-            // Keep current subarray rendering on the MATRIX path until the remaining
-            // MathType mixed raw/native limit layout is fully modeled.
-            write_matrix(MatrixKind::Plain, rows, out, current_size, writer)?
+        Expr::Subarray { column_spec, rows } => {
+            write_subarray_fallback(column_spec, rows, out, current_size, writer)?
         }
         Expr::Matrix { kind, rows } => write_matrix(*kind, rows, out, current_size, writer)?,
         Expr::Environment { kind, rows, trivia } => {
@@ -671,6 +945,11 @@ fn write_expr(
             right,
             content,
         } => write_delimited(*left, *right, content, out, current_size, writer)?,
+        Expr::OneSidedDelimited {
+            side,
+            delimiter,
+            content,
+        } => write_one_sided_delimited(*side, *delimiter, content, out, current_size, writer)?,
         Expr::Script { base, sub, sup } => write_script(
             base,
             sub.as_deref(),
@@ -683,11 +962,129 @@ fn write_expr(
     Ok(next_state)
 }
 
-/// Return the base character for MathType's compact apostrophe-prime embellishment.
-fn prime_embellished_sequence_char(items: &[Expr], index: usize) -> Option<char> {
-    match (items.get(index), items.get(index + 1)) {
-        (Some(Expr::Char(ch)), Some(Expr::Char('\''))) => Some(*ch),
+/// Expand `\mod`'s leading space into the probe-backed thin-space sequence inside scripts.
+fn script_mod_spacing_expr(expr: &Expr, current_size: SizeState) -> Option<Expr> {
+    if current_size != SizeState::Sub {
+        return None;
+    }
+    match expr {
+        Expr::Sequence(items)
+            if matches!(
+                items.as_slice(),
+                [Expr::Space(0x05), Expr::FunctionName(name), Expr::Space(0x02)] if name == "mod"
+            ) =>
+        {
+            Some(Expr::Sequence(vec![
+                Expr::Space(0x04),
+                Expr::Space(0x04),
+                Expr::Space(0x04),
+                Expr::FunctionName("mod".to_string()),
+                Expr::Space(0x02),
+            ]))
+        }
         _ => None,
+    }
+}
+
+/// Return true when a style wrapper keeps its opening spacing on the default path.
+fn expr_style_defers_leading_space_open(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Style {
+            kind: StyleKind::Script | StyleKind::ScriptScript,
+            content,
+        } if leading_space_rest(content).is_some()
+    )
+}
+
+/// Write MathType's hybrid fallback runs that interleave raw TeX and standalone LINE records.
+fn write_hybrid_layout(
+    parts: &[HybridPart],
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    let mut state = WriteState {
+        size: current_size,
+        color: ColorState::Default,
+    };
+    for part in parts {
+        state = match part {
+            HybridPart::Raw(text) => {
+                if state.color != ColorState::Default {
+                    color_default(out);
+                }
+                write_raw_tex_text(text, out)?;
+                WriteState {
+                    size: current_size,
+                    color: ColorState::Default,
+                }
+            }
+            HybridPart::Line(expr) => {
+                if state.color != ColorState::Black && !expr_starts_with_self_opening(expr) {
+                    if expr_starts_with_euclid_math_one(expr) {
+                        writer.ensure_euclid_math_one(out);
+                    } else if expr_starts_with_euclid_math_two(expr) {
+                        writer.ensure_euclid_math_two(out);
+                    } else if expr_starts_with_euclid_fraktur(expr) {
+                        writer.ensure_euclid_fraktur(out);
+                    }
+                    writer.ensure_black_color_def(out);
+                    color_black(out);
+                }
+                write_expr(expr, out, current_size, writer)?
+            }
+        };
+    }
+    Ok(state)
+}
+
+enum PrimeEmbellishedSource {
+    Char { ch: char, prime_count: usize },
+    Command {
+        command: String,
+        ch: char,
+        prime_count: usize,
+    },
+}
+
+/// Return the base symbol source for MathType's compact apostrophe-prime embellishment.
+fn prime_embellished_sequence_char(items: &[Expr], index: usize) -> Option<PrimeEmbellishedSource> {
+    let prime_count = items[index + 1..]
+        .iter()
+        .take_while(|item| matches!(item, Expr::Char('\'')))
+        .count();
+    if prime_count == 0 {
+        return None;
+    }
+    match items.get(index) {
+        Some(Expr::Char(ch)) => Some(PrimeEmbellishedSource::Char {
+            ch: *ch,
+            prime_count,
+        }),
+        Some(Expr::CommandSymbol { command, ch }) => Some(PrimeEmbellishedSource::Command {
+            command: command.clone(),
+            ch: *ch,
+            prime_count,
+        }),
+        _ => None,
+    }
+}
+
+/// Return MathType's embellishment sequence for one parsed postfix prime run.
+fn prime_embellishment_codes(prime_count: usize) -> Vec<u8> {
+    match prime_count {
+        0 => Vec::new(),
+        1 => vec![EMBELL_PRIME],
+        2 => vec![EMBELL_DOUBLE_PRIME],
+        // Bug-fix: MathType uses a dedicated double-prime embellishment when
+        // two apostrophes stay attached to the same base. Longer runs keep that
+        // compact prefix and then append remaining single-prime embellishments.
+        count => {
+            let mut codes = vec![EMBELL_DOUBLE_PRIME];
+            codes.extend(std::iter::repeat_n(EMBELL_PRIME, count - 2));
+            codes
+        }
     }
 }
 
@@ -713,34 +1110,151 @@ fn write_color_expr(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
-    match name {
-        "blue" => {
-            out.extend_from_slice(&[0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0xe8, 0x03]);
-            let selector = if writer.emit_top_color_selector_one {
-                writer.emit_top_color_selector_one = false;
-                0x01
-            } else {
-                0x02
-            };
+    if name == "black" {
+        // Bug-fix: MathType reuses the shared black COLOR_DEF once it already
+        // exists; nested `\color{black}{...}` only emits selector `0x0f 0x01`.
+        writer.ensure_black_color_def(out);
+        out.extend_from_slice(&[0x0f, 0x01]);
+        let state = write_expr(expr, out, current_size, writer)?;
+        return Ok(state);
+    }
+    if let Some(prefix) = named_color_def(name) {
+        if let Some((leading_raw, tail)) = split_leading_raw_visible_tail(expr) {
+            write_expr(&leading_raw, out, current_size, writer)?;
+            let selector = write_named_color_selector(name, prefix, out, writer);
             out.extend_from_slice(&[0x0f, selector]);
-            let state = write_expr(expr, out, current_size, writer)?;
-            Ok(WriteState {
+            writer.pending_raw_follow_selector = Some(selector);
+            let state = write_expr(&tail, out, current_size, writer)?;
+            return Ok(WriteState {
                 size: state.size,
                 color: ColorState::Default,
-            })
+            });
         }
-        _ => write_expr(expr, out, current_size, writer),
+        let selector = write_named_color_selector(name, prefix, out, writer);
+        out.extend_from_slice(&[0x0f, selector]);
+        writer.pending_raw_follow_selector = Some(selector);
+        let state = write_expr(expr, out, current_size, writer)?;
+        Ok(WriteState {
+            size: state.size,
+            color: ColorState::Default,
+        })
+    } else {
+        write_expr(expr, out, current_size, writer)
     }
 }
+
+/// Emit one named color definition when needed and return the selector MathType uses for it.
+fn write_named_color_selector(
+    name: &str,
+    prefix: &[u8],
+    out: &mut Vec<u8>,
+    writer: &mut MtefWriter,
+) -> u8 {
+    if let Some(selector) = writer.named_color_selectors.get(name).copied() {
+        return selector;
+    }
+    out.extend_from_slice(prefix);
+    let selector = if writer.emit_top_color_selector_one && writer.next_color_selector == 1 {
+        writer.emit_top_color_selector_one = false;
+        0x01
+    } else if writer.next_color_selector == 1 {
+        writer.emit_top_color_selector_one = false;
+        0x02
+    } else {
+        writer.emit_top_color_selector_one = false;
+        writer.next_color_selector
+    };
+    if writer.next_color_selector <= selector {
+        writer.next_color_selector = selector.saturating_add(1);
+    }
+    writer.named_color_selectors.insert(name.to_string(), selector);
+    selector
+}
+
+/// Split one expression into a leading raw run plus the visible tail that follows it.
+fn split_leading_raw_visible_tail(expr: &Expr) -> Option<(Expr, Expr)> {
+    match expr {
+        Expr::Sequence(items) => {
+            let first = items.first()?;
+            if matches!(first, Expr::RawTex(_)) {
+                if items.len() < 2 {
+                    return None;
+                }
+                return Some((
+                    first.clone(),
+                    collapse_single_expr(Expr::Sequence(items[1..].to_vec())),
+                ));
+            }
+            let (leading_raw, first_tail) = split_leading_raw_visible_tail(first)?;
+            let mut tail_items = match first_tail {
+                Expr::Sequence(items) => items,
+                other => vec![other],
+            };
+            tail_items.extend(items[1..].iter().cloned());
+            Some((
+                leading_raw,
+                collapse_single_expr(Expr::Sequence(tail_items)),
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// Collapse one single-item sequence so byte-shaping helpers can rebuild compact tails.
+fn collapse_single_expr(expr: Expr) -> Expr {
+    match expr {
+        Expr::Sequence(mut items) if items.len() == 1 => items.pop().expect("one item exists"),
+        other => other,
+    }
+}
+
+/// Reuse the existing black selector after a raw fallback fragment once visible content already appeared.
+fn raw_fallback_reuses_black_selector(items: &[Expr], index: usize) -> bool {
+    if index == 0 || !matches!(items[index - 1], Expr::RawTex(_)) {
+        return false;
+    }
+    items[..index - 1].iter().any(|item| {
+        !matches!(item, Expr::RawTex(_) | Expr::Space(_)) && !matches!(item, Expr::Sequence(inner) if inner.is_empty())
+    })
+}
+
 
 /// Return true for nodes that begin by selecting their own color.
 fn expr_sets_own_color(expr: &Expr) -> bool {
     match expr {
+        Expr::DefaultColor(_) => true,
         Expr::Color { .. } | Expr::RawTex(_) => true,
+        Expr::Subarray { .. } => true,
+        Expr::Style {
+            kind: StyleKind::Text,
+            content,
+        } => match unwrap_single_sequence(content) {
+            Expr::Fraction(_, _) => true,
+            Expr::Pile {
+                kind: PileKind::Parenthesized | PileKind::Binom,
+                ..
+            } => true,
+            Expr::BigOp {
+                body: None,
+                lower,
+                upper,
+                ..
+            } => lower.is_some() || upper.is_some(),
+            Expr::IntegralOp {
+                body: None,
+                placement: LimitPlacement::NoLimits,
+                ..
+            } => true,
+            _ => false,
+        },
         Expr::Pile {
             kind: PileKind::Binom,
             ..
         } => true,
+        Expr::HybridLayout(parts) => parts.first().is_some_and(|part| match part {
+            HybridPart::Raw(_) => true,
+            HybridPart::Line(expr) => expr_sets_own_color(expr),
+        }),
         Expr::Style { content, .. } => expr_sets_own_color(content),
         Expr::Sequence(items) => items.first().is_some_and(expr_sets_own_color),
         _ => false,
@@ -1040,6 +1554,7 @@ fn write_style_expr(
                 body: None,
                 lower,
                 upper,
+                ..
             } if lower.is_some() || upper.is_some() => {
                 return write_textstyle_bodyless_big_op(
                     *kind,
@@ -1069,7 +1584,15 @@ fn write_style_expr(
             ..
         }
     );
-    if kind == StyleKind::Display && suppress_restore && display_style_is_transparent {
+    let nested_display_style_is_transparent = current_size != SizeState::Full
+        && (matches!(content, Expr::Fraction(_, _)) || display_style_is_transparent);
+    if kind == StyleKind::Display
+        && ((suppress_restore && display_style_is_transparent)
+            || nested_display_style_is_transparent)
+    {
+        // Bug-fix: once a script-sized slot is already open, MathType keeps
+        // display-style native templates at that inherited size instead of
+        // bouncing back to full size first.
         let state = write_expr(content, out, current_size, writer)?;
         return Ok(WriteState {
             size: current_size,
@@ -1082,6 +1605,47 @@ fn write_style_expr(
     {
         writer.ensure_black_color_def(out);
         color_black(out);
+    }
+    if matches!(kind, StyleKind::Script | StyleKind::ScriptScript) {
+        if let Some((width, mut rest)) = leading_space_rest(content) {
+            // Bug-fix: raw-prefixed script-style wrappers such as
+            // `\rlap{\scriptstyle{\ \ \ \text{shorter}}}` keep leading spacing on
+            // the inherited/default path and only switch size once visible glyphs
+            // begin inside the styled content.
+            let ignore_size_change = writer.parent_sequence_previous_was_raw;
+            write_space_without_color(width, out);
+            while let [Expr::Space(next_width), tail @ ..] = rest {
+                write_space_without_color(*next_width, out);
+                rest = tail;
+            }
+            if rest.is_empty() {
+                return Ok(WriteState {
+                    size: current_size,
+                    color: ColorState::Default,
+                });
+            }
+            if changed_size && !suppress_restore && !ignore_size_change {
+                write_size(target_size, out);
+            }
+            let rest_expr = Expr::Sequence(rest.to_vec());
+            let styled_size = if ignore_size_change {
+                current_size
+            } else {
+                target_size
+            };
+            if ignore_size_change && !expr_starts_with_self_opening(&rest_expr) {
+                writer.ensure_black_color_def(out);
+                color_black(out);
+            }
+            let state = write_expr(&rest_expr, out, styled_size, writer)?;
+            if changed_size && !suppress_restore && !ignore_size_change && state.size != current_size {
+                write_size(current_size, out);
+            }
+            return Ok(WriteState {
+                size: current_size,
+                color: state.color,
+            });
+        }
     }
     if changed_size && !suppress_restore {
         write_size(target_size, out);
@@ -1140,11 +1704,19 @@ fn write_textstyle_fraction(
     }
     let denominator_state = write_line(denominator, out, inner_size, writer)?;
     out.push(0x00);
-    if !suppress_restore && inner_size != current_size {
+    let restore_inside_template =
+        !suppress_restore && current_size == SizeState::Full && inner_size != current_size;
+    if restore_inside_template {
+        // Bug-fix: inside sub/sup slots, MathType leaves the text-style fraction
+        // at the inner size and lets the surrounding script separator restore it.
         write_size(current_size, out);
     }
     Ok(WriteState {
-        size: current_size,
+        size: if restore_inside_template || suppress_restore {
+            current_size
+        } else {
+            inner_size
+        },
         color: denominator_state.color,
     })
 }
@@ -1158,6 +1730,11 @@ fn write_textstyle_parenthesized_pile(
     suppress_restore: bool,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    if current_size != SizeState::Full {
+        // Bug-fix: script-sized text-style piles stay at the inherited slot size
+        // instead of shrinking once more before the pile template opens.
+        return write_pile(PileKind::Parenthesized, upper, lower, out, current_size, writer);
+    }
     let pile_size = match current_size {
         SizeState::Full => SizeState::Sub,
         SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
@@ -1221,6 +1798,11 @@ fn write_textstyle_binom_pile(
     suppress_restore: bool,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    if current_size != SizeState::Full {
+        // Bug-fix: MathType keeps script-sized `\tbinom` payloads at the current
+        // script size instead of forcing an extra Sub2 wrapper around the pile.
+        return write_binom_pile(upper, lower, out, current_size, writer);
+    }
     let pile_size = match current_size {
         SizeState::Full => SizeState::Sub,
         SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
@@ -1278,7 +1860,92 @@ fn write_textstyle_bodyless_big_op(
     })
 }
 
-/// Map parser style switches onto the MTEF logical sizes already used for scripts.
+/// Write inline/text-style bodyless integrals, which MathType also stores with tmINTOP.
+fn write_textstyle_bodyless_integral(
+    lower: Option<&Expr>,
+    upper: Option<&Expr>,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    suppress_restore: bool,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    let script_size = match current_size {
+        SizeState::Full => SizeState::Sub,
+        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
+    };
+    let variation = match (lower.is_some(), upper.is_some()) {
+        (true, true) => 0x30,
+        (false, true) => 0x20,
+        _ => 0x10,
+    };
+    out.extend_from_slice(&[0x03, 0x00, 0x15, variation, 0x00]);
+    write_null_line(out);
+    write_size(script_size, out);
+    if let Some(lower) = lower {
+        let lower_state = write_line(lower, out, script_size, writer)?;
+        restore_script_separator(lower_state, script_size, out);
+    } else {
+        write_null_line(out);
+    }
+    if let Some(upper) = upper {
+        write_line(upper, out, script_size, writer)?;
+    } else {
+        write_null_line(out);
+    }
+    out.push(0x0d);
+    color_default(out);
+    write_named_big_operator_glyph_line("integral", out, writer)?;
+    out.push(0x00);
+    if !suppress_restore && script_size != current_size {
+        write_size(current_size, out);
+    }
+    Ok(WriteState {
+        size: current_size,
+        color: ColorState::Black,
+    })
+}
+
+
+/// Write a bodyless integral with explicit limit slots, which reuses tmSUMOP layout.
+fn write_bodyless_integral_limits(
+    lower: Option<&Expr>,
+    upper: Option<&Expr>,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    let script_size = match current_size {
+        SizeState::Full => SizeState::Sub,
+        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
+    };
+    let variation = match (lower.is_some(), upper.is_some()) {
+        (true, true) => 0x70,
+        (false, true) => 0x60,
+        _ => 0x50,
+    };
+    out.extend_from_slice(&[0x03, 0x00, 0x16, variation, 0x00]);
+    write_null_line(out);
+    write_size(script_size, out);
+    if let Some(lower) = lower {
+        let lower_state = write_line(lower, out, script_size, writer)?;
+        restore_script_separator(lower_state, script_size, out);
+    } else {
+        write_null_line(out);
+    }
+    if let Some(upper) = upper {
+        write_line(upper, out, script_size, writer)?;
+    } else {
+        write_null_line(out);
+    }
+    out.push(0x0d);
+    color_default(out);
+    write_named_big_operator_glyph_line("integral", out, writer)?;
+    out.push(0x00);
+    Ok(WriteState {
+        size: script_size,
+        color: ColorState::Black,
+    })
+}/// Map parser style switches onto the MTEF logical sizes already used for scripts.
 fn style_size(kind: StyleKind) -> SizeState {
     match kind {
         StyleKind::Display | StyleKind::Text => SizeState::Full,
@@ -1331,6 +1998,185 @@ fn write_text_char_record(ch: char, options: u8, typeface: u8, out: &mut Vec<u8>
     out.push(options);
     out.push(typeface);
     write_u16(ch as u16, out);
+}
+
+/// Build MathType's text-style side-script form for bodyless `\sum`-style operators.
+fn no_limits_big_op_expr(
+    kind: BigOpKind,
+    lower: Option<&Expr>,
+    upper: Option<&Expr>,
+    body: Option<&Expr>,
+) -> Expr {
+    let operator = Expr::Style {
+        kind: StyleKind::Text,
+        content: Box::new(Expr::BigOp {
+            kind,
+            lower: lower.cloned().map(Box::new),
+            upper: upper.cloned().map(Box::new),
+            body: None,
+            placement: LimitPlacement::Limits,
+        }),
+    };
+    if let Some(body) = body {
+        Expr::Sequence(vec![operator, body.clone()])
+    } else {
+        operator
+    }
+}
+
+/// Write one parsed `\lim`/`\sup` node while preserving explicit `\nolimits`.
+fn write_limit_expr(
+    name: &str,
+    lower: Option<&Expr>,
+    upper: Option<&Expr>,
+    placement: LimitPlacement,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    if placement == LimitPlacement::NoLimits {
+        let expr = Expr::Script {
+            base: Box::new(Expr::FunctionName(name.to_string())),
+            sub: lower.cloned().map(Box::new),
+            sup: upper.cloned().map(Box::new),
+        };
+        write_expr(&expr, out, current_size, writer)
+    } else {
+        write_limit(name, lower, upper, out, current_size, writer)
+    }
+}
+
+/// Write one parsed `\mathop` node, preserving limit placement and bare-atom spacing.
+fn write_math_op_expr(
+    content: &Expr,
+    lower: Option<&Expr>,
+    upper: Option<&Expr>,
+    placement: LimitPlacement,
+    leading_space: bool,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    if placement == LimitPlacement::NoLimits && (lower.is_some() || upper.is_some()) {
+        let expr = Expr::Script {
+            base: Box::new(content.clone()),
+            sub: lower.cloned().map(Box::new),
+            sup: upper.cloned().map(Box::new),
+        };
+        write_expr(&expr, out, current_size, writer)
+    } else if lower.is_some() || upper.is_some() {
+        write_custom_limit(content, lower, upper, out, current_size, writer)
+    } else if leading_space {
+        let expr = Expr::Sequence(vec![
+            Expr::Font {
+                kind: FontKind::RomanText,
+                content: Box::new(Expr::Char(' ')),
+            },
+            content.clone(),
+        ]);
+        write_expr(&expr, out, current_size, writer)
+    } else {
+        write_expr(content, out, current_size, writer)
+    }
+}
+
+/// Write one parsed integral node while preserving side-script versus limit placement.
+fn write_integral_expr(
+    kind: IntegralKind,
+    body: Option<&Expr>,
+    lower: Option<&Expr>,
+    upper: Option<&Expr>,
+    placement: LimitPlacement,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    if placement == LimitPlacement::NoLimits {
+        if body.is_none() {
+            let suppress_restore = !writer.force_next_no_limits_integral_style_restore;
+            writer.force_next_no_limits_integral_style_restore = false;
+            return write_textstyle_bodyless_integral(
+                lower,
+                upper,
+                out,
+                current_size,
+                suppress_restore,
+                writer,
+            );
+        }
+        // Bug-fix: bodyful no-limits integrals, including side-script forms such
+        // as `\int_\Omega ...` and contour variants like `\oint_\gamma ...`,
+        // still use MathType's native integral template instead of the compact
+        // side-script glyph path.
+        write_integral_op(kind, body, lower, upper, out, current_size, writer)
+    } else if body.is_none() {
+        write_bodyless_integral_limits(lower, upper, out, current_size, writer)
+    } else {
+        write_integral_op(kind, body, lower, upper, out, current_size, writer)
+    }
+}
+
+/// Write MathType's generic tmLIM template for `\mathop{...}`-style operator bodies.
+fn write_custom_limit(
+    content: &Expr,
+    lower: Option<&Expr>,
+    upper: Option<&Expr>,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    let variation = match (lower.is_some(), upper.is_some()) {
+        (true, false) => 0x10,
+        (false, true) => 0x20,
+        (true, true) => 0x30,
+        (false, false) => return write_expr(content, out, current_size, writer),
+    };
+    out.extend_from_slice(&[0x03, 0x00, 0x17, variation, 0x00]);
+    let main_state = write_line(content, out, current_size, writer)?;
+    let limit_size = match current_size {
+        SizeState::Full => SizeState::Sub,
+        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
+    };
+    if main_state.size != limit_size {
+        write_size(limit_size, out);
+    }
+    color_default(out);
+    if let Some(lower) = lower {
+        let lower_state = write_line(lower, out, limit_size, writer)?;
+        if lower_state.size != limit_size {
+            write_size(limit_size, out);
+        }
+        color_default(out);
+    } else {
+        write_null_line(out);
+    }
+    if let Some(upper) = upper {
+        write_line(upper, out, limit_size, writer)?;
+    } else {
+        write_null_line(out);
+    }
+    out.push(0x00);
+    let suppress_restore = writer.suppress_next_limit_restore;
+    if suppress_restore {
+        writer.suppress_next_limit_restore = false;
+    } else {
+        if current_size != limit_size {
+            write_size(current_size, out);
+        }
+        color_black(out);
+    }
+    Ok(WriteState {
+        size: if suppress_restore {
+            limit_size
+        } else {
+            current_size
+        },
+        color: if suppress_restore {
+            ColorState::Default
+        } else {
+            ColorState::Black
+        },
+    })
 }
 
 /// Write MathType's limit template for \lim and \sup with lower/upper slots.
@@ -1422,11 +2268,21 @@ fn write_integral_op(
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
-    let body = body.ok_or_else(|| "integrals require an operand in this subset".to_string())?;
     let variation = integral_variation(kind, lower.is_some() || upper.is_some());
     out.extend_from_slice(&[0x03, 0x00, 0x0f, variation, 0x00]);
-    color_default(out);
-    let body_state = write_line(body, out, current_size, writer)?;
+    let bodyless = body.is_none();
+    let body_state = if let Some(body) = body {
+        color_default(out);
+        write_line(body, out, current_size, writer)?
+    } else {
+        // Bug-fix: MathType still emits a native integral template with an empty
+        // body slot when limits are attached to a standalone integral.
+        write_null_line(out);
+        WriteState {
+            size: current_size,
+            color: ColorState::Default,
+        }
+    };
     let limit_size = match current_size {
         SizeState::Full => SizeState::Sub,
         SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
@@ -1445,7 +2301,7 @@ fn write_integral_op(
         if lower_state.color != ColorState::Black {
             color_black(out);
         }
-    } else if body_state.color != ColorState::Black {
+    } else if !bodyless && body_state.color != ColorState::Black {
         color_black(out);
     }
     if lower.is_none() {
@@ -1528,16 +2384,23 @@ fn write_named_big_operator_glyph(name: &str, out: &mut Vec<u8>) -> Result<(), S
             typewriter_group_active: false,
             big_symbol_line_marker_pending: false,
             suppress_next_pile_color_default: false,
+            suppress_next_pile_black_selector: false,
             suppress_next_stackrel_color_default: false,
             emit_top_fenced_matrix_color: false,
             suppress_next_style_restore: false,
+            force_next_no_limits_integral_style_restore: false,
             suppress_next_limit_restore: false,
             emit_top_color_selector_one: false,
+            next_color_selector: 1,
+            named_color_selectors: HashMap::new(),
+            pending_raw_follow_selector: None,
             top_sequence_starts_default: false,
             fallback_environment_active: false,
             suppress_next_line_black: false,
             line_starts_default: false,
             parent_sequence_has_previous_sibling: false,
+            parent_sequence_previous_was_raw: false,
+            suppress_next_marked_char_marker: false,
         },
     );
     Ok(())
@@ -1594,7 +2457,12 @@ fn write_font_expr(
         color_black(out);
         return write_expr(expr, out, current_size, writer);
     }
-    let opened_sans_serif_group = kind == FontKind::MathSf && !writer.sans_serif_group_active;
+    let opened_sans_serif_group = kind == FontKind::MathSf
+        && !writer.sans_serif_group_active
+        // Bug-fix: raw-prefixed wrappers such as `\color{blue}{\sf y}` keep the
+        // visible `\sf` bytes ahead of Arial activation, so defer the font group
+        // until the first real sans-serif glyph is emitted.
+        && !expr_starts_with_raw_tex(expr);
     let opened_typewriter_group =
         kind == FontKind::TypewriterText && !writer.typewriter_group_active;
     if opened_sans_serif_group {
@@ -1615,16 +2483,40 @@ fn write_font_expr(
         Expr::Sequence(items) => {
             let mut state = WriteState {
                 size: current_size,
-                color: ColorState::Black,
+                // Bug-fix: raw-prefixed font wrappers such as `\mathcal{\vb{B}}`
+                // inherit MathType's default-color path until the first visible
+                // font glyph appears, rather than emitting an immediate black->default
+                // transition inside the font-specific writer branch.
+                color: if expr_starts_with_raw_tex(expr) {
+                    ColorState::Default
+                } else {
+                    ColorState::Black
+                },
             };
             for item in items {
                 if state.size != current_size {
                     write_size(current_size, out);
                     state.size = current_size;
                 }
-                if state.color != ColorState::Black {
-                    color_black(out);
-                    state.color = ColorState::Black;
+                if state.color == ColorState::Black && expr_starts_with_raw_tex(item) {
+                    // Bug-fix: font-scoped visible text like `\textbf{Argument #1:}`
+                    // still drops back to MathType's default raw-fallback color for
+                    // the literal `#` fragment before resuming the font glyph run.
+                    color_default(out);
+                    state.color = ColorState::Default;
+                } else if state.color != ColorState::Black && !expr_starts_with_raw_tex(item) {
+                    if font_item_needs_explicit_font_def_before_black(kind, item) {
+                        emit_font_defs_for_item(kind, item, out, writer);
+                        writer.ensure_black_color_def(out);
+                        color_black(out);
+                        state.color = ColorState::Black;
+                    } else if !font_item_opens_its_own_font_path(kind, item) {
+                        // Bug-fix: raw-prefixed font wrappers only need an explicit
+                        // black restore when the next visible token does not open its
+                        // own font-definition path.
+                        color_black(out);
+                        state.color = ColorState::Black;
+                    }
                 }
                 state = write_font_expr(kind, item, out, state.size, writer)?;
             }
@@ -1651,6 +2543,23 @@ fn write_font_expr(
                 color: ColorState::Black,
             })
         }
+        Expr::ArrowAccent {
+            kind: arrow_kind,
+            under: false,
+            content,
+        } if kind == FontKind::RomanText && single_accent_char(content).is_some() => {
+            let ch = single_accent_char(content).expect("guard checked single accent char");
+            let embellishment = match arrow_kind {
+                ArrowAccentKind::Right => 0x0b,
+                ArrowAccentKind::Left => 0x0c,
+                ArrowAccentKind::LeftRight => 0x0d,
+            };
+            write_font_embellished_char(kind, ch, embellishment, out, writer)?;
+            Ok(WriteState {
+                size: current_size,
+                color: ColorState::Black,
+            })
+        }
         Expr::Script { base, sub, sup } => {
             // MathType keeps font-scoped scripts by applying the font to each visible script slot
             // instead of dropping back to an unscoped native Script record.
@@ -1664,6 +2573,16 @@ fn write_font_expr(
                     .map(|expr| Box::new(font_wrapped_expr(kind, expr))),
             };
             write_expr(&scripted, out, current_size, writer)
+        }
+        Expr::Fraction(numerator, denominator) => {
+            // Bug-fix: font wrappers such as `\boldsymbol{\frac{a}{b}}` push the
+            // font into each visible fraction slot in MathType instead of leaving
+            // the template operands on the default font path.
+            let fraction = Expr::Fraction(
+                Box::new(font_wrapped_expr(kind, numerator.as_ref())),
+                Box::new(font_wrapped_expr(kind, denominator.as_ref())),
+            );
+            write_expr(&fraction, out, current_size, writer)
         }
         other => write_expr(other, out, current_size, writer),
     };
@@ -1708,6 +2627,11 @@ fn write_font_char(
             write_u16(code as u16, out);
         }
         FontKind::RomanText => {
+            if roman_text_keeps_math_font(ch) {
+                // Bug-fix: MathType keeps relation punctuation such as `>` on the
+                // native math-symbol path even inside `\mathrm{...}`.
+                return write_char(ch, out, writer);
+            }
             write_table_char(FN_TEXT, code as u16, None, out);
         }
         FontKind::TypewriterText => {
@@ -1791,6 +2715,64 @@ fn font_wrapped_expr(kind: FontKind, expr: &Expr) -> Expr {
     }
 }
 
+/// Return true when the next font-scoped item opens its own font-definition bytes.
+fn font_item_opens_its_own_font_path(kind: FontKind, expr: &Expr) -> bool {
+    if expr_starts_with_line_font_def(expr)
+        || expr_starts_with_euclid_math_one(expr)
+        || expr_starts_with_euclid_math_two(expr)
+        || expr_starts_with_euclid_fraktur(expr)
+    {
+        return true;
+    }
+    let Some(ch) = first_plain_char(expr) else {
+        return false;
+    };
+    match kind {
+        FontKind::MathCal | FontKind::MathScr => encoding::mathcal_char(ch).is_ok_and(|entry| {
+            entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
+        }),
+        FontKind::MathBb => encoding::mathbb_char(ch).is_ok_and(|entry| {
+            entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
+        }),
+        FontKind::MathFrak => encoding::mathfrak_char(ch).is_ok_and(|entry| {
+            entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
+        }),
+        _ => false,
+    }
+}
+
+/// Return true when one raw-prefixed font item needs explicit font defs before black restore.
+fn font_item_needs_explicit_font_def_before_black(kind: FontKind, expr: &Expr) -> bool {
+    let Some(ch) = first_plain_char(expr) else {
+        return false;
+    };
+    match kind {
+        FontKind::MathCal | FontKind::MathScr => encoding::mathcal_char(ch).is_ok_and(|entry| {
+            entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
+        }),
+        FontKind::MathBb => encoding::mathbb_char(ch).is_ok_and(|entry| {
+            entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
+        }),
+        FontKind::MathFrak => encoding::mathfrak_char(ch).is_ok_and(|entry| {
+            entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
+        }),
+        _ => false,
+    }
+}
+
+/// Emit the explicit font definitions required by the next raw-prefixed font item.
+fn emit_font_defs_for_item(kind: FontKind, expr: &Expr, out: &mut Vec<u8>, writer: &mut MtefWriter) {
+    if !font_item_needs_explicit_font_def_before_black(kind, expr) {
+        return;
+    }
+    match kind {
+        FontKind::MathCal | FontKind::MathScr => writer.ensure_euclid_math_one(out),
+        FontKind::MathBb => writer.ensure_euclid_math_two(out),
+        FontKind::MathFrak => writer.ensure_euclid_fraktur(out),
+        _ => {}
+    }
+}
+
 /// Return true when MathType really uses the bold math font instead of the regular glyph slot.
 fn char_prefers_bold_font(ch: char) -> bool {
     ch.is_alphanumeric() || matches!(ch, '\u{03b1}'..='\u{03c9}' | '\u{0391}'..='\u{03a9}')
@@ -1809,6 +2791,11 @@ fn write_math_one_font_char(
         entry.font_pos,
         out,
     );
+}
+
+/// Return true when `\mathrm` should preserve MathType's native math glyph font.
+fn roman_text_keeps_math_font(ch: char) -> bool {
+    matches!(ch, '<' | '>')
 }
 
 /// Fall back for digits and punctuation inside alphabet-only math font commands.
@@ -1832,10 +2819,27 @@ fn write_line(
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
     out.extend_from_slice(&[0x01, 0x00]);
+    if expr_is_empty_sequence(expr) {
+        // Bug-fix: empty template slots such as `\sin \left(\right)` still use
+        // a real empty LINE record, but MathType does not open a black run inside it.
+        out.push(0x00);
+        return Ok(WriteState {
+            size: current_size,
+            color: ColorState::Default,
+        });
+    }
     if let Some((width, rest)) = leading_space_rest(expr) {
         write_space_without_color(width, out);
+        let mut rest = rest;
+        while let [Expr::Space(width), tail @ ..] = rest {
+            write_space_without_color(*width, out);
+            rest = tail;
+        }
         if !rest.is_empty() {
             color_black(out);
+            if writer.next_color_selector == 1 {
+                writer.next_color_selector = 2;
+            }
             let rest_expr = Expr::Sequence(rest.to_vec());
             let final_state = write_expr(&rest_expr, out, current_size, writer)?;
             out.push(0x00);
@@ -1864,6 +2868,9 @@ fn write_line(
     if expr_starts_with_big_symbol_script_base(expr) {
         out.push(0x0d);
         writer.big_symbol_line_marker_pending = true;
+    } else if expr_starts_with_marked_char(expr) {
+        out.push(0x0d);
+        writer.suppress_next_marked_char_marker = true;
     } else if expr_is_standalone_limit(expr) {
         // Standalone \lim/\sup probes keep the template's internal size/color state visible
         // through the end of the LINE instead of restoring it for a following sibling.
@@ -1877,6 +2884,9 @@ fn write_line(
     if !suppress_black && !expr_starts_with_self_opening(expr) {
         writer.ensure_black_color_def(out);
         color_black(out);
+        if writer.next_color_selector == 1 {
+            writer.next_color_selector = 2;
+        }
     }
     let previous_line_starts_default = writer.line_starts_default;
     let previous_top_sequence_starts_default = writer.top_sequence_starts_default;
@@ -1891,3 +2901,27 @@ fn write_line(
     out.push(0x00);
     Ok(final_state)
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

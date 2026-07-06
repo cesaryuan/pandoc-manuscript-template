@@ -47,12 +47,7 @@ impl Parser {
             while self.peek().is_some_and(|ch| ch.is_ascii_alphabetic()) {
                 self.pos += 1;
             }
-            let thickness = self.parse_raw_group("above line thickness").ok()?;
-            let thickness_expr = self.parse_visible_wrapper_text(&thickness).ok()?;
-            return Some(InfixCommand::Above(Expr::Sequence(vec![
-                Expr::RawTex(" \\above".to_string()),
-                thickness_expr,
-            ])));
+            return Some(InfixCommand::Above(Expr::RawTex(" \\above".to_string())));
         } else if self.starts_command("atop") {
             InfixCommand::Atop
         } else if self.starts_command("choose") {
@@ -105,11 +100,9 @@ impl Parser {
         self.pos != start
     }
 
-    /// Consume one deferred space that belongs to the next raw fallback token.
-    pub(super) fn take_pending_raw_ws(&mut self) -> bool {
-        let pending = self.pending_raw_ws;
-        self.pending_raw_ws = false;
-        pending
+    /// Consume deferred source whitespace that belongs to the next raw fallback token.
+    pub(super) fn take_pending_raw_ws(&mut self) -> String {
+        std::mem::take(&mut self.pending_raw_ws)
     }
 
     /// Consume raw source whitespace so fallback environments can reproduce
@@ -135,5 +128,48 @@ impl Parser {
             start -= 1;
         }
         self.chars[start..self.pos].iter().collect()
+    }
+
+    /// Recover same-line source whitespace that appears immediately before one atom start.
+    pub(super) fn recover_inline_whitespace_before(&self, atom_start: usize) -> String {
+        let mut start = atom_start;
+        while start > 0 && self.chars[start - 1].is_whitespace() {
+            if matches!(self.chars[start - 1], '\r' | '\n') {
+                break;
+            }
+            start -= 1;
+        }
+        self.chars[start..atom_start].iter().collect()
+    }
+
+    /// Return true when another top-level `\over` appears later in the same sequence.
+    pub(super) fn has_following_top_level_over(&self, until: Option<char>) -> bool {
+        let mut index = self.pos;
+        let mut brace_depth = 0usize;
+        while let Some(&ch) = self.chars.get(index) {
+            if brace_depth == 0 && until.is_some_and(|end| ch == end) {
+                break;
+            }
+            match ch {
+                '{' => brace_depth += 1,
+                '}' => {
+                    if brace_depth == 0 {
+                        break;
+                    }
+                    brace_depth -= 1;
+                }
+                '\\' if brace_depth == 0 => {
+                    let slice = &self.chars[index..];
+                    if slice.starts_with(&['\\', 'o', 'v', 'e', 'r'])
+                        && !slice.get(5).is_some_and(|next| next.is_ascii_alphabetic())
+                    {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+            index += 1;
+        }
+        false
     }
 }

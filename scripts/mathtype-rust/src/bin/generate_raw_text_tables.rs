@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 use std::thread;
+use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
 #[path = "../cfb.rs"]
@@ -16,11 +17,37 @@ mod typeface;
 
 use mathtype_ansi::encode_mathtype_text;
 use mathtype_input::mathtype_tex_payload;
-use typeface::FN_TEXT;
+use typeface::{EXPLICIT_FONT_NEG_1, EXPLICIT_FONT_NEG_2, FN_FUNCTION, FN_TEXT};
 
 const BINARY_OPERATOR_FORMULA: &str =
     r"+ - / * ⋅ ∘ ∙ ± × ÷ ∓ ∔ ∧ ∨ ∩ ∪ ≀ ⊎ ⊓ ⊔ ⊕ ⊖ ⊗ ⊘ ⊙ ⊚ ⊛ ⊝ ◯ ∖ {}";
 const RELATIONS_FORMULA: &str = r"= < > : ∈ ∋ ∝ ∼ ∽ ≂ ≃ ≅ ≈ ≊ ≍ ≎ ≏ ≐ ≑ ≒ ≓ ≖ ≗ ≜ ≡ ≤ ≥ ≦ ≧ ≫ ≬ ≳ ≷ ≺ ≻ ≼ ≽ ≾ ≿ ⊂ ⊃ ⊆ ⊇ ⊏ ⊐ ⊑ ⊒ ⊢ ⊣ ⊩ ⊪ ⊸ ⋈ ⋍ ⋐ ⋑ ⋔ ⋙ ⋛ ⋞ ⋟ ⌢ ⌣ ⩾ ⪆ ⪌ ⪕ ⪖ ⪯ ⪰ ⪷ ⪸ ⫅ ⫆ ≲ ⩽ ⪅ ≶ ⋚ ⪋ ⟂ ⊨ ⊶ ⊷";
+const NEGATED_RELATIONS_FORMULA: &str =
+    r"∉ ∌ ∤ ∦ ≁ ≆ ≠ ≨ ≩ ≮ ≯ ≰ ≱ ⊀ ⊁ ⊈ ⊉ ⊊ ⊋ ⊬ ⊭ ⊮ ⊯ ⋠ ⋡ ⋦ ⋧ ⋨ ⋩ ⋬ ⋭ ⪇ ⪈ ⪉ ⪊ ⪵ ⪶ ⪹ ⪺ ⫋ ⫌";
+const ARROWS_FORMULA: &str =
+    r"← ↑ → ↓ ↔ ↕ ↖ ↗ ↘ ↙ ↚ ↛ ↞ ↠ ↢ ↣ ↦ ↩ ↪ ↫ ↬ ↭ ↮ ↰ ↱ ↶ ↷ ↺ ↻ ↼ ↽ ↾ ↿ ⇀ ⇁ ⇂ ⇃ ⇄ ⇆ ⇇ ⇈ ⇉ ⇊ ⇋ ⇌ ⇍ ⇎ ⇏ ⇐ ⇑ ⇒ ⇓ ⇔ ⇕ ⇚ ⇛ ⇝ ⇠ ⇢ ⟵ ⟶ ⟷ ⟸ ⟹ ⟺ ⟼";
+const BIG_OPERATORS_FORMULA: &str =
+    r"∫ ∬ ∭ ∮ ∏ ∐ ∑ ⋀ ⋁ ⋂ ⋃ ⨀ ⨁ ⨂ ⨄ ⨆";
+const LOWER_GREEK_FORMULA: &str =
+    r"α β γ δ ϵ ζ η θ ι κ λ μ ν ξ ο π ρ σ τ υ ϕ χ ψ ω ε ϑ ϖ ϱ ς φ ϝ";
+const UPPER_GREEK_FORMULA: &str =
+    r"Α Β Γ Δ Ε Ζ Η Θ Ι Κ Λ Μ Ν Ξ Ο Π Ρ Σ Τ Υ Φ Χ Ψ Ω";
+const LOGIC_AND_SET_FORMULA: &str =
+    r"∀ ∴ ∁ ∵ ∃ ∣ ∈ ∉ ∋ ⊂ ⊃ ∧ ∨ ↦ → ← ↔ ¬";
+const DIRECT_DELIMITER_FORMULA: &str = r"⌈ ⌉ ⌊ ⌋ ⎰ ⎱ ┌ ┐ └ ┘ ⟦ ⟧ ⟮ ⟯";
+const LETTER_MISC_FORMULA: &str = r"∂ ∇ ℑ Ⅎ ℵ ℶ ℷ ℸ ⅁ ℏ ð − ∗";
+const AUTO_PROBE_FORMULAS: &[&str] = &[
+    BINARY_OPERATOR_FORMULA,
+    RELATIONS_FORMULA,
+    NEGATED_RELATIONS_FORMULA,
+    ARROWS_FORMULA,
+    BIG_OPERATORS_FORMULA,
+    LOWER_GREEK_FORMULA,
+    UPPER_GREEK_FORMULA,
+    LOGIC_AND_SET_FORMULA,
+    DIRECT_DELIMITER_FORMULA,
+    LETTER_MISC_FORMULA,
+];
 
 const OVERRIDE_SPECS: &[OverrideSpec] = &[
     // Standalone double quote currently hangs in MathType TeX Input probes, so keep the known
@@ -28,6 +55,15 @@ const OVERRIDE_SPECS: &[OverrideSpec] = &[
     OverrideSpec::Manual {
         ch: '"',
         fragments: &[FragmentSpec::Raw(&[0x22])],
+    },
+    // TeX alignment and parameter markers stay on MathType's raw fallback path as standalone input.
+    OverrideSpec::Manual {
+        ch: '&',
+        fragments: &[FragmentSpec::Raw(&[0x26])],
+    },
+    OverrideSpec::Manual {
+        ch: '#',
+        fragments: &[FragmentSpec::Raw(&[0x23])],
     },
     OverrideSpec::Probe {
         ch: '\u{2295}',
@@ -62,15 +98,34 @@ fn main() -> Result<(), String> {
         .map_err(|err| format!("failed to create {}: {err}", config.work_dir.display()))?;
 
     let mut generated = Vec::new();
-    for spec in OVERRIDE_SPECS {
-        let fragments = resolve_fragments(spec, &config)?;
-        generated.push((spec.ch(), fragments));
+    let mut styled = Vec::new();
+    for spec in override_specs() {
+        match spec {
+            OverrideSpec::Manual { .. } | OverrideSpec::Probe { .. } => {
+                if let Some(fragments) = resolve_fragments(&spec, &config)? {
+                    generated.push((spec.ch(), fragments));
+                }
+            }
+            OverrideSpec::AutoProbe { ch } => {
+                let probe = probe_auto_literal(ch, &config)?;
+                if let Some(raw_prefix) = probe.raw_prefix.as_deref() {
+                    if raw_prefix != probe.current.as_slice() {
+                        generated.push((ch, build_fragments(ch, &probe.current, raw_prefix)?));
+                        continue;
+                    }
+                }
+                if let Some(record) = probe.visible {
+                    styled.push(record);
+                }
+            }
+        }
     }
 
-    fs::write(&config.output, render_output(&generated))
+    fs::write(&config.output, render_output(&generated, &styled))
         .map_err(|err| format!("failed to write {}: {err}", config.output.display()))?;
     println!("wrote {}", config.output.display());
     println!("raw_text_override_count={}", generated.len());
+    println!("literal_styled_count={}", styled.len());
     Ok(())
 }
 
@@ -169,6 +224,7 @@ fn usage() -> &'static str {
     "Usage: generate_raw_text_tables [--helper <exe>] [--cache-dir <dir>] [--output <raw_text_tables.rs>] [--work-dir <dir>] [--pre-verb 2] [--timeout-ms <N>] [--no-reuse]"
 }
 
+#[derive(Clone, Copy)]
 enum OverrideSpec {
     Manual {
         ch: char,
@@ -180,6 +236,9 @@ enum OverrideSpec {
         run_index: usize,
         extract: ExtractSpec,
     },
+    AutoProbe {
+        ch: char,
+    },
 }
 
 impl OverrideSpec {
@@ -187,6 +246,7 @@ impl OverrideSpec {
     fn ch(&self) -> char {
         match self {
             OverrideSpec::Manual { ch, .. } | OverrideSpec::Probe { ch, .. } => *ch,
+            OverrideSpec::AutoProbe { ch } => *ch,
         }
     }
 }
@@ -204,9 +264,12 @@ enum FragmentSpec {
 }
 
 /// Resolve one generated fragment list from either a manual fallback or a MathType probe.
-fn resolve_fragments(spec: &OverrideSpec, config: &Config) -> Result<Vec<FragmentSpec>, String> {
+fn resolve_fragments(
+    spec: &OverrideSpec,
+    config: &Config,
+) -> Result<Option<Vec<FragmentSpec>>, String> {
     match spec {
-        OverrideSpec::Manual { fragments, .. } => Ok(fragments.to_vec()),
+        OverrideSpec::Manual { fragments, .. } => Ok(Some(fragments.to_vec())),
         OverrideSpec::Probe {
             ch,
             formula,
@@ -215,9 +278,44 @@ fn resolve_fragments(spec: &OverrideSpec, config: &Config) -> Result<Vec<Fragmen
         } => {
             let current = encode_mathtype_text(&ch.to_string())?;
             let raw_prefix = probe_raw_bytes(*ch, formula, *run_index, *extract, config)?;
-            build_fragments(*ch, &current, &raw_prefix)
+            build_fragments(*ch, &current, &raw_prefix).map(Some)
+        }
+        OverrideSpec::AutoProbe { .. } => Ok(None),
+    }
+}
+
+/// Return the full override list, including one-character probes for symbol families.
+fn override_specs() -> Vec<OverrideSpec> {
+    let mut specs = OVERRIDE_SPECS.to_vec();
+    let mut seen = specs.iter().map(OverrideSpec::ch).collect::<BTreeSet<_>>();
+    for formula in AUTO_PROBE_FORMULAS {
+        for ch in formula.chars().filter(|ch| auto_probe_char(*ch)) {
+            if seen.insert(ch) {
+                specs.push(OverrideSpec::AutoProbe { ch });
+            }
         }
     }
+    specs
+}
+
+/// Return true for direct Unicode literals worth probing individually.
+fn auto_probe_char(ch: char) -> bool {
+    !ch.is_ascii() && !ch.is_whitespace()
+}
+
+/// Probe one direct Unicode literal and capture its raw fallback or visible CHAR path.
+fn probe_auto_literal(ch: char, config: &Config) -> Result<AutoLiteralProbe, String> {
+    let formula = ch.to_string();
+    let current = encode_mathtype_text(&formula)?;
+    let mtef = load_or_probe_formula_mtef(ch, &formula, config)?;
+    Ok(AutoLiteralProbe {
+        current,
+        raw_prefix: first_probe_run_from_mtef(&mtef)?,
+        visible: first_visible_probe_char(&mtef).map(|mut record| {
+            record.ch = ch;
+            record
+        }),
+    })
 }
 
 /// Probe one carrier formula and return the raw-text bytes used for the target literal.
@@ -268,6 +366,48 @@ fn probe_raw_bytes(
     extract_probe_bytes_from_mtef(ch, &mtef, run_index, extract)
 }
 
+/// Probe one formula and return its full MTEF payload from cache or MathType.
+fn load_or_probe_formula_mtef(ch: char, formula: &str, config: &Config) -> Result<Vec<u8>, String> {
+    let name = format!("u{:04x}", ch as u32);
+    let tex_path = config.work_dir.join(format!("{name}.tex"));
+    let ole_path = config.work_dir.join(format!("{name}.ole.bin"));
+    let payload = mathtype_tex_payload(formula);
+    if let Some(cached) = read_cached_mtef(&mathtype_cache_path(&payload, config))? {
+        return Ok(cached);
+    }
+    fs::write(&tex_path, &payload)
+        .map_err(|err| format!("failed to write {}: {err}", tex_path.display()))?;
+    if !config.reuse_existing || !ole_path.exists() {
+        run_mathtype_helper(
+            &config.helper,
+            &config.pre_verb,
+            &tex_path,
+            &ole_path,
+            config.timeout_ms,
+        )?;
+    }
+    let mtef = match load_probe_mtef(&ole_path) {
+        Ok(mtef) => mtef,
+        Err(first_err) if config.reuse_existing => {
+            run_mathtype_helper(
+                &config.helper,
+                &config.pre_verb,
+                &tex_path,
+                &ole_path,
+                config.timeout_ms,
+            )?;
+            load_probe_mtef(&ole_path).map_err(|second_err| {
+                format!(
+                    "failed to read probe {} after refresh: first={first_err}; second={second_err}",
+                    ole_path.display()
+                )
+            })?
+        }
+        Err(err) => return Err(err),
+    };
+    Ok(mtef)
+}
+
 /// Extract one target byte sequence from a cached or freshly probed MTEF payload.
 fn extract_probe_bytes_from_mtef(
     ch: char,
@@ -299,6 +439,32 @@ fn extract_probe_bytes_from_mtef(
             Ok(trimmed[trimmed.len() - len..].to_vec())
         }
     }
+}
+
+/// Return the first non-empty trimmed raw-text run from one probe payload.
+fn first_probe_run_from_mtef(mtef: &[u8]) -> Result<Option<Vec<u8>>, String> {
+    for run in raw_text_runs(&scan_records(mtef)) {
+        let trimmed = trim_ascii_spaces(&run);
+        if !trimmed.is_empty() {
+            return Ok(Some(trimmed.to_vec()));
+        }
+    }
+    Ok(None)
+}
+
+/// Return the direct-literal visible CHAR style when MathType stays on the native path.
+fn first_visible_probe_char(mtef: &[u8]) -> Option<ProbeCharRecord> {
+    scan_records(mtef)
+        .into_iter()
+        .filter_map(|record| match record {
+            ProbeRecord::Char(record)
+                if !is_probe_placeholder(record) && (record.options & 0x80) == 0 =>
+            {
+                Some(normalize_explicit_font_family(record, mtef))
+            }
+            ProbeRecord::Char(_) | ProbeRecord::Other => None,
+        })
+        .last()
 }
 
 /// Load one probe OLE and extract the embedded Equation Native payload.
@@ -383,14 +549,29 @@ fn build_fragments(
     ))
 }
 
-/// Render the generated fragment table as a compact Rust module.
-fn render_output(rows: &[(char, Vec<FragmentSpec>)]) -> String {
+/// Render the generated fragment and direct-style tables as a compact Rust module.
+fn render_output(rows: &[(char, Vec<FragmentSpec>)], styled_rows: &[ProbeCharRecord]) -> String {
     let mut out = String::new();
     out.push_str("/// Generated direct-literal fallback fragments for MathType body records.\n");
     out.push_str("#[derive(Clone, Copy, Debug, Eq, PartialEq)]\n");
     out.push_str("pub(crate) enum LiteralOverrideFragment {\n");
     out.push_str("    Raw(&'static [u8]),\n");
     out.push_str("    Char(char),\n");
+    out.push_str("}\n\n");
+    out.push_str("/// Stable explicit-font families used by direct Unicode literal CHAR records.\n");
+    out.push_str("#[derive(Clone, Copy, Debug, Eq, PartialEq)]\n");
+    out.push_str("pub(crate) enum LiteralExplicitFont {\n");
+    out.push_str("    EuclidMathOne,\n");
+    out.push_str("    EuclidMathTwo,\n");
+    out.push_str("}\n\n");
+    out.push_str("/// One direct Unicode literal that MathType keeps as a visible CHAR record.\n");
+    out.push_str("#[derive(Clone, Copy, Debug, Eq, PartialEq)]\n");
+    out.push_str("pub(crate) struct LiteralStyledChar {\n");
+    out.push_str("    pub(crate) ch: char,\n");
+    out.push_str("    pub(crate) typeface: u8,\n");
+    out.push_str("    pub(crate) mtcode: u16,\n");
+    out.push_str("    pub(crate) font_pos: Option<u8>,\n");
+    out.push_str("    pub(crate) explicit_font: Option<LiteralExplicitFont>,\n");
     out.push_str("}\n\n");
     out.push_str(
         "pub(crate) fn literal_raw_text_override(ch: char) -> Option<&'static [LiteralOverrideFragment]> {\n",
@@ -422,6 +603,22 @@ fn render_output(rows: &[(char, Vec<FragmentSpec>)]) -> String {
     }
     out.push_str("        _ => None,\n");
     out.push_str("    }\n");
+    out.push_str("}\n\n");
+    out.push_str("pub(crate) fn literal_styled_char(ch: char) -> Option<LiteralStyledChar> {\n");
+    out.push_str("    match ch {\n");
+    for record in styled_rows {
+        out.push_str(&format!(
+            "        '\\u{{{:04x}}}' => Some(LiteralStyledChar {{ ch: '\\u{{{:04x}}}', typeface: 0x{:02x}, mtcode: 0x{:04x}, font_pos: {}, explicit_font: {} }}),\n",
+            record.ch as u32,
+            record.ch as u32,
+            record.typeface,
+            record.mtcode,
+            option_u8_literal(record.font_pos),
+            literal_explicit_font_literal(record.explicit_font),
+        ));
+    }
+    out.push_str("        _ => None,\n");
+    out.push_str("    }\n");
     out.push_str("}\n");
     out
 }
@@ -435,12 +632,31 @@ fn extract_mtef_from_ole(ole: &[u8]) -> Result<Vec<u8>, String> {
         .to_vec())
 }
 
+#[derive(Clone, Copy)]
+struct ProbeCharRecord {
+    ch: char,
+    offset: usize,
+    options: u8,
+    typeface: u8,
+    mtcode: u16,
+    font_pos: Option<u8>,
+    explicit_font: Option<LiteralExplicitFont>,
+}
+
+#[derive(Clone, Copy)]
+enum LiteralExplicitFont {
+    EuclidMathOne,
+    EuclidMathTwo,
+}
+
+struct AutoLiteralProbe {
+    current: Vec<u8>,
+    raw_prefix: Option<Vec<u8>>,
+    visible: Option<ProbeCharRecord>,
+}
+
 enum ProbeRecord {
-    Char {
-        options: u8,
-        typeface: u8,
-        mtcode: u16,
-    },
+    Char(ProbeCharRecord),
     Other,
 }
 
@@ -454,11 +670,19 @@ fn scan_records(mtef: &[u8]) -> Vec<ProbeRecord> {
             let typeface = mtef[index + 2];
             let mtcode = u16::from_le_bytes([mtef[index + 3], mtef[index + 4]]);
             let has_font_pos = (options & 0x04) != 0;
-            records.push(ProbeRecord::Char {
+            records.push(ProbeRecord::Char(ProbeCharRecord {
+                ch: '\0',
+                offset: index,
                 options,
                 typeface,
                 mtcode,
-            });
+                font_pos: if has_font_pos {
+                    mtef.get(index + 5).copied()
+                } else {
+                    None
+                },
+                explicit_font: None,
+            }));
             index += if has_font_pos { 6 } else { 5 };
             continue;
         }
@@ -474,12 +698,10 @@ fn raw_text_runs(records: &[ProbeRecord]) -> Vec<Vec<u8>> {
     let mut current = Vec::new();
     for record in records {
         match record {
-            ProbeRecord::Char {
-                options,
-                typeface,
-                mtcode,
-            } if (*options & 0x80) != 0 && *typeface == FN_TEXT => {
-                let value = u32::from(*mtcode);
+            ProbeRecord::Char(record)
+                if (record.options & 0x80) != 0 && record.typeface == FN_TEXT =>
+            {
+                let value = u32::from(record.mtcode);
                 if value <= u8::MAX as u32 {
                     current.push(value as u8);
                 }
@@ -509,6 +731,66 @@ fn trim_ascii_spaces(bytes: &[u8]) -> &[u8] {
         .map(|index| index + 1)
         .unwrap_or(start);
     &bytes[start..end]
+}
+
+/// Ignore boilerplate CHAR records MathType wraps around single-symbol probes.
+fn is_probe_placeholder(record: ProbeCharRecord) -> bool {
+    (record.options == 0x02 && record.typeface == FN_FUNCTION && record.mtcode == 0x0002)
+        || (record.options == 0x00 && record.typeface == FN_TEXT && record.mtcode == 0x0101)
+}
+
+/// Normalize standalone explicit-font slots into stable Euclid font families.
+fn normalize_explicit_font_family(mut record: ProbeCharRecord, mtef: &[u8]) -> ProbeCharRecord {
+    if matches!(record.typeface, EXPLICIT_FONT_NEG_1 | EXPLICIT_FONT_NEG_2)
+        && record.font_pos.is_some()
+    {
+        record.explicit_font = match explicit_font_family_before(mtef, record.offset) {
+            Some(1) => Some(LiteralExplicitFont::EuclidMathOne),
+            Some(2) => Some(LiteralExplicitFont::EuclidMathTwo),
+            _ => None,
+        };
+    }
+    record
+}
+
+/// Return the latest Euclid Math font family defined before one CHAR record.
+fn explicit_font_family_before(mtef: &[u8], offset: usize) -> Option<u8> {
+    let prefix = mtef.get(..offset)?;
+    let one = find_last_ascii(prefix, b"EuclidMath1\0");
+    let two = find_last_ascii(prefix, b"EuclidMath2\0");
+    match (one, two) {
+        (Some(left), Some(right)) if left > right => Some(1),
+        (Some(_), Some(_)) => Some(2),
+        (Some(_), None) => Some(1),
+        (None, Some(_)) => Some(2),
+        (None, None) => None,
+    }
+}
+
+/// Find the last occurrence of one ASCII probe token.
+fn find_last_ascii(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .enumerate()
+        .filter_map(|(index, window)| (window == needle).then_some(index))
+        .last()
+}
+
+/// Render one optional byte in generated Rust syntax.
+fn option_u8_literal(value: Option<u8>) -> String {
+    match value {
+        Some(value) => format!("Some(0x{value:02x})"),
+        None => "None".to_string(),
+    }
+}
+
+/// Render one optional explicit-font family in generated Rust syntax.
+fn literal_explicit_font_literal(value: Option<LiteralExplicitFont>) -> &'static str {
+    match value {
+        Some(LiteralExplicitFont::EuclidMathOne) => "Some(LiteralExplicitFont::EuclidMathOne)",
+        Some(LiteralExplicitFont::EuclidMathTwo) => "Some(LiteralExplicitFont::EuclidMathTwo)",
+        None => "None",
+    }
 }
 
 /// Invoke the existing COM helper for one carrier formula.

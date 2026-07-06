@@ -214,6 +214,7 @@ pub(crate) const SPECIAL_CHARS: &[StyledChar] = &[
     StyledChar { ch: '\u{221e}', typeface: FN_SYMBOL, mtcode: 0x221e, font_pos: Some(0xa5), explicit_font: None },
     StyledChar { ch: '\u{2190}', typeface: FN_SYMBOL, mtcode: 0x2190, font_pos: Some(0xac), explicit_font: None },
     StyledChar { ch: '\u{2026}', typeface: FN_SYMBOL, mtcode: 0x2026, font_pos: Some(0xbc), explicit_font: None },
+    StyledChar { ch: '\u{ef01}', typeface: 0x98, mtcode: 0xef01, font_pos: None, explicit_font: None },
     StyledChar { ch: '\u{2260}', typeface: FN_SYMBOL, mtcode: 0x2260, font_pos: Some(0xb9), explicit_font: None },
     StyledChar { ch: '\u{2265}', typeface: FN_SYMBOL, mtcode: 0x2265, font_pos: Some(0xb3), explicit_font: None },
     StyledChar { ch: '\u{03b6}', typeface: FN_LC_GREEK, mtcode: 0x03b6, font_pos: Some(0x7a), explicit_font: None },
@@ -443,6 +444,7 @@ pub(crate) const SPECIAL_CHARS: &[StyledChar] = &[
     StyledChar { ch: '\u{222a}', typeface: FN_SYMBOL, mtcode: 0x222a, font_pos: Some(0xc8), explicit_font: None },
     StyledChar { ch: '\u{221e}', typeface: FN_SYMBOL, mtcode: 0x221e, font_pos: Some(0xa5), explicit_font: None },
     StyledChar { ch: '\u{2026}', typeface: FN_SYMBOL, mtcode: 0x2026, font_pos: Some(0xbc), explicit_font: None },
+    StyledChar { ch: '\u{ef01}', typeface: 0x98, mtcode: 0xef01, font_pos: None, explicit_font: None },
     StyledChar { ch: '\u{22ef}', typeface: FN_MT_EXTRA, mtcode: 0x22ef, font_pos: Some(0x4c), explicit_font: None },
     StyledChar { ch: '\u{22ee}', typeface: FN_MT_EXTRA, mtcode: 0x22ee, font_pos: Some(0x4d), explicit_font: None },
     StyledChar { ch: '\u{22f1}', typeface: FN_MT_EXTRA, mtcode: 0x22f1, font_pos: Some(0x4f), explicit_font: None },
@@ -1203,6 +1205,18 @@ pub(crate) const DELIMITER_COMMAND_CHARS: &[TexCommandChar] = &[
     TexCommandChar { command: "rfloor", ch: '\u{230b}' },
     TexCommandChar { command: "lceil", ch: '\u{2308}' },
     TexCommandChar { command: "rceil", ch: '\u{2309}' },
+    TexCommandChar { command: "ulcorner", ch: '\u{231c}' },
+    TexCommandChar { command: "urcorner", ch: '\u{231d}' },
+    TexCommandChar { command: "llcorner", ch: '\u{231e}' },
+    TexCommandChar { command: "lrcorner", ch: '\u{231f}' },
+    TexCommandChar { command: "lgroup", ch: '\u{27ee}' },
+    TexCommandChar { command: "rgroup", ch: '\u{27ef}' },
+    TexCommandChar { command: "uparrow", ch: '\u{2191}' },
+    TexCommandChar { command: "downarrow", ch: '\u{2193}' },
+    TexCommandChar { command: "updownarrow", ch: '\u{2195}' },
+    TexCommandChar { command: "Uparrow", ch: '\u{21d1}' },
+    TexCommandChar { command: "Downarrow", ch: '\u{21d3}' },
+    TexCommandChar { command: "Updownarrow", ch: '\u{21d5}' },
 ];
 
 pub(crate) const OPERATOR_CHARS: &[EncodedChar] = &[
@@ -1233,5 +1247,7 @@ pub(crate) const BIG_OPERATOR_GLYPHS: &[BigOperatorGlyph] = &[
     BigOperatorGlyph { name: "integral", typeface: FN_SYMBOL, mtcode: 0x222b, font_pos: 0xf2, explicit_font: None, font_style_selector: None },
     BigOperatorGlyph { name: "contour_loop", typeface: FN_MT_EXTRA, mtcode: 0xee11, font_pos: 0xd1, explicit_font: None, font_style_selector: None },
 ];
+
+
 
 

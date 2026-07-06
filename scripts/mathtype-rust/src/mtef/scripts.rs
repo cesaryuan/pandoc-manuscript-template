@@ -44,8 +44,6 @@ pub(super) fn write_big_op(
         }
         return write_standalone_big_op_limits(kind, lower, upper, out, current_size, writer);
     };
-    let lower =
-        lower.ok_or_else(|| "big operators require a lower limit in this subset".to_string())?;
     let selector = big_op_selector(kind);
     let variation = if upper.is_some() { 0x70 } else { 0x50 };
     // Only the body shares the template-opening line with the big-operator TMPL.
@@ -81,14 +79,24 @@ pub(super) fn write_big_op(
             color_default(out);
         }
     }
-    let lower_state = write_line(lower, out, limit_size, writer)?;
+    let lower_state = if let Some(lower) = lower {
+        write_line(lower, out, limit_size, writer)?
+    } else {
+        write_null_line(out);
+        WriteState {
+            size: limit_size,
+            color: ColorState::Default,
+        }
+    };
     let final_limit_state = if let Some(upper) = upper {
         if lower_state.size != limit_size {
             write_size(limit_size, out);
         }
-        color_default(out);
+        if lower_state.color != ColorState::Default {
+            color_default(out);
+        }
         write_line(upper, out, limit_size, writer)?
-    } else {
+    } else if lower.is_some() {
         if lower_state.size != limit_size {
             write_size(limit_size, out);
         }
@@ -100,11 +108,59 @@ pub(super) fn write_big_op(
             size: limit_size,
             color: ColorState::Black,
         }
+    } else {
+        if lower_state.size != limit_size {
+            write_size(limit_size, out);
+        }
+        if lower_state.color != ColorState::Default {
+            color_default(out);
+        }
+        write_null_line(out);
+        WriteState {
+            size: limit_size,
+            color: ColorState::Default,
+        }
     };
     out.push(0x0d);
     if final_limit_state.color != ColorState::Black {
         color_black(out);
     }
+    write_big_op_glyph(kind, out)?;
+    out.push(0x00);
+    Ok(WriteState {
+        size: limit_size,
+        color: ColorState::Black,
+    })
+}
+
+/// Write MathType's fallback-line bodyful big-operator template used inside definitions.
+pub(super) fn write_fallback_big_op_body(
+    kind: BigOpKind,
+    body: &Expr,
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    let selector = big_op_selector(kind);
+    if body.contains_raw_tex() {
+        writer.ensure_black_color_def(out);
+        color_black(out);
+    }
+    out.extend_from_slice(&[0x03, 0x00, selector, 0x40, 0x00]);
+    color_default(out);
+    out.extend_from_slice(&[0x01, 0x00]);
+    color_black(out);
+    let previous_line_starts_default = writer.line_starts_default;
+    writer.line_starts_default = false;
+    write_expr(body, out, current_size, writer)?;
+    writer.line_starts_default = previous_line_starts_default;
+    out.push(0x00);
+    let limit_size = match current_size {
+        SizeState::Full => SizeState::Sub,
+        SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
+    };
+    write_size(limit_size, out);
+    out.extend_from_slice(&[0x01, 0x01, 0x01, 0x01, 0x0d]);
     write_big_op_glyph(kind, out)?;
     out.push(0x00);
     Ok(WriteState {
@@ -200,6 +256,7 @@ pub(super) fn bodyless_big_op_substack_parts(expr: &Expr) -> Option<(BigOpKind, 
             lower,
             upper: None,
             body: None,
+            ..
         } => lower
             .as_deref()
             .and_then(substack_rows)
@@ -366,6 +423,39 @@ fn write_bodyless_big_op_subarray_fallback(
     })
 }
 
+/// Write standalone `subarray` using MathType's mixed raw/native fallback shell.
+pub(super) fn write_subarray_fallback(
+    column_spec: &str,
+    rows: &[Vec<Expr>],
+    out: &mut Vec<u8>,
+    current_size: SizeState,
+    writer: &mut MtefWriter,
+) -> Result<WriteState, String> {
+    // Bug-fix: standalone `subarray` stays on MathType's fallback path instead
+    // of collapsing to a native MATRIX, but it still renders the rows visibly.
+    write_raw_tex_text("\\begin", out)?;
+    writer.ensure_black_color_def(out);
+    color_black(out);
+    let first_line = subarray_first_line_expr(column_spec, rows.first());
+    write_expr(&first_line, out, current_size, writer)?;
+    for row in rows.iter().skip(1) {
+        color_default(out);
+        write_raw_tex_text("\\\\", out)?;
+        color_black(out);
+        let row_expr = subarray_row_expr(row);
+        write_expr(&row_expr, out, current_size, writer)?;
+    }
+    color_default(out);
+    write_raw_tex_text("\\end", out)?;
+    color_black(out);
+    let end_name = owned_char_sequence("subarray");
+    write_expr(&end_name, out, current_size, writer)?;
+    Ok(WriteState {
+        size: current_size,
+        color: ColorState::Black,
+    })
+}
+
 fn subarray_first_line_expr(column_spec: &str, row: Option<&Vec<Expr>>) -> Expr {
     let mut items = char_sequence_items("subarray");
     items.extend(char_sequence_items(column_spec));
@@ -502,10 +592,24 @@ pub(super) fn write_script(
     } else {
         write_script_base(base, out, current_size, writer)?
     };
-    if !empty_base && (matches!(base, Expr::BigSymbol(_)) || base_state.size != current_size) {
+    if !empty_base
+        && (matches!(base, Expr::BigSymbol(_))
+            || base_state.size != current_size
+            || bar_template_bodyless_operator_needs_script_restore(base))
+    {
         write_size(current_size, out);
     }
-    if !empty_base && !writer.line_starts_default {
+    if !empty_base
+        && (!writer.line_starts_default || writer.parent_sequence_has_previous_sibling)
+        && base_state.color != ColorState::Default
+        || (empty_base
+            && writer.parent_sequence_has_previous_sibling
+            && !writer.parent_sequence_previous_was_raw)
+    {
+        // Bug-fix: MathType restores the inherited/default color before entering
+        // tmSCRIPT after inline visible marker content such as `#1^2`, but it
+        // does not repeat that selector when a nested base script already ended
+        // on the default-color path.
         color_default(out);
     }
     let selector = match (sub.is_some(), sup.is_some()) {
@@ -524,7 +628,11 @@ pub(super) fn write_script(
         SizeState::Sub | SizeState::Sub2 => SizeState::Sub2,
     };
     out.extend_from_slice(&[0x03, 0x00, selector, 0x00, 0x00]);
-    write_size(script_size, out);
+    if script_size != current_size {
+        // Bug-fix: deeply nested scripts already running at Sub2 do not emit
+        // a redundant second Sub2 size byte before the first script slot.
+        write_size(script_size, out);
+    }
     match (sub, sup) {
         (Some(sub), None) => {
             let sub_state = write_line(sub, out, script_size, writer)?;
@@ -557,6 +665,21 @@ pub(super) fn write_script(
         size: script_size,
         color,
     })
+}
+
+/// Return true when a bar/underline template around a bodyless operator still leaves
+/// MathType in script size before an outer tmSCRIPT opens.
+fn bar_template_bodyless_operator_needs_script_restore(expr: &Expr) -> bool {
+    match expr {
+        Expr::BarTemplate { content, .. } => bodyless_operator_template_content(content).is_some(),
+        Expr::DefaultColor(content) | Expr::Style { content, .. } => {
+            bar_template_bodyless_operator_needs_script_restore(content)
+        }
+        Expr::Sequence(items) => {
+            matches!(items.as_slice(), [item] if bar_template_bodyless_operator_needs_script_restore(item))
+        }
+        _ => false,
+    }
 }
 
 /// Write MathType's tmSUMOP template used by \bigsqcup.
@@ -624,6 +747,9 @@ pub(super) fn write_sum_operator_glyph(
     out: &mut Vec<u8>,
     writer: &mut MtefWriter,
 ) -> Result<(), String> {
+    if ch == '\u{2211}' {
+        return write_named_big_operator_glyph("sum", out);
+    }
     write_char(ch, out, writer)
 }
 
@@ -720,3 +846,10 @@ pub(super) fn restore_script_separator(
         color_default(out);
     }
 }
+
+
+
+
+
+
+

@@ -76,6 +76,7 @@ pub(super) fn typeface_literal(typeface: u8) -> String {
         FN_NUMBER => "FN_NUMBER".to_string(),
         FN_MT_EXTRA => "FN_MT_EXTRA".to_string(),
         FN_TEXT_FE => "FN_TEXT_FE".to_string(),
+        FN_SPACE => "FN_SPACE".to_string(),
         other => format!("0x{other:02x}"),
     }
 }

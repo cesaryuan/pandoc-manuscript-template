@@ -17,6 +17,11 @@ pub(super) fn parse_content(raw: &str) -> Expr {
         }
         if chars[pos] == '$' {
             if let Some(end) = find_text_math_fragment_end(&chars, pos + 1) {
+                // Bug-fix: MathType drops the literal text-mode space that sits
+                // immediately before one `$...$` fragment inside `\text{...}`.
+                while text.ends_with(char::is_whitespace) {
+                    text.pop();
+                }
                 flush_text(&mut text, &mut items);
                 items.push(Expr::Char('$'));
                 push_text_math_fragment_items(&chars[(pos + 1)..end], &mut items);
@@ -108,6 +113,11 @@ fn push_text_math_fragment_items(chars: &[char], items: &mut Vec<Expr>) {
         if ch == '?' {
             flush_text(&mut text, items);
             items.push(Expr::Char('?'));
+            continue;
+        }
+        if matches!(ch, '<' | '>') {
+            flush_text(&mut text, items);
+            items.push(Expr::Char(ch));
             continue;
         }
         if ch.is_ascii() {

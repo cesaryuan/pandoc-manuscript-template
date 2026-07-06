@@ -16,7 +16,7 @@
 
   <rect x="0" y="0" width="1600" height="760" fill="#ffffff"/>
 
-  <image href="../examples/images/subfigure-a-example.png"
+  <image href="./example.svg"
          xlink:href="../examples/images/subfigure-a-example.png"
          x="60" y="40" width="680" height="520"
          preserveAspectRatio="xMidYMid meet"/>

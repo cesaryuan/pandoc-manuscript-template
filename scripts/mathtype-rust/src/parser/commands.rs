@@ -1,5 +1,5 @@
-use super::*;
 use super::environments::unsupported_environment_keeps_row_separator;
+use super::*;
 
 impl Parser {
     /// Return true when MathType uses a scalable fence template for this delimiter pair.
@@ -23,8 +23,7 @@ impl Parser {
     pub(super) fn supports_one_sided_delimiter(&self, delimiter: char) -> bool {
         matches!(
             delimiter,
-            '('
-                | ')'
+            '(' | ')'
                 | '['
                 | ']'
                 | '{'
@@ -490,7 +489,9 @@ impl Parser {
             return Ok(None);
         }
         if self.peek() != Some('\\') {
-            let ch = self.next().ok_or_else(|| "expected let name token".to_string())?;
+            let ch = self
+                .next()
+                .ok_or_else(|| "expected let name token".to_string())?;
             return parse_literal_char(ch, "").map(Some);
         }
         self.expect('\\')?;
@@ -622,7 +623,9 @@ impl Parser {
                 }
             }
             if self.starts_command("sqrt") {
-                return Ok(Some(normalize_let_target_expr(self.parse_let_target_sqrt()?)));
+                return Ok(Some(normalize_let_target_expr(
+                    self.parse_let_target_sqrt()?,
+                )));
             }
             if let Some(raw) = self.consume_standalone_raw_let_command() {
                 return Ok(Some(normalize_let_target_expr(Expr::RawTex(raw))));
@@ -672,7 +675,6 @@ impl Parser {
         })
     }
 
-
     /// Replay one `\let` alias to `\sqrt` without enabling `\sqrt`'s optional-index syntax.
     pub(super) fn parse_sqrt_let_alias(&mut self, leading_ws: &str) -> Result<Expr, String> {
         let checkpoint = self.pos;
@@ -680,7 +682,10 @@ impl Parser {
             Ok(radicand) => Ok(Expr::Sqrt(Box::new(radicand))),
             Err(_) => {
                 self.pos = checkpoint;
-                Ok(with_leading_raw_space(Expr::RawTex("\\sqrt".to_string()), leading_ws))
+                Ok(with_leading_raw_space(
+                    Expr::RawTex("\\sqrt".to_string()),
+                    leading_ws,
+                ))
             }
         }
     }
@@ -746,7 +751,11 @@ impl Parser {
         }
         let start = index + 1;
         index = start;
-        while self.chars.get(index).is_some_and(|ch| ch.is_ascii_alphabetic()) {
+        while self
+            .chars
+            .get(index)
+            .is_some_and(|ch| ch.is_ascii_alphabetic())
+        {
             index += 1;
         }
         (index > start).then(|| self.chars[start..index].iter().collect())
@@ -763,7 +772,11 @@ impl Parser {
             return false;
         }
         let mut index = self.pos + 1;
-        while self.chars.get(index).is_some_and(|ch| ch.is_ascii_alphabetic()) {
+        while self
+            .chars
+            .get(index)
+            .is_some_and(|ch| ch.is_ascii_alphabetic())
+        {
             index += 1;
         }
         let command = self.chars[self.pos + 1..index].iter().collect::<String>();
@@ -867,7 +880,11 @@ impl Parser {
         }
         let start = self.pos + 1;
         let mut index = start;
-        while self.chars.get(index).is_some_and(|ch| ch.is_ascii_alphabetic()) {
+        while self
+            .chars
+            .get(index)
+            .is_some_and(|ch| ch.is_ascii_alphabetic())
+        {
             index += 1;
         }
         if index == start {
@@ -993,9 +1010,7 @@ impl Parser {
                 self.pos = checkpoint;
                 Expr::RawTex("\\middle".to_string())
             }
-            LeftRightDelimiter::RawCommand(command) => {
-                Expr::RawTex(format!("\\middle\\{command}"))
-            }
+            LeftRightDelimiter::RawCommand(command) => Expr::RawTex(format!("\\middle\\{command}")),
         })
     }
 
@@ -1094,18 +1109,12 @@ impl Parser {
     /// Bug-fix: MathType keeps `\quantity` raw but drops following size hints such
     /// as `\big(`, while `\qty\Bigg{}\Bigg[]` preserves only the first empty-group
     /// size hint inside the raw prefix and still renders the later delimiters visibly.
-    pub(super) fn parse_physics_quantity_command(
-        &mut self,
-        command: &str,
-    ) -> Result<Expr, String> {
+    pub(super) fn parse_physics_quantity_command(&mut self, command: &str) -> Result<Expr, String> {
         let checkpoint = self.pos;
         let starred = self.consume_optional_star();
         let mut raw_prefix = format!("\\{command}");
         let mut body_size_command = self.consume_optional_ignored_delimiter_size_command();
-        if command == "qty"
-            && body_size_command.is_some()
-            && self.consume_empty_group()
-        {
+        if command == "qty" && body_size_command.is_some() && self.consume_empty_group() {
             raw_prefix.push('\\');
             raw_prefix.push_str(body_size_command.expect("checked qty size hint"));
             body_size_command = self.consume_optional_ignored_delimiter_size_command();
@@ -1242,7 +1251,9 @@ impl Parser {
             return Ok(Expr::RawTex("\\root".to_string()));
         }
 
-        let mut raw_segment = self.chars[segment_start..self.pos].iter().collect::<String>();
+        let mut raw_segment = self.chars[segment_start..self.pos]
+            .iter()
+            .collect::<String>();
         let trailing_ws = take_trailing_ascii_whitespace(&mut raw_segment);
         let mut raw_separator_prefix = String::new();
         if opening == '[' && raw_segment.ends_with('}') {
@@ -1260,7 +1271,9 @@ impl Parser {
 
         let mut items = vec![Expr::RawTex(raw_prefix)];
         push_visible_items(&mut items, index);
-        items.push(Expr::RawTex(format!("{raw_separator_prefix}{trailing_ws}\\of")));
+        items.push(Expr::RawTex(format!(
+            "{raw_separator_prefix}{trailing_ws}\\of"
+        )));
         push_visible_items(&mut items, radicand);
         Ok(collapse_single_sequence(Expr::Sequence(items)))
     }
@@ -1301,11 +1314,7 @@ impl Parser {
                     parts.append(&mut content_parts);
                 }
             }
-            PhysicsMatrixBody::Delimited {
-                left,
-                right,
-                raw,
-            } => {
+            PhysicsMatrixBody::Delimited { left, right, raw } => {
                 let (mut content_parts, _) = self.parse_physics_matrix_raw_content(&raw)?;
                 let mut prefix = vec![Expr::Char(left)];
                 if starred {
@@ -1452,10 +1461,9 @@ impl Parser {
             visible.push(Expr::Char('*'));
         }
         for index in 0..group_count {
-            let group = match self.parse_visible_wrapper_group(&format!(
-                "{command} argument {}",
-                index + 1
-            )) {
+            let group = match self
+                .parse_visible_wrapper_group(&format!("{command} argument {}", index + 1))
+            {
                 Ok(group) => group,
                 Err(_) => {
                     self.pos = checkpoint;
@@ -1482,9 +1490,9 @@ impl Parser {
     ) -> Result<Option<PhysicsMatrixBody>, String> {
         self.skip_ws();
         match self.peek() {
-            Some('{') => Ok(Some(PhysicsMatrixBody::Braced(self.parse_raw_group(
-                &format!("{command} content"),
-            )?))),
+            Some('{') => Ok(Some(PhysicsMatrixBody::Braced(
+                self.parse_raw_group(&format!("{command} content"))?,
+            ))),
             Some('(') => Ok(Some(PhysicsMatrixBody::Delimited {
                 left: '(',
                 right: ')',
@@ -1574,7 +1582,10 @@ impl Parser {
                 && chars.get(index + 1) == Some(&'\\')
             {
                 saw_top_level_separator = true;
-                let had_trailing_ws = segment.chars().last().is_some_and(|ch| ch.is_ascii_whitespace());
+                let had_trailing_ws = segment
+                    .chars()
+                    .last()
+                    .is_some_and(|ch| ch.is_ascii_whitespace());
                 index += 2;
                 while chars.get(index).is_some_and(|ch| ch.is_ascii_whitespace()) {
                     index += 1;
@@ -1586,11 +1597,7 @@ impl Parser {
                 }
                 continue;
             }
-            if brace_depth == 0
-                && paren_depth == 0
-                && bracket_depth == 0
-                && !bar_open
-                && ch == '&'
+            if brace_depth == 0 && paren_depth == 0 && bracket_depth == 0 && !bar_open && ch == '&'
             {
                 saw_top_level_separator = true;
                 let trailing_ws = take_trailing_ascii_whitespace(&mut segment);
@@ -1604,9 +1611,7 @@ impl Parser {
                 '{' => brace_depth += 1,
                 '}' => brace_depth = brace_depth.saturating_sub(1),
                 '(' if brace_depth == 0 && !bar_open => paren_depth += 1,
-                ')' if brace_depth == 0 && !bar_open => {
-                    paren_depth = paren_depth.saturating_sub(1)
-                }
+                ')' if brace_depth == 0 && !bar_open => paren_depth = paren_depth.saturating_sub(1),
                 '[' if brace_depth == 0 && !bar_open => bracket_depth += 1,
                 ']' if brace_depth == 0 && !bar_open => {
                     bracket_depth = bracket_depth.saturating_sub(1)
@@ -1685,11 +1690,7 @@ impl Parser {
                 }
                 continue;
             }
-            if brace_depth == 0
-                && paren_depth == 0
-                && bracket_depth == 0
-                && !bar_open
-                && ch == '&'
+            if brace_depth == 0 && paren_depth == 0 && bracket_depth == 0 && !bar_open && ch == '&'
             {
                 keeps_braces = true;
                 let trailing_ws = take_trailing_ascii_whitespace(&mut segment);
@@ -1703,9 +1704,7 @@ impl Parser {
                 '{' => brace_depth += 1,
                 '}' => brace_depth = brace_depth.saturating_sub(1),
                 '(' if brace_depth == 0 && !bar_open => paren_depth += 1,
-                ')' if brace_depth == 0 && !bar_open => {
-                    paren_depth = paren_depth.saturating_sub(1)
-                }
+                ')' if brace_depth == 0 && !bar_open => paren_depth = paren_depth.saturating_sub(1),
                 '[' if brace_depth == 0 && !bar_open => bracket_depth += 1,
                 ']' if brace_depth == 0 && !bar_open => {
                     bracket_depth = bracket_depth.saturating_sub(1)
@@ -1986,9 +1985,7 @@ impl Parser {
                         atom = raw_script_suffix_expr(atom, "^'");
                         continue;
                     }
-                    if let Some(expr) =
-                        self.parse_raw_malformed_superscript_suffix(atom.clone())?
-                    {
+                    if let Some(expr) = self.parse_raw_malformed_superscript_suffix(atom.clone())? {
                         atom = expr;
                         continue;
                     }
@@ -2050,10 +2047,9 @@ impl Parser {
                     }
                     if !consumed_ws.is_empty() {
                         if self.starts_row_separator()
-                            && self
-                                .active_unsupported_envs
-                                .last()
-                                .is_some_and(|name| unsupported_environment_keeps_row_separator(name))
+                            && self.active_unsupported_envs.last().is_some_and(|name| {
+                                unsupported_environment_keeps_row_separator(name)
+                            })
                         {
                             // Bug-fix: unsupported environments such as `gather*`
                             // preserve the source space immediately before a raw
@@ -2266,8 +2262,8 @@ impl Parser {
     fn consume_optional_ignored_delimiter_size_command(&mut self) -> Option<&'static str> {
         self.skip_ws();
         for command in [
-            "big", "Big", "bigg", "Bigg", "bigl", "Bigl", "bigr", "Bigr", "bigm", "Bigm",
-            "biggl", "Biggl", "biggr", "Biggr", "biggm", "Biggm",
+            "big", "Big", "bigg", "Bigg", "bigl", "Bigl", "bigr", "Bigr", "bigm", "Bigm", "biggl",
+            "Biggl", "biggr", "Biggr", "biggm", "Biggm",
         ] {
             if self.starts_command(command) {
                 self.pos += 1 + command.len();
@@ -2407,7 +2403,10 @@ impl Parser {
         if let Some(expr) = self.parse_ce_isotope_prefix(&content)? {
             return Ok(expr);
         }
-        Ok(raw_prefix_expr("ce", self.parse_visible_wrapper_text(&content)?))
+        Ok(raw_prefix_expr(
+            "ce",
+            self.parse_visible_wrapper_text(&content)?,
+        ))
     }
 
     /// Parse the leading isotope-script shell that MathType keeps partially raw in `\ce{...}`.
@@ -2509,28 +2508,28 @@ impl Parser {
         }
         let checkpoint = self.pos;
         let raw = self.parse_raw_group("malformed superscript")?;
-        if let Some(inner) = raw.strip_prefix("'_{").and_then(|rest| rest.strip_suffix('}')) {
+        if let Some(inner) = raw
+            .strip_prefix("'_{")
+            .and_then(|rest| rest.strip_suffix('}'))
+        {
             if is_raw_prime_script_group(inner) {
                 return Ok(Some(raw_superscript_suffix_expr(base, &raw)));
             }
             let visible = Parser::new(inner).parse()?;
             return Ok(Some(raw_script_hybrid_suffix_expr(
-                base,
-                "^{'_",
-                visible,
-                "}",
+                base, "^{'_", visible, "}",
             )));
         }
-        if let Some(inner) = raw.strip_prefix("'^{").and_then(|rest| rest.strip_suffix('}')) {
+        if let Some(inner) = raw
+            .strip_prefix("'^{")
+            .and_then(|rest| rest.strip_suffix('}'))
+        {
             if is_raw_prime_script_group(inner) {
                 return Ok(Some(raw_superscript_suffix_expr(base, &raw)));
             }
             let visible = Parser::new(inner).parse()?;
             return Ok(Some(raw_script_hybrid_suffix_expr(
-                base,
-                "^{'^",
-                visible,
-                "}",
+                base, "^{'^", visible, "}",
             )));
         }
         if let Some((visible_prefix, raw_tail)) = split_prime_superscript_tail(&raw) {
@@ -2744,9 +2743,9 @@ fn normalize_let_target_expr(expr: Expr) -> Expr {
             kind,
             content: Box::new(normalize_let_target_expr(*content)),
         },
-        Expr::Sequence(items) => Expr::Sequence(
-            items.into_iter().map(normalize_let_target_expr).collect(),
-        ),
+        Expr::Sequence(items) => {
+            Expr::Sequence(items.into_iter().map(normalize_let_target_expr).collect())
+        }
         other => other,
     }
 }
@@ -2774,7 +2773,11 @@ fn omitted_let_target_raw_command(raw: &str) -> bool {
 /// Keep track of the source form used by one physics matrix-like wrapper.
 enum PhysicsMatrixBody {
     Braced(String),
-    Delimited { left: char, right: char, raw: String },
+    Delimited {
+        left: char,
+        right: char,
+        raw: String,
+    },
     Bare(Expr),
 }
 
@@ -2855,7 +2858,10 @@ fn parse_ce_script_token(
 fn ce_unbraced_script_end(content: &str, start: usize) -> usize {
     let bytes = content.as_bytes();
     let mut index = start;
-    if bytes.get(index).is_some_and(|byte| matches!(*byte, b'+' | b'-')) {
+    if bytes
+        .get(index)
+        .is_some_and(|byte| matches!(*byte, b'+' | b'-'))
+    {
         index += 1;
     }
     let digit_start = index;
@@ -2917,7 +2923,9 @@ fn take_trailing_ascii_whitespace(text: &mut String) -> String {
 fn relation_uses_not_strike_template(expr: &Expr) -> bool {
     match expr {
         Expr::Delimited { .. } | Expr::OneSidedDelimited { .. } => true,
-        Expr::Sequence(items) => matches!(items.as_slice(), [item] if relation_uses_not_strike_template(item)),
+        Expr::Sequence(items) => {
+            matches!(items.as_slice(), [item] if relation_uses_not_strike_template(item))
+        }
         _ => false,
     }
 }
@@ -3000,6 +3008,3 @@ fn bodyless_big_op_visible_expr(kind: BigOpKind) -> Expr {
         BigOpKind::Intersection => Expr::BigSymbol('\u{22c2}'),
     }
 }
-
-
-

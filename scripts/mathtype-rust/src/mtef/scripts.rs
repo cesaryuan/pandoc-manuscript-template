@@ -846,10 +846,3 @@ pub(super) fn restore_script_separator(
         color_default(out);
     }
 }
-
-
-
-
-
-
-

@@ -61,15 +61,25 @@ where
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--left-ole" => left = args.next().map(|path| (InputKind::Ole, PathBuf::from(path))),
+            "--left-ole" => {
+                left = args
+                    .next()
+                    .map(|path| (InputKind::Ole, PathBuf::from(path)))
+            }
             "--left-mtef" => {
-                left = args.next().map(|path| (InputKind::Mtef, PathBuf::from(path)))
+                left = args
+                    .next()
+                    .map(|path| (InputKind::Mtef, PathBuf::from(path)))
             }
             "--right-ole" => {
-                right = args.next().map(|path| (InputKind::Ole, PathBuf::from(path)))
+                right = args
+                    .next()
+                    .map(|path| (InputKind::Ole, PathBuf::from(path)))
             }
             "--right-mtef" => {
-                right = args.next().map(|path| (InputKind::Mtef, PathBuf::from(path)))
+                right = args
+                    .next()
+                    .map(|path| (InputKind::Mtef, PathBuf::from(path)))
             }
             "--help" | "-h" => return Err(usage()),
             other => return Err(format!("unknown argument: {other}\n{}", usage())),

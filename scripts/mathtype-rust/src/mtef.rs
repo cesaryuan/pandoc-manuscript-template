@@ -1,6 +1,6 @@
 use crate::ast::*;
-use crate::generated::color_tables::named_color_def;
 use crate::generated::char_tables::ExplicitFont;
+use crate::generated::color_tables::named_color_def;
 use crate::mathtype_ansi::{encode_mathtype_source, encode_mathtype_text};
 use crate::typeface::{
     EXPLICIT_FONT_NEG_1, EXPLICIT_FONT_NEG_2, FN_FUNCTION, FN_MT_EXTRA, FN_NUMBER, FN_SPACE,
@@ -227,7 +227,10 @@ pub(crate) fn write_mtef_with_prefs(
 
     if !expr_is_translation_failed_placeholder(expr) {
         let mut source = b"TeX Input Language\0".to_vec();
-        source.extend_from_slice(&encode_mathtype_source(source_latex_header_text(source_latex, expr))?);
+        source.extend_from_slice(&encode_mathtype_source(source_latex_header_text(
+            source_latex,
+            expr,
+        ))?);
         source.push(0x00);
         write_unsigned(source.len(), &mut out)?;
         out.extend_from_slice(&source);
@@ -439,7 +442,8 @@ fn write_expr(
                 let item = spacing_override.as_ref().unwrap_or(&items[index]);
                 if index > 0
                     && !matches!(items[index - 1], Expr::RawTex(_))
-                    && !(expr_starts_with_raw_tex(item) && items[index - 1].is_non_black_color_expr())
+                    && !(expr_starts_with_raw_tex(item)
+                        && items[index - 1].is_non_black_color_expr())
                 {
                     writer.pending_raw_follow_selector = None;
                 }
@@ -454,8 +458,7 @@ fn write_expr(
                 }
                 if let Expr::Space(width) = item {
                     if state.color == ColorState::Default
-                        || (index > 0
-                            && matches!(items.get(index - 1), Some(Expr::Space(_))))
+                        || (index > 0 && matches!(items.get(index - 1), Some(Expr::Space(_))))
                     {
                         // Bug-fix: adjacent spacing commands such as `\!\!2` stay on
                         // MathType's default-color path until the next visible glyph.
@@ -673,7 +676,10 @@ fn write_expr(
                     index += 1;
                 }
                 if matches!(item, Expr::MarkedChar(_) | Expr::Marked(_)) && index < items.len() {
-                    if matches!(items.get(index), Some(Expr::MarkedChar(_) | Expr::Marked(_))) {
+                    if matches!(
+                        items.get(index),
+                        Some(Expr::MarkedChar(_) | Expr::Marked(_))
+                    ) {
                         // Bug-fix: a run of consecutive delimiter-size hints keeps just one
                         // initial line marker, so each following marked fence suppresses its
                         // own marker until the run returns to ordinary same-line content.
@@ -687,9 +693,9 @@ fn write_expr(
                     }
                 }
                 if matches!(item, Expr::SumOperatorSymbol(_) | Expr::BigSymbol(_))
-                    && items
-                        .get(index)
-                        .is_some_and(|next| matches!(next, Expr::RawTex(raw) if raw == "^" || raw == "_"))
+                    && items.get(index).is_some_and(
+                        |next| matches!(next, Expr::RawTex(raw) if raw == "^" || raw == "_"),
+                    )
                 {
                     // Bug-fix: bodyless big operators restore full size before the raw
                     // repeated-script marker that MathType stores after the glyph.
@@ -704,8 +710,7 @@ fn write_expr(
                 }
                 writer.parent_sequence_has_previous_sibling =
                     previous_parent_sequence_has_previous_sibling;
-                writer.parent_sequence_previous_was_raw =
-                    previous_parent_sequence_previous_was_raw;
+                writer.parent_sequence_previous_was_raw = previous_parent_sequence_previous_was_raw;
             }
             state
         }
@@ -835,7 +840,12 @@ fn write_expr(
             placement,
         } => {
             if *placement == LimitPlacement::NoLimits && (lower.is_some() || upper.is_some()) {
-                let expr = no_limits_big_op_expr(*kind, lower.as_deref(), upper.as_deref(), body.as_deref());
+                let expr = no_limits_big_op_expr(
+                    *kind,
+                    lower.as_deref(),
+                    upper.as_deref(),
+                    body.as_deref(),
+                );
                 writer.suppress_next_style_restore = true;
                 write_expr(&expr, out, current_size, writer)?
             } else {
@@ -849,7 +859,7 @@ fn write_expr(
                     writer,
                 )?
             }
-        },
+        }
         Expr::FallbackBigOp { kind, body } => {
             write_fallback_big_op_body(*kind, body, out, current_size, writer)?
         }
@@ -1040,7 +1050,10 @@ fn write_hybrid_layout(
 }
 
 enum PrimeEmbellishedSource {
-    Char { ch: char, prime_count: usize },
+    Char {
+        ch: char,
+        prime_count: usize,
+    },
     Command {
         command: String,
         ch: char,
@@ -1167,7 +1180,9 @@ fn write_named_color_selector(
     if writer.next_color_selector <= selector {
         writer.next_color_selector = selector.saturating_add(1);
     }
-    writer.named_color_selectors.insert(name.to_string(), selector);
+    writer
+        .named_color_selectors
+        .insert(name.to_string(), selector);
     selector
 }
 
@@ -1214,10 +1229,10 @@ fn raw_fallback_reuses_black_selector(items: &[Expr], index: usize) -> bool {
         return false;
     }
     items[..index - 1].iter().any(|item| {
-        !matches!(item, Expr::RawTex(_) | Expr::Space(_)) && !matches!(item, Expr::Sequence(inner) if inner.is_empty())
+        !matches!(item, Expr::RawTex(_) | Expr::Space(_))
+            && !matches!(item, Expr::Sequence(inner) if inner.is_empty())
     })
 }
-
 
 /// Return true for nodes that begin by selecting their own color.
 fn expr_sets_own_color(expr: &Expr) -> bool {
@@ -1638,7 +1653,11 @@ fn write_style_expr(
                 color_black(out);
             }
             let state = write_expr(&rest_expr, out, styled_size, writer)?;
-            if changed_size && !suppress_restore && !ignore_size_change && state.size != current_size {
+            if changed_size
+                && !suppress_restore
+                && !ignore_size_change
+                && state.size != current_size
+            {
                 write_size(current_size, out);
             }
             return Ok(WriteState {
@@ -1733,7 +1752,14 @@ fn write_textstyle_parenthesized_pile(
     if current_size != SizeState::Full {
         // Bug-fix: script-sized text-style piles stay at the inherited slot size
         // instead of shrinking once more before the pile template opens.
-        return write_pile(PileKind::Parenthesized, upper, lower, out, current_size, writer);
+        return write_pile(
+            PileKind::Parenthesized,
+            upper,
+            lower,
+            out,
+            current_size,
+            writer,
+        );
     }
     let pile_size = match current_size {
         SizeState::Full => SizeState::Sub,
@@ -1905,7 +1931,6 @@ fn write_textstyle_bodyless_integral(
     })
 }
 
-
 /// Write a bodyless integral with explicit limit slots, which reuses tmSUMOP layout.
 fn write_bodyless_integral_limits(
     lower: Option<&Expr>,
@@ -1945,7 +1970,8 @@ fn write_bodyless_integral_limits(
         size: script_size,
         color: ColorState::Black,
     })
-}/// Map parser style switches onto the MTEF logical sizes already used for scripts.
+}
+/// Map parser style switches onto the MTEF logical sizes already used for scripts.
 fn style_size(kind: StyleKind) -> SizeState {
     match kind {
         StyleKind::Display | StyleKind::Text => SizeState::Full,
@@ -2728,15 +2754,12 @@ fn font_item_opens_its_own_font_path(kind: FontKind, expr: &Expr) -> bool {
         return false;
     };
     match kind {
-        FontKind::MathCal | FontKind::MathScr => encoding::mathcal_char(ch).is_ok_and(|entry| {
-            entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
-        }),
-        FontKind::MathBb => encoding::mathbb_char(ch).is_ok_and(|entry| {
-            entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
-        }),
-        FontKind::MathFrak => encoding::mathfrak_char(ch).is_ok_and(|entry| {
-            entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
-        }),
+        FontKind::MathCal | FontKind::MathScr => encoding::mathcal_char(ch)
+            .is_ok_and(|entry| entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1),
+        FontKind::MathBb => encoding::mathbb_char(ch)
+            .is_ok_and(|entry| entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1),
+        FontKind::MathFrak => encoding::mathfrak_char(ch)
+            .is_ok_and(|entry| entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1),
         _ => false,
     }
 }
@@ -2747,21 +2770,23 @@ fn font_item_needs_explicit_font_def_before_black(kind: FontKind, expr: &Expr) -
         return false;
     };
     match kind {
-        FontKind::MathCal | FontKind::MathScr => encoding::mathcal_char(ch).is_ok_and(|entry| {
-            entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
-        }),
-        FontKind::MathBb => encoding::mathbb_char(ch).is_ok_and(|entry| {
-            entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
-        }),
-        FontKind::MathFrak => encoding::mathfrak_char(ch).is_ok_and(|entry| {
-            entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1
-        }),
+        FontKind::MathCal | FontKind::MathScr => encoding::mathcal_char(ch)
+            .is_ok_and(|entry| entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1),
+        FontKind::MathBb => encoding::mathbb_char(ch)
+            .is_ok_and(|entry| entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1),
+        FontKind::MathFrak => encoding::mathfrak_char(ch)
+            .is_ok_and(|entry| entry.font_pos.is_some() && entry.typeface == EXPLICIT_FONT_NEG_1),
         _ => false,
     }
 }
 
 /// Emit the explicit font definitions required by the next raw-prefixed font item.
-fn emit_font_defs_for_item(kind: FontKind, expr: &Expr, out: &mut Vec<u8>, writer: &mut MtefWriter) {
+fn emit_font_defs_for_item(
+    kind: FontKind,
+    expr: &Expr,
+    out: &mut Vec<u8>,
+    writer: &mut MtefWriter,
+) {
     if !font_item_needs_explicit_font_def_before_black(kind, expr) {
         return;
     }
@@ -2901,27 +2926,3 @@ fn write_line(
     out.push(0x00);
     Ok(final_state)
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

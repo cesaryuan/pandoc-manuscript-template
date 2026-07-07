@@ -413,4 +413,3 @@ pub(super) fn write_strike_template(
     out.push(0x00);
     Ok(content_state)
 }
-

@@ -287,7 +287,10 @@ impl Parser {
 
     /// Preserve an unsupported environment using the probe-backed fallback shape.
     pub(super) fn parse_unsupported_environment(&mut self, name: &str) -> Result<Expr, String> {
-        self.parse_unsupported_environment_with_shell(name, unsupported_environment_shell_style(name))
+        self.parse_unsupported_environment_with_shell(
+            name,
+            unsupported_environment_shell_style(name),
+        )
     }
 
     /// Preserve one unsupported environment using the requested begin/end shell style.
@@ -300,7 +303,10 @@ impl Parser {
         let parsed = self.parse_hybrid_unsupported_environment_body(name);
         self.active_unsupported_envs.pop();
         let parsed = parsed?;
-        let mut items = vec![unsupported_environment_begin_expr(name, shell_style), parsed.body];
+        let mut items = vec![
+            unsupported_environment_begin_expr(name, shell_style),
+            parsed.body,
+        ];
         if parsed.termination == UnsupportedEnvironmentTermination::MatchedOwnEnd {
             items.push(unsupported_environment_end_expr(name, shell_style));
         }
@@ -449,7 +455,9 @@ impl Parser {
     }
 
     /// Preserve one mismatched `\end{...}` inside transparent wrappers as one raw token.
-    fn parse_transparent_wrapper_mismatched_end_environment_fallback(&mut self) -> Result<Expr, String> {
+    fn parse_transparent_wrapper_mismatched_end_environment_fallback(
+        &mut self,
+    ) -> Result<Expr, String> {
         self.expect('\\')?;
         let start = self.pos;
         while self.peek().is_some_and(|ch| ch.is_ascii_alphabetic()) {
@@ -538,8 +546,16 @@ impl Parser {
                     rows.push(cells);
                     separator_leading.push(row_separator_prefixes);
                     row_annotations.push(row_annotation);
-                    finalize_single_row_environment_annotations(name, &mut rows, &mut row_annotations);
-                    finalize_multirow_environment_annotations(name, &mut rows, &mut row_annotations);
+                    finalize_single_row_environment_annotations(
+                        name,
+                        &mut rows,
+                        &mut row_annotations,
+                    );
+                    finalize_multirow_environment_annotations(
+                        name,
+                        &mut rows,
+                        &mut row_annotations,
+                    );
                     return Ok(ParsedEnvironmentRows {
                         rows,
                         row_leading,
@@ -636,9 +652,7 @@ impl Parser {
                 let _ = self.consume_raw_whitespace();
                 continue;
             }
-            if raw.is_empty()
-                && !leading_ws.is_empty()
-                && starts_array_raw_row_prefix_command(self)
+            if raw.is_empty() && !leading_ws.is_empty() && starts_array_raw_row_prefix_command(self)
             {
                 raw.push_str(&leading_ws);
             }
@@ -831,7 +845,10 @@ fn base_name_for_environment_shell(name: &str) -> &str {
 }
 
 /// Build the fallback begin token for one unsupported environment.
-fn unsupported_environment_begin_expr(name: &str, shell_style: UnsupportedEnvironmentShellStyle) -> Expr {
+fn unsupported_environment_begin_expr(
+    name: &str,
+    shell_style: UnsupportedEnvironmentShellStyle,
+) -> Expr {
     match shell_style {
         UnsupportedEnvironmentShellStyle::SplitNameVisible => Expr::Sequence(vec![
             Expr::RawTex("\\begin".to_string()),
@@ -847,14 +864,21 @@ fn unsupported_environment_begin_expr(name: &str, shell_style: UnsupportedEnviro
 }
 
 /// Build the fallback end token for one unsupported environment.
-fn unsupported_environment_end_expr(name: &str, shell_style: UnsupportedEnvironmentShellStyle) -> Expr {
+fn unsupported_environment_end_expr(
+    name: &str,
+    shell_style: UnsupportedEnvironmentShellStyle,
+) -> Expr {
     match shell_style {
         UnsupportedEnvironmentShellStyle::SplitNameVisible => Expr::Sequence(vec![
             Expr::RawTex("\\end".to_string()),
             visible_text_sequence(name),
         ]),
-        UnsupportedEnvironmentShellStyle::RawDelimitedName => Expr::RawTex(format!("\\end{{{name}}}")),
-        UnsupportedEnvironmentShellStyle::RawInlineControlName => Expr::RawTex(format!("\\end{name}")),
+        UnsupportedEnvironmentShellStyle::RawDelimitedName => {
+            Expr::RawTex(format!("\\end{{{name}}}"))
+        }
+        UnsupportedEnvironmentShellStyle::RawInlineControlName => {
+            Expr::RawTex(format!("\\end{name}"))
+        }
     }
 }
 
@@ -960,4 +984,3 @@ fn append_raw_suffix(expr: &mut Expr, raw: String) {
         }
     }
 }
-

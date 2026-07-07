@@ -57,7 +57,8 @@ fn normalize_old_tex_infix_command_expr(expr: Expr, leading_ws: &str) -> Expr {
     match expr {
         Expr::RawTex(raw) => Expr::RawTex(format!("{leading_ws}{}", raw.trim_start())),
         Expr::Sequence(items) => Expr::Sequence(
-            items.into_iter()
+            items
+                .into_iter()
                 .enumerate()
                 .map(|(index, item)| {
                     if index == 0 {
@@ -289,8 +290,7 @@ fn append_raw_group_shell(expr: Expr, suffix: &str) -> Expr {
         Expr::RawTex(raw) if raw == "\\end" || raw.ends_with('}') => {
             Expr::RawTex(format!("{raw}{suffix}"))
         }
-        Expr::Sequence(mut items)
-            if matches!(items.as_slice(), [Expr::RawTex(raw), _] if raw == "\\end") =>
+        Expr::Sequence(mut items) if matches!(items.as_slice(), [Expr::RawTex(raw), _] if raw == "\\end") =>
         {
             items.push(Expr::RawTex(suffix.to_string()));
             Expr::Sequence(items)
@@ -351,11 +351,9 @@ pub(super) fn normalize_arrow_accent_expr(
     content: Expr,
 ) -> Expr {
     match content {
-        Expr::Sequence(items) if items.len() == 1 => normalize_arrow_accent_expr(
-            kind,
-            under,
-            items.into_iter().next().expect("len checked"),
-        ),
+        Expr::Sequence(items) if items.len() == 1 => {
+            normalize_arrow_accent_expr(kind, under, items.into_iter().next().expect("len checked"))
+        }
         other => Expr::ArrowAccent {
             kind,
             under,
@@ -401,7 +399,8 @@ pub(super) fn append_postfix_prime(expr: Expr) -> Expr {
             base,
             sub,
             sup: Some(Box::new(append_prime_to_content(
-                sup.map(|value| *value).unwrap_or_else(|| Expr::Sequence(Vec::new())),
+                sup.map(|value| *value)
+                    .unwrap_or_else(|| Expr::Sequence(Vec::new())),
             ))),
         },
         Expr::Sequence(mut items) => {
@@ -425,11 +424,7 @@ fn append_prime_to_content(expr: Expr) -> Expr {
 }
 
 /// Continue one already-raw script fallback with another script marker plus visible operand.
-pub(super) fn append_raw_script_followup(
-    base: Expr,
-    marker: &str,
-    operand: Expr,
-) -> Option<Expr> {
+pub(super) fn append_raw_script_followup(base: Expr, marker: &str, operand: Expr) -> Option<Expr> {
     let Expr::Sequence(mut items) = base else {
         return None;
     };
@@ -457,7 +452,6 @@ pub(super) fn append_raw_script_followup(
 fn raw_script_fallback_suffix(raw: &str) -> bool {
     raw.starts_with('^') || raw.starts_with('_')
 }
-
 
 /// Return true when one raw tail already owns the visible operand of `\limits_` / `\nolimits_`.
 fn raw_limits_script_operand_suffix(raw: &str) -> bool {
@@ -622,7 +616,10 @@ pub(super) fn prepend_hybrid_visible_prefix(parts: &mut Vec<HybridPart>, prefix:
             return;
         }
     }
-    append_hybrid_line(parts, collapse_single_sequence(Expr::Sequence(prefix_items)));
+    append_hybrid_line(
+        parts,
+        collapse_single_sequence(Expr::Sequence(prefix_items)),
+    );
 }
 
 /// Insert visible prefix glyphs before a hybrid run that starts with raw command text.
@@ -652,7 +649,10 @@ pub(super) fn append_hybrid_visible_suffix(parts: &mut Vec<HybridPart>, suffix: 
         return;
     }
     if matches!(parts.last(), Some(HybridPart::Raw(_))) {
-        append_hybrid_line(parts, collapse_single_sequence(Expr::Sequence(suffix_items)));
+        append_hybrid_line(
+            parts,
+            collapse_single_sequence(Expr::Sequence(suffix_items)),
+        );
         return;
     }
     for part in parts.iter_mut().rev() {
@@ -664,7 +664,10 @@ pub(super) fn append_hybrid_visible_suffix(parts: &mut Vec<HybridPart>, suffix: 
             return;
         }
     }
-    append_hybrid_line(parts, collapse_single_sequence(Expr::Sequence(suffix_items)));
+    append_hybrid_line(
+        parts,
+        collapse_single_sequence(Expr::Sequence(suffix_items)),
+    );
 }
 
 /// Flush pending visible items into one hybrid LINE part.
@@ -775,7 +778,9 @@ pub(super) fn with_leading_raw_space(expr: Expr, leading_ws: &str) -> Expr {
         Expr::DefaultColor(content) => {
             Expr::DefaultColor(Box::new(with_leading_raw_space(*content, leading_ws)))
         }
-        Expr::Marked(content) => Expr::Marked(Box::new(with_leading_raw_space(*content, leading_ws))),
+        Expr::Marked(content) => {
+            Expr::Marked(Box::new(with_leading_raw_space(*content, leading_ws)))
+        }
         Expr::Color { name, content } => Expr::Color {
             name,
             content: Box::new(with_leading_raw_space(*content, leading_ws)),
@@ -932,7 +937,9 @@ pub(super) fn merge_adjacent_raw_tex(expr: Expr) -> Expr {
             }
             Expr::Sequence(merged)
         }
-        Expr::DefaultColor(content) => Expr::DefaultColor(Box::new(merge_adjacent_raw_tex(*content))),
+        Expr::DefaultColor(content) => {
+            Expr::DefaultColor(Box::new(merge_adjacent_raw_tex(*content)))
+        }
         Expr::Marked(content) => Expr::Marked(Box::new(merge_adjacent_raw_tex(*content))),
         Expr::Color { name, content } => Expr::Color {
             name,
@@ -1391,7 +1398,10 @@ fn repeated_bodyless_big_op_script_expr(
     old_script: Expr,
     new_script: Expr,
 ) -> Expr {
-    let mut items = vec![bodyless_big_op_visible_expr(kind), Expr::RawTex(marker.to_string())];
+    let mut items = vec![
+        bodyless_big_op_visible_expr(kind),
+        Expr::RawTex(marker.to_string()),
+    ];
     push_visible_items(&mut items, old_script);
     items.push(Expr::RawTex(marker.to_string()));
     push_visible_items(&mut items, new_script);
@@ -1538,10 +1548,3 @@ pub(super) fn command_specific_to_char(command: &str) -> Option<char> {
         .find(|entry| entry.command == command)
         .map(|entry| entry.ch)
 }
-
-
-
-
-
-
-

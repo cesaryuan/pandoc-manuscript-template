@@ -15,9 +15,7 @@ pub(super) fn expr_starts_with_top_matrix(expr: &Expr) -> bool {
                 | EnvironmentKind::RightCases,
             ..
         } => true,
-        Expr::MathOp {
-            lower, upper, ..
-        } => lower.is_some() || upper.is_some(),
+        Expr::MathOp { lower, upper, .. } => lower.is_some() || upper.is_some(),
         Expr::Limit { .. } => true,
         Expr::Underset { .. } => true,
         Expr::Matrix { .. } => true,
@@ -212,9 +210,7 @@ pub(super) fn expr_starts_with_bodyless_big_op_script(expr: &Expr) -> bool {
             upper,
             ..
         } => lower.is_some() || upper.is_some(),
-        Expr::MathOp {
-            lower, upper, ..
-        } => lower.is_some() || upper.is_some(),
+        Expr::MathOp { lower, upper, .. } => lower.is_some() || upper.is_some(),
         Expr::Style { content, .. } => expr_starts_with_bodyless_big_op_script(content),
         Expr::Sequence(items) => items
             .first()
@@ -635,10 +631,7 @@ pub(super) fn expr_starts_with_self_opening(expr: &Expr) -> bool {
 /// Return true when a bodyless integral opens with its own template bytes.
 pub(super) fn expr_starts_with_side_script_integral(expr: &Expr) -> bool {
     match expr {
-        Expr::IntegralOp {
-            body: None,
-            ..
-        } => true,
+        Expr::IntegralOp { body: None, .. } => true,
         Expr::Style { content, .. } => expr_starts_with_side_script_integral(content),
         Expr::Sequence(items) => items
             .first()
@@ -766,9 +759,7 @@ pub(super) fn expr_starts_with_split_function_name(expr: &Expr) -> bool {
 /// Return true when the whole LINE consists of one limit template and no following siblings.
 pub(super) fn expr_is_standalone_limit(expr: &Expr) -> bool {
     match expr {
-        Expr::MathOp {
-            lower, upper, ..
-        } => lower.is_some() || upper.is_some(),
+        Expr::MathOp { lower, upper, .. } => lower.is_some() || upper.is_some(),
         Expr::Limit { .. } => true,
         Expr::Style { content, .. } => expr_is_standalone_limit(content),
         Expr::Sequence(items) => items.len() == 1 && expr_is_standalone_limit(&items[0]),
@@ -793,9 +784,7 @@ pub(super) fn expr_ends_with_limit_like_template(expr: &Expr) -> bool {
             ..
         } => *placement == LimitPlacement::Limits && (lower.is_some() || upper.is_some()),
         Expr::Style { content, .. } => expr_ends_with_limit_like_template(content),
-        Expr::Sequence(items) => items
-            .last()
-            .is_some_and(expr_ends_with_limit_like_template),
+        Expr::Sequence(items) => items.last().is_some_and(expr_ends_with_limit_like_template),
         _ => false,
     }
 }
@@ -854,9 +843,3 @@ pub(super) fn expr_starts_with_line_font_def(expr: &Expr) -> bool {
         _ => false,
     }
 }
-
-
-
-
-
-

@@ -118,7 +118,8 @@ pub(super) fn write_arrow_accent_template(
                 ArrowAccentKind::Left => 0x0c,
                 ArrowAccentKind::LeftRight => 0x0d,
             };
-            let embellishments = std::iter::repeat_n(embellishment, repeat_count).collect::<Vec<_>>();
+            let embellishments =
+                std::iter::repeat_n(embellishment, repeat_count).collect::<Vec<_>>();
             match font_kind {
                 None => {
                     write_embellished_char_codes(ch, &embellishments, out, writer)?;
@@ -214,14 +215,19 @@ fn repeated_arrow_accent_char(
         Expr::Sequence(items) if items.len() == 1 => {
             repeated_arrow_accent_char(&items[0], kind, under)
         }
-        Expr::Font { kind: font_kind, content } => repeated_arrow_accent_char(content, kind, under)
+        Expr::Font {
+            kind: font_kind,
+            content,
+        } => repeated_arrow_accent_char(content, kind, under)
             .map(|(_, ch, count)| (Some(*font_kind), ch, count)),
         Expr::ArrowAccent {
             kind: inner_kind,
             under: inner_under,
             content,
-        } if *inner_kind == kind && *inner_under == under => repeated_arrow_accent_char(content, kind, under)
-            .map(|(font_kind, ch, count)| (font_kind, ch, count + 1)),
+        } if *inner_kind == kind && *inner_under == under => {
+            repeated_arrow_accent_char(content, kind, under)
+                .map(|(font_kind, ch, count)| (font_kind, ch, count + 1))
+        }
         _ => None,
     }
 }
@@ -546,9 +552,7 @@ pub(super) fn write_not_relation(
             write_command_symbol_with_embellishments(command, *ch, &[EMBELL_NOT], out, writer)
         }
         Expr::OneSidedDelimited {
-            delimiter,
-            content,
-            ..
+            delimiter, content, ..
         } if expr_is_empty_sequence(content) => {
             // Bug-fix: MathType keeps `\not\left(\right.` on the native overlay
             // path by slashing the visible fence glyph directly.
@@ -674,10 +678,3 @@ pub(super) fn is_math_symbol_char(ch: char) -> bool {
             | 0x2900..=0x2aff
     )
 }
-
-
-
-
-
-
-

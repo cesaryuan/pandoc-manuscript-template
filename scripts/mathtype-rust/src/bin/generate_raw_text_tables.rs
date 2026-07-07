@@ -1,9 +1,9 @@
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 use std::thread;
-use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
 #[path = "../cfb.rs"]
@@ -24,16 +24,11 @@ const BINARY_OPERATOR_FORMULA: &str =
 const RELATIONS_FORMULA: &str = r"= < > : ∈ ∋ ∝ ∼ ∽ ≂ ≃ ≅ ≈ ≊ ≍ ≎ ≏ ≐ ≑ ≒ ≓ ≖ ≗ ≜ ≡ ≤ ≥ ≦ ≧ ≫ ≬ ≳ ≷ ≺ ≻ ≼ ≽ ≾ ≿ ⊂ ⊃ ⊆ ⊇ ⊏ ⊐ ⊑ ⊒ ⊢ ⊣ ⊩ ⊪ ⊸ ⋈ ⋍ ⋐ ⋑ ⋔ ⋙ ⋛ ⋞ ⋟ ⌢ ⌣ ⩾ ⪆ ⪌ ⪕ ⪖ ⪯ ⪰ ⪷ ⪸ ⫅ ⫆ ≲ ⩽ ⪅ ≶ ⋚ ⪋ ⟂ ⊨ ⊶ ⊷";
 const NEGATED_RELATIONS_FORMULA: &str =
     r"∉ ∌ ∤ ∦ ≁ ≆ ≠ ≨ ≩ ≮ ≯ ≰ ≱ ⊀ ⊁ ⊈ ⊉ ⊊ ⊋ ⊬ ⊭ ⊮ ⊯ ⋠ ⋡ ⋦ ⋧ ⋨ ⋩ ⋬ ⋭ ⪇ ⪈ ⪉ ⪊ ⪵ ⪶ ⪹ ⪺ ⫋ ⫌";
-const ARROWS_FORMULA: &str =
-    r"← ↑ → ↓ ↔ ↕ ↖ ↗ ↘ ↙ ↚ ↛ ↞ ↠ ↢ ↣ ↦ ↩ ↪ ↫ ↬ ↭ ↮ ↰ ↱ ↶ ↷ ↺ ↻ ↼ ↽ ↾ ↿ ⇀ ⇁ ⇂ ⇃ ⇄ ⇆ ⇇ ⇈ ⇉ ⇊ ⇋ ⇌ ⇍ ⇎ ⇏ ⇐ ⇑ ⇒ ⇓ ⇔ ⇕ ⇚ ⇛ ⇝ ⇠ ⇢ ⟵ ⟶ ⟷ ⟸ ⟹ ⟺ ⟼";
-const BIG_OPERATORS_FORMULA: &str =
-    r"∫ ∬ ∭ ∮ ∏ ∐ ∑ ⋀ ⋁ ⋂ ⋃ ⨀ ⨁ ⨂ ⨄ ⨆";
-const LOWER_GREEK_FORMULA: &str =
-    r"α β γ δ ϵ ζ η θ ι κ λ μ ν ξ ο π ρ σ τ υ ϕ χ ψ ω ε ϑ ϖ ϱ ς φ ϝ";
-const UPPER_GREEK_FORMULA: &str =
-    r"Α Β Γ Δ Ε Ζ Η Θ Ι Κ Λ Μ Ν Ξ Ο Π Ρ Σ Τ Υ Φ Χ Ψ Ω";
-const LOGIC_AND_SET_FORMULA: &str =
-    r"∀ ∴ ∁ ∵ ∃ ∣ ∈ ∉ ∋ ⊂ ⊃ ∧ ∨ ↦ → ← ↔ ¬";
+const ARROWS_FORMULA: &str = r"← ↑ → ↓ ↔ ↕ ↖ ↗ ↘ ↙ ↚ ↛ ↞ ↠ ↢ ↣ ↦ ↩ ↪ ↫ ↬ ↭ ↮ ↰ ↱ ↶ ↷ ↺ ↻ ↼ ↽ ↾ ↿ ⇀ ⇁ ⇂ ⇃ ⇄ ⇆ ⇇ ⇈ ⇉ ⇊ ⇋ ⇌ ⇍ ⇎ ⇏ ⇐ ⇑ ⇒ ⇓ ⇔ ⇕ ⇚ ⇛ ⇝ ⇠ ⇢ ⟵ ⟶ ⟷ ⟸ ⟹ ⟺ ⟼";
+const BIG_OPERATORS_FORMULA: &str = r"∫ ∬ ∭ ∮ ∏ ∐ ∑ ⋀ ⋁ ⋂ ⋃ ⨀ ⨁ ⨂ ⨄ ⨆";
+const LOWER_GREEK_FORMULA: &str = r"α β γ δ ϵ ζ η θ ι κ λ μ ν ξ ο π ρ σ τ υ ϕ χ ψ ω ε ϑ ϖ ϱ ς φ ϝ";
+const UPPER_GREEK_FORMULA: &str = r"Α Β Γ Δ Ε Ζ Η Θ Ι Κ Λ Μ Ν Ξ Ο Π Ρ Σ Τ Υ Φ Χ Ψ Ω";
+const LOGIC_AND_SET_FORMULA: &str = r"∀ ∴ ∁ ∵ ∃ ∣ ∈ ∉ ∋ ⊂ ⊃ ∧ ∨ ↦ → ← ↔ ¬";
 const DIRECT_DELIMITER_FORMULA: &str = r"⌈ ⌉ ⌊ ⌋ ⎰ ⎱ ┌ ┐ └ ┘ ⟦ ⟧ ⟮ ⟯";
 const LETTER_MISC_FORMULA: &str = r"∂ ∇ ℑ Ⅎ ℵ ℶ ℷ ℸ ⅁ ℏ ð − ∗";
 const AUTO_PROBE_FORMULAS: &[&str] = &[
@@ -558,7 +553,9 @@ fn render_output(rows: &[(char, Vec<FragmentSpec>)], styled_rows: &[ProbeCharRec
     out.push_str("    Raw(&'static [u8]),\n");
     out.push_str("    Char(char),\n");
     out.push_str("}\n\n");
-    out.push_str("/// Stable explicit-font families used by direct Unicode literal CHAR records.\n");
+    out.push_str(
+        "/// Stable explicit-font families used by direct Unicode literal CHAR records.\n",
+    );
     out.push_str("#[derive(Clone, Copy, Debug, Eq, PartialEq)]\n");
     out.push_str("pub(crate) enum LiteralExplicitFont {\n");
     out.push_str("    EuclidMathOne,\n");

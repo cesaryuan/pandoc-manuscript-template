@@ -522,7 +522,6 @@ fn known_raw_simple_aliases_stay_raw_fallback() {
     }
 }
 
-
 /// Ensure Supported Functions relation aliases parse through the generated table.
 #[test]
 fn supported_relation_aliases_render_natively() {
@@ -930,7 +929,7 @@ fn assert_no_raw_tex(expr: &Expr) {
             .flat_map(|row| row.iter())
             .for_each(assert_no_raw_tex),
         Expr::Marked(content) => assert_no_raw_tex(content),
-        Expr::RawBoundary => {},
+        Expr::RawBoundary => {}
         Expr::Char(_)
         | Expr::MarkedChar(_)
         | Expr::CommandSymbol { .. }

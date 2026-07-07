@@ -48,32 +48,14 @@ pub(super) fn write_environment(
                 // but it still predeclares the shared black COLOR_DEF block before the cell.
                 write_transparent_align_cell(cell, out, current_size, writer)
             } else if align_annotations_require_pile(trivia) {
-                write_annotated_align_rows(
-                    rows,
-                    &trivia.row_annotations,
-                    out,
-                    current_size,
-                    writer,
-                )
+                write_annotated_align_rows(rows, &trivia.row_annotations, out, current_size, writer)
             } else {
-                write_align_matrix_record(
-                    rows,
-                    trivia,
-                    out,
-                    current_size,
-                    writer,
-                )
+                write_align_matrix_record(rows, trivia, out, current_size, writer)
             }
         }
         EnvironmentKind::AlignAt | EnvironmentKind::AlignedAt => {
             if align_annotations_require_pile(trivia) {
-                write_annotated_align_rows(
-                    rows,
-                    &trivia.row_annotations,
-                    out,
-                    current_size,
-                    writer,
-                )
+                write_annotated_align_rows(rows, &trivia.row_annotations, out, current_size, writer)
             } else {
                 write_align_matrix_record(rows, trivia, out, current_size, writer)
             }
@@ -267,7 +249,12 @@ fn write_environment_fallback(
             .first()
             .is_some_and(|prefix| !prefix.is_empty());
     if consumed_begin_prefix {
-        let begin_prefix = spec.trivia.row_leading.first().map(String::as_str).unwrap_or("");
+        let begin_prefix = spec
+            .trivia
+            .row_leading
+            .first()
+            .map(String::as_str)
+            .unwrap_or("");
         // Bug-fix: when one fallback environment appears inline after a visible
         // sibling, MathType keeps the same-line source space in the raw run
         // immediately before the nested `\begin`.

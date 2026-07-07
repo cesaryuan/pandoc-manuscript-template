@@ -237,10 +237,8 @@ impl Expr {
                     || upper.as_deref().is_some_and(Expr::contains_raw_tex)
                     || body.as_deref().is_some_and(Expr::contains_raw_tex)
             }
-            Expr::FallbackBigOp { body, .. } => {
-                body.contains_raw_tex()
-            }
-            | Expr::IntegralOp {
+            Expr::FallbackBigOp { body, .. } => body.contains_raw_tex(),
+            Expr::IntegralOp {
                 lower, upper, body, ..
             } => {
                 lower.as_deref().is_some_and(Expr::contains_raw_tex)
@@ -429,6 +427,3 @@ pub(crate) enum EnvironmentKind {
     Gather,
     Gathered,
 }
-
-
-

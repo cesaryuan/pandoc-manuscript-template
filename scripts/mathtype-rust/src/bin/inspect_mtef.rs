@@ -44,8 +44,9 @@ fn main() -> Result<(), String> {
     }
     let mtef = match (ole_path, mtef_path) {
         (Some(path), None) => load_mtef_from_ole(&path)?,
-        (None, Some(path)) => fs::read(&path)
-            .map_err(|err| format!("failed to read {}: {err}", path.display()))?,
+        (None, Some(path)) => {
+            fs::read(&path).map_err(|err| format!("failed to read {}: {err}", path.display()))?
+        }
         _ => return Err("pass exactly one of --ole or --mtef".to_string()),
     };
     println!("mtef_len={}", mtef.len());

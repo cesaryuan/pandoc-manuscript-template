@@ -350,9 +350,7 @@ impl Parser {
                 };
                 match self.parse_required_group_or_atom("square-root radicand") {
                     Ok(radicand) => {
-                        if index.is_none()
-                            && malformed_closing_delimiter_raw(&radicand).is_some()
-                        {
+                        if index.is_none() && malformed_closing_delimiter_raw(&radicand).is_some() {
                             // Bug-fix: malformed inputs such as `\sqrt}` stay on
                             // MathType's raw fallback path instead of opening a
                             // native root template with one visible `}` radicand.
@@ -684,10 +682,15 @@ impl Parser {
                 self.parse_old_tex_alignment_command(command.as_str())
             }
             "quantity" | "qty" => self.parse_physics_quantity_command(command.as_str()),
-            "abs" | "norm" => self
-                .parse_physics_raw_size_wrapper_command(command.as_str(), commands::PhysicsAutoBraceArity::One),
+            "abs" | "norm" => self.parse_physics_raw_size_wrapper_command(
+                command.as_str(),
+                commands::PhysicsAutoBraceArity::One,
+            ),
             "comm" | "acomm" | "commutator" | "anticommutator" | "poissonbracket" => self
-                .parse_physics_raw_size_wrapper_command(command.as_str(), commands::PhysicsAutoBraceArity::Two),
+                .parse_physics_raw_size_wrapper_command(
+                    command.as_str(),
+                    commands::PhysicsAutoBraceArity::Two,
+                ),
             "cases" => self.parse_cases_command("cases"),
             "xmat" => self.parse_physics_multi_group_command("xmat", 3),
             "zmat" => self.parse_physics_multi_group_command("zmat", 2),
@@ -775,23 +778,25 @@ impl Parser {
                 content: Box::new(self.parse_switch_content("rm content")?),
             }),
             "it" => Ok(self.parse_switch_content("it content")?),
-            "mathrm" | "textrm" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "roman content", |content| {
-                    Expr::Font {
-                        kind: FontKind::RomanText,
-                        content: Box::new(content),
-                    }
-                })
-            }
+            "mathrm" | "textrm" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "roman content",
+                |content| Expr::Font {
+                    kind: FontKind::RomanText,
+                    content: Box::new(content),
+                },
+            ),
             "mathnormal" | "textnormal" | "textup" | "textmd" => self
-                .parse_grouped_or_atom_command_or_raw(command.as_str(), "roman content", |content| {
-                    raw_prefix_expr(command.as_str(), content)
-                }),
-            "mathit" | "textit" | "emph" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "italic content", |content| {
-                    content
-                })
-            }
+                .parse_grouped_or_atom_command_or_raw(
+                    command.as_str(),
+                    "roman content",
+                    |content| raw_prefix_expr(command.as_str(), content),
+                ),
+            "mathit" | "textit" | "emph" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "italic content",
+                |content| content,
+            ),
             "bf" => Ok(Expr::Font {
                 kind: FontKind::Bold,
                 content: Box::new(self.parse_switch_content("bf content")?),
@@ -800,14 +805,15 @@ impl Parser {
                 "sf",
                 self.parse_switch_content("sf content")?,
             )),
-            "mathbf" | "textbf" | "boldsymbol" | "bold" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "mathbf content", |content| {
-                    Expr::Font {
+            "mathbf" | "textbf" | "boldsymbol" | "bold" => self
+                .parse_grouped_or_atom_command_or_raw(
+                    command.as_str(),
+                    "mathbf content",
+                    |content| Expr::Font {
                         kind: FontKind::Bold,
                         content: Box::new(content),
-                    }
-                })
-            }
+                    },
+                ),
             "bm" => self.parse_grouped_command_or_raw("bm", "bm content", |content| {
                 raw_prefix_expr("bm", content)
             }),
@@ -836,57 +842,57 @@ impl Parser {
                     }
                 }
             }
-            "mathsf" => self.parse_grouped_or_atom_command_or_raw(
-                "mathsf",
-                "mathsf content",
-                |content| Expr::Font {
-                    kind: FontKind::MathSf,
-                    content: Box::new(content),
-                },
-            ),
-            "textsf" => self.parse_grouped_or_atom_command_or_raw(
-                "textsf",
-                "textsf content",
-                |content| raw_prefix_expr("textsf", content),
-            ),
-            "mathtt" => self.parse_grouped_or_atom_command_or_raw(
-                "mathtt",
-                "mathtt content",
-                |content| raw_prefix_expr("mathtt", content),
-            ),
-            "texttt" => self.parse_grouped_or_atom_command_or_raw(
-                "texttt",
-                "texttt content",
-                |content| Expr::Font {
-                    kind: FontKind::TypewriterText,
-                    content: Box::new(content),
-                },
-            ),
-            "tt" => Ok(raw_prefix_expr(
-                "tt",
-                self.parse_switch_content("tt content")?,
-            )),
-            "mathbb" | "Bbb" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "mathbb content", |content| {
+            "mathsf" => {
+                self.parse_grouped_or_atom_command_or_raw("mathsf", "mathsf content", |content| {
                     Expr::Font {
-                        kind: FontKind::MathBb,
+                        kind: FontKind::MathSf,
                         content: Box::new(content),
                     }
                 })
             }
+            "textsf" => {
+                self.parse_grouped_or_atom_command_or_raw("textsf", "textsf content", |content| {
+                    raw_prefix_expr("textsf", content)
+                })
+            }
+            "mathtt" => {
+                self.parse_grouped_or_atom_command_or_raw("mathtt", "mathtt content", |content| {
+                    raw_prefix_expr("mathtt", content)
+                })
+            }
+            "texttt" => {
+                self.parse_grouped_or_atom_command_or_raw("texttt", "texttt content", |content| {
+                    Expr::Font {
+                        kind: FontKind::TypewriterText,
+                        content: Box::new(content),
+                    }
+                })
+            }
+            "tt" => Ok(raw_prefix_expr(
+                "tt",
+                self.parse_switch_content("tt content")?,
+            )),
+            "mathbb" | "Bbb" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "mathbb content",
+                |content| Expr::Font {
+                    kind: FontKind::MathBb,
+                    content: Box::new(content),
+                },
+            ),
             "Complex" | "C" | "cnums" => Ok(blackboard_letter('C')),
             "Naturals" | "N" | "natnums" => Ok(blackboard_letter('N')),
             "Q" | "Rational" | "Rationals" => Ok(blackboard_letter('Q')),
             "R" | "Reals" | "reals" => Ok(blackboard_letter('R')),
             "Z" | "Integers" => Ok(blackboard_letter('Z')),
-            "mathscr" => self.parse_grouped_or_atom_command_or_raw(
-                "mathscr",
-                "mathscr content",
-                |content| Expr::Font {
-                    kind: FontKind::MathScr,
-                    content: Box::new(content),
-                },
-            ),
+            "mathscr" => {
+                self.parse_grouped_or_atom_command_or_raw("mathscr", "mathscr content", |content| {
+                    Expr::Font {
+                        kind: FontKind::MathScr,
+                        content: Box::new(content),
+                    }
+                })
+            }
             "mathfrak" => self.parse_grouped_or_atom_command_or_raw(
                 "mathfrak",
                 "mathfrak content",
@@ -895,22 +901,22 @@ impl Parser {
                     content: Box::new(content),
                 },
             ),
-            "bar" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "bar content", |content| {
-                    Expr::Accent {
-                        kind: AccentKind::Bar,
-                        content: Box::new(content),
-                    }
-                })
-            }
-            "overline" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "overline content", |content| {
-                    Expr::BarTemplate {
-                        kind: BarTemplateKind::Over,
-                        content: Box::new(content),
-                    }
-                })
-            }
+            "bar" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "bar content",
+                |content| Expr::Accent {
+                    kind: AccentKind::Bar,
+                    content: Box::new(content),
+                },
+            ),
+            "overline" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "overline content",
+                |content| Expr::BarTemplate {
+                    kind: BarTemplateKind::Over,
+                    content: Box::new(content),
+                },
+            ),
             "underline" => self.parse_grouped_or_atom_command_or_raw(
                 command.as_str(),
                 "underline content",
@@ -923,104 +929,100 @@ impl Parser {
             // the native underbar template used by \underline.
             "underbar" => self.parse_raw_prefix_group_command("underbar content", "underbar"),
             "cancel" => self.parse_strike_command("cancel", "cancel content", StrikeKind::Up),
-            "bcancel" => {
-                self.parse_strike_command("bcancel", "bcancel content", StrikeKind::Down)
-            }
-            "xcancel" => {
-                self.parse_strike_command("xcancel", "xcancel content", StrikeKind::Both)
-            }
+            "bcancel" => self.parse_strike_command("bcancel", "bcancel content", StrikeKind::Down),
+            "xcancel" => self.parse_strike_command("xcancel", "xcancel content", StrikeKind::Both),
             "sout" => self.parse_strike_command("sout", "sout content", StrikeKind::Horizontal),
-            "hat" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "hat content", |content| {
-                    Expr::Accent {
-                        kind: AccentKind::Hat,
-                        content: Box::new(content),
-                    }
-                })
-            }
-            "widehat" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "widehat content", |content| {
-                    Expr::Accent {
-                        kind: AccentKind::WideHat,
-                        content: Box::new(content),
-                    }
-                })
-            }
-            "breve" | "u" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "breve content", |content| {
-                    Expr::Accent {
-                        kind: AccentKind::Breve,
-                        content: Box::new(content),
-                    }
-                })
-            }
-            "dot" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "dot content", |content| {
-                    Expr::Accent {
-                        kind: AccentKind::Dot,
-                        content: Box::new(content),
-                    }
-                })
-            }
-            "ddot" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "ddot content", |content| {
-                    Expr::Accent {
-                        kind: AccentKind::Ddot,
-                        content: Box::new(content),
-                    }
-                })
-            }
-            "dddot" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "dddot content", |content| {
-                    Expr::Accent {
-                        kind: AccentKind::Dddot,
-                        content: Box::new(content),
-                    }
-                })
-            }
-            "ddddot" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "ddddot content", |content| {
-                    Expr::Accent {
-                        kind: AccentKind::Ddddot,
-                        content: Box::new(content),
-                    }
-                })
-            }
-            "tilde" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "tilde content", |content| {
-                    Expr::Accent {
-                        kind: AccentKind::Tilde,
-                        content: Box::new(content),
-                    }
-                })
-            }
+            "hat" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "hat content",
+                |content| Expr::Accent {
+                    kind: AccentKind::Hat,
+                    content: Box::new(content),
+                },
+            ),
+            "widehat" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "widehat content",
+                |content| Expr::Accent {
+                    kind: AccentKind::WideHat,
+                    content: Box::new(content),
+                },
+            ),
+            "breve" | "u" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "breve content",
+                |content| Expr::Accent {
+                    kind: AccentKind::Breve,
+                    content: Box::new(content),
+                },
+            ),
+            "dot" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "dot content",
+                |content| Expr::Accent {
+                    kind: AccentKind::Dot,
+                    content: Box::new(content),
+                },
+            ),
+            "ddot" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "ddot content",
+                |content| Expr::Accent {
+                    kind: AccentKind::Ddot,
+                    content: Box::new(content),
+                },
+            ),
+            "dddot" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "dddot content",
+                |content| Expr::Accent {
+                    kind: AccentKind::Dddot,
+                    content: Box::new(content),
+                },
+            ),
+            "ddddot" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "ddddot content",
+                |content| Expr::Accent {
+                    kind: AccentKind::Ddddot,
+                    content: Box::new(content),
+                },
+            ),
+            "tilde" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "tilde content",
+                |content| Expr::Accent {
+                    kind: AccentKind::Tilde,
+                    content: Box::new(content),
+                },
+            ),
             // MathType preserves the command token for \utilde instead of
             // lowering it to native under-tilde embellishment records.
             "utilde" => self.parse_raw_prefix_group_command("utilde content", "utilde"),
-            "acute" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "acute content", |content| {
-                    Expr::Accent {
-                        kind: AccentKind::Acute,
-                        content: Box::new(content),
-                    }
-                })
-            }
-            "grave" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "grave content", |content| {
-                    Expr::Accent {
-                        kind: AccentKind::Grave,
-                        content: Box::new(content),
-                    }
-                })
-            }
-            "check" | "v" => {
-                self.parse_grouped_or_atom_command_or_raw(command.as_str(), "check content", |content| {
-                    Expr::Accent {
-                        kind: AccentKind::Check,
-                        content: Box::new(content),
-                    }
-                })
-            }
+            "acute" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "acute content",
+                |content| Expr::Accent {
+                    kind: AccentKind::Acute,
+                    content: Box::new(content),
+                },
+            ),
+            "grave" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "grave content",
+                |content| Expr::Accent {
+                    kind: AccentKind::Grave,
+                    content: Box::new(content),
+                },
+            ),
+            "check" | "v" => self.parse_grouped_or_atom_command_or_raw(
+                command.as_str(),
+                "check content",
+                |content| Expr::Accent {
+                    kind: AccentKind::Check,
+                    content: Box::new(content),
+                },
+            ),
             "widecheck" => self.parse_raw_prefix_group_command("widecheck content", "widecheck"),
             "Overrightarrow" => self.parse_grouped_or_atom_command_or_raw(
                 command.as_str(),
@@ -1109,8 +1111,7 @@ impl Parser {
                 })
             }
             _ if matches!(command.as_str(), "space" | "nobreakspace")
-                && peek_non_whitespace_char(self)
-                    .is_some_and(|ch| ch.is_ascii_alphanumeric()) =>
+                && peek_non_whitespace_char(self).is_some_and(|ch| ch.is_ascii_alphanumeric()) =>
             {
                 Ok(Expr::RawTex(format!("\\{command}")))
             }
@@ -1187,7 +1188,10 @@ impl Parser {
                 if ch == '>' {
                     // Bug-fix: MathType drops `\>` entirely instead of mapping it to a spacing
                     // escape in math mode, even when visible content follows.
-                    return Ok(with_leading_raw_space(Expr::Sequence(Vec::new()), leading_ws));
+                    return Ok(with_leading_raw_space(
+                        Expr::Sequence(Vec::new()),
+                        leading_ws,
+                    ));
                 }
                 if let Some(width) = escaped_single_char_space(ch) {
                     return Ok(Expr::Space(width));
@@ -1225,7 +1229,10 @@ impl Parser {
                 if matches!(ch, ']' | '<' | '>' | '/') {
                     // Bug-fix: MathType drops these escaped delimiter/correction shims instead of
                     // keeping a visible glyph or a raw fallback fragment in the final MTEF.
-                    return Ok(with_leading_raw_space(Expr::Sequence(Vec::new()), leading_ws));
+                    return Ok(with_leading_raw_space(
+                        Expr::Sequence(Vec::new()),
+                        leading_ws,
+                    ));
                 }
                 if let Some(text_char) = escaped_single_char_math_char(ch) {
                     return Ok(Expr::Char(text_char));
@@ -1268,9 +1275,10 @@ fn consume_visible_double_backslash_sequence(parser: &mut Parser) -> Option<Expr
         // and `\\|` keep only the raw `\\`; the following content stays on the
         // normal visible parse path instead of joining the raw run.
         return Some(Expr::RawTex("\\\\".to_string()));
-    } else if parser.peek().is_some_and(|next| {
-        matches!(next, '{' | '}' | '<' | '>' | '/' | '.' | '(' | ')')
-    }) {
+    } else if parser
+        .peek()
+        .is_some_and(|next| matches!(next, '{' | '}' | '<' | '>' | '/' | '.' | '(' | ')'))
+    {
         parser.pos += 1;
         let suffix: String = parser.chars[start..parser.pos].iter().collect();
         return Some(Expr::RawTex(format!("\\\\{suffix}")));
@@ -1296,8 +1304,7 @@ fn plain_operator_name_text(expr: &Expr) -> Option<String> {
 
 /// Recognize the small `\mbox{A}`/`\hbox{x}` cases that MathType translates as plain text.
 fn simple_text_box_group(content: &str) -> bool {
-    !content.is_empty()
-        && !content.contains(['\\', '$', '{', '}', '&', '^', '_'])
+    !content.is_empty() && !content.contains(['\\', '$', '{', '}', '&', '^', '_'])
 }
 
 /// Return true when one wrapper payload keeps a literal `\\` raw fragment.
@@ -1393,10 +1400,7 @@ fn peek_non_whitespace_char(parser: &Parser) -> Option<char> {
 
 /// Resolve one `\let` command alias before normal command dispatch.
 fn resolve_let_command_alias(let_aliases: &HashMap<String, String>, command: String) -> String {
-    let_aliases
-        .get(&command)
-        .cloned()
-        .unwrap_or(command)
+    let_aliases.get(&command).cloned().unwrap_or(command)
 }
 
 fn expr_is_sticky_definition(expr: &Expr) -> bool {
@@ -1456,7 +1460,10 @@ fn normalize_definition_fallback_expr(expr: Expr) -> Expr {
             body: Box::new(normalize_definition_fallback_expr(*body)),
         },
         Expr::Sequence(items) => Expr::Sequence(
-            items.into_iter().map(normalize_definition_fallback_expr).collect(),
+            items
+                .into_iter()
+                .map(normalize_definition_fallback_expr)
+                .collect(),
         ),
         other => other,
     }
@@ -1472,6 +1479,3 @@ fn definition_bodyless_big_op_expr(kind: BigOpKind) -> Expr {
         BigOpKind::Intersection => Expr::Marked(Box::new(Expr::BigSymbol('\u{22c2}'))),
     }
 }
-
-
-

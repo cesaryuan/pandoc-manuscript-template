@@ -18,14 +18,19 @@ impl Parser {
         };
         let mut args = vec![name];
         if let Some(arity) = self.parse_optional_bracket_group()? {
-            args.push(Expr::Sequence(vec![Expr::Char('['), arity, Expr::Char(']')]));
+            args.push(Expr::Sequence(vec![
+                Expr::Char('['),
+                arity,
+                Expr::Char(']'),
+            ]));
             self.skip_ws();
             if self.peek() == Some('[') {
                 self.pos = self.chars.len();
                 return Ok(Expr::Text(MATHTYPE_TEXT_TRANSLATION_FAILED.to_string()));
             }
         }
-        let replacement = match self.parse_visible_wrapper_group(&format!("{command} replacement")) {
+        let replacement = match self.parse_visible_wrapper_group(&format!("{command} replacement"))
+        {
             Ok(replacement) => normalize_definition_fallback_expr(replacement),
             Err(_) => {
                 self.pos = checkpoint;
@@ -54,10 +59,18 @@ impl Parser {
         };
         let mut args = vec![name];
         if let Some(arity) = self.parse_optional_bracket_group()? {
-            args.push(Expr::Sequence(vec![Expr::Char('['), arity, Expr::Char(']')]));
+            args.push(Expr::Sequence(vec![
+                Expr::Char('['),
+                arity,
+                Expr::Char(']'),
+            ]));
         }
         if let Some(default) = self.parse_optional_bracket_group()? {
-            args.push(Expr::Sequence(vec![Expr::Char('['), default, Expr::Char(']')]));
+            args.push(Expr::Sequence(vec![
+                Expr::Char('['),
+                default,
+                Expr::Char(']'),
+            ]));
         }
         let begin = match self.parse_environment_definition_body(&format!("{command} begin")) {
             Ok(begin) => begin,
@@ -160,7 +173,9 @@ impl Parser {
             if !replacement.is_empty() {
                 push_visible_items(
                     &mut items,
-                    normalize_definition_fallback_expr(self.parse_visible_wrapper_text(&replacement)?),
+                    normalize_definition_fallback_expr(
+                        self.parse_visible_wrapper_text(&replacement)?,
+                    ),
                 );
             }
         } else {
@@ -422,7 +437,11 @@ impl Parser {
     pub(super) fn parse_command_definition_name(&mut self, command: &str) -> Result<Expr, String> {
         let content = self.parse_raw_group(&format!("{command} name"))?;
         if let Some(rest) = content.strip_prefix('\\') {
-            if !rest.chars().next().is_some_and(|ch| ch.is_ascii_alphabetic()) {
+            if !rest
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_ascii_alphabetic())
+            {
                 let mut items = vec![Expr::RawTex("\\".to_string())];
                 push_visible_items(&mut items, self.parse_visible_wrapper_text(rest)?);
                 return Ok(Expr::Sequence(items));
@@ -434,9 +453,13 @@ impl Parser {
     }
 
     /// Parse one `\newenvironment` replacement group with MathType's mixed raw/visible rules.
-    pub(super) fn parse_environment_definition_body(&mut self, label: &str) -> Result<Expr, String> {
+    pub(super) fn parse_environment_definition_body(
+        &mut self,
+        label: &str,
+    ) -> Result<Expr, String> {
         let content = self.parse_raw_group(label)?;
-        let visible = normalize_definition_fallback_expr(self.parse_visible_wrapper_text(&content)?);
+        let visible =
+            normalize_definition_fallback_expr(self.parse_visible_wrapper_text(&content)?);
         if !content.contains("\\begin{") && !content.contains("\\end{") {
             return Ok(visible);
         }
@@ -497,7 +520,9 @@ fn replacement_is_pure_raw_tex(items: &[Expr]) -> bool {
 fn expr_is_pure_raw_tex_fragment(expr: &Expr) -> bool {
     match expr {
         Expr::RawTex(_) => true,
-        Expr::Sequence(items) => !items.is_empty() && items.iter().all(expr_is_pure_raw_tex_fragment),
+        Expr::Sequence(items) => {
+            !items.is_empty() && items.iter().all(expr_is_pure_raw_tex_fragment)
+        }
         _ => false,
     }
 }
@@ -507,7 +532,9 @@ fn is_balanced_supported_environment_body(expr: &Expr) -> bool {
     match expr {
         Expr::Environment { .. } | Expr::Matrix { .. } | Expr::Subarray { .. } => true,
         Expr::Style { content, .. } => is_balanced_supported_environment_body(content),
-        Expr::Sequence(items) if items.len() == 1 => is_balanced_supported_environment_body(&items[0]),
+        Expr::Sequence(items) if items.len() == 1 => {
+            is_balanced_supported_environment_body(&items[0])
+        }
         _ => false,
     }
 }
@@ -523,7 +550,9 @@ enum EnvironmentDefinitionFragment {
 }
 
 /// Split environment-definition text so begin/end wrappers stay raw.
-fn split_environment_definition_body_fragments(content: &str) -> Vec<EnvironmentDefinitionFragment> {
+fn split_environment_definition_body_fragments(
+    content: &str,
+) -> Vec<EnvironmentDefinitionFragment> {
     let mut fragments = Vec::new();
     let mut cursor = 0usize;
     while let Some((start, end)) = next_environment_wrapper_span(content, cursor) {
@@ -574,9 +603,7 @@ fn next_environment_wrapper_span(content: &str, cursor: usize) -> Option<(usize,
 /// Attach whitespace immediately before a raw environment wrapper to the raw fragment.
 fn leading_wrapper_whitespace_start(content: &str, cursor: usize, start: usize) -> usize {
     let mut raw_start = start;
-    while raw_start > cursor
-        && content.as_bytes()[raw_start - 1].is_ascii_whitespace()
-    {
+    while raw_start > cursor && content.as_bytes()[raw_start - 1].is_ascii_whitespace() {
         raw_start -= 1;
     }
     raw_start

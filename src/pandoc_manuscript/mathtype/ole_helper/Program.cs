@@ -42,6 +42,9 @@ internal static class Program
     private const double MATHTYPE_WMF_BASELINE_UNITS_PER_POINT = 16.0;
     private const int PLACEABLE_WMF_HEADER_SIZE = 22;
     private const int WMF_HEADER_SIZE = 18;
+    private const ushort META_SETWINDOWORG_FUNCTION = 0x020B;
+    private const ushort META_SETWINDOWEXT_FUNCTION = 0x020C;
+    private const ushort META_SETTEXTALIGN_FUNCTION = 0x012E;
     private const ushort META_ESCAPE_FUNCTION = 0x0626;
     private const ushort MFCOMMENT_ESCAPE = 15;
     private const ushort MATHTYPE_BASELINE_COMMENT_TYPE = 0;
@@ -609,6 +612,7 @@ internal static class Program
                 {
                     bytes = AddPlaceableHeader(bytes, pict.MapMode, pict.XExt, pict.YExt);
                 }
+                bytes = EnsureWmfWindowRecords(bytes, pict.XExt, pict.YExt);
 
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
                 File.WriteAllBytes(outputPath, bytes);
@@ -677,6 +681,11 @@ internal static class Program
             {
                 Log("MTXFormEqn(MTEF->PICT file) wrote a non-placeable file; leaving bytes unchanged");
             }
+            bytes = EnsureWmfWindowRecords(
+                bytes,
+                checked((int)(dims._bounds._right - dims._bounds._left)),
+                checked((int)(dims._bounds._bottom - dims._bounds._top)));
+            File.WriteAllBytes(fullOutputPath, bytes);
 
             Log($"SDK xform wrote preview file {fullOutputPath}, bytes={bytes.Length}");
             return PreviewMetadataFromSdkOutput(dims, bytes);
@@ -1357,6 +1366,159 @@ internal static class Program
         return header.Concat(wmfBytes).ToArray();
     }
 
+    /// <summary>
+    /// Add WMF window records missing from MathType SDK previews.
+    /// </summary>
+    private static byte[] EnsureWmfWindowRecords(byte[] bytes, int fallbackXExt, int fallbackYExt)
+    {
+        if (!TryGetWmfHeaderOffset(bytes, out var wmfOffset))
+        {
+            return bytes;
+        }
+        if (WmfHasRecord(bytes, wmfOffset, META_SETWINDOWEXT_FUNCTION))
+        {
+            return bytes;
+        }
+
+        var (windowX, windowY) = WmfWindowExtents(bytes, wmfOffset, fallbackXExt, fallbackYExt);
+        var insertOffset = FindWindowRecordInsertOffset(bytes, wmfOffset);
+        var records = BuildSetWindowRecords(windowX, windowY);
+        var patched = new byte[bytes.Length + records.Length];
+        Buffer.BlockCopy(bytes, 0, patched, 0, insertOffset);
+        Buffer.BlockCopy(records, 0, patched, insertOffset, records.Length);
+        Buffer.BlockCopy(bytes, insertOffset, patched, insertOffset + records.Length, bytes.Length - insertOffset);
+        PatchWmfHeaderSizes(patched, wmfOffset);
+        Log($"patched SDK WMF window records xExt={windowX}, yExt={windowY}");
+        return patched;
+    }
+
+    /// <summary>
+    /// Return the start of the standard WMF header, after any placeable header.
+    /// </summary>
+    private static bool TryGetWmfHeaderOffset(byte[] bytes, out int wmfOffset)
+    {
+        wmfOffset = HasPlaceableHeader(bytes) ? PLACEABLE_WMF_HEADER_SIZE : 0;
+        return bytes.Length >= wmfOffset + WMF_HEADER_SIZE;
+    }
+
+    /// <summary>
+    /// Return whether a WMF record stream contains a given record type.
+    /// </summary>
+    private static bool WmfHasRecord(byte[] bytes, int wmfOffset, ushort function)
+    {
+        foreach (var record in EnumerateWmfRecords(bytes, wmfOffset))
+        {
+            if (record.Function == function)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Choose window extents from the placeable bounds, falling back to SDK dims.
+    /// </summary>
+    private static (short X, short Y) WmfWindowExtents(byte[] bytes, int wmfOffset, int fallbackXExt, int fallbackYExt)
+    {
+        if (wmfOffset == PLACEABLE_WMF_HEADER_SIZE)
+        {
+            var left = BitConverter.ToInt16(bytes, 6);
+            var top = BitConverter.ToInt16(bytes, 8);
+            var right = BitConverter.ToInt16(bytes, 10);
+            var bottom = BitConverter.ToInt16(bytes, 12);
+            var xExt = right - left;
+            var yExt = bottom - top;
+            if (xExt != 0 && yExt != 0)
+            {
+                return (ClampPositiveInt16(xExt), ClampPositiveInt16(yExt));
+            }
+        }
+        return (ClampPositiveInt16(fallbackXExt), ClampPositiveInt16(fallbackYExt));
+    }
+
+    /// <summary>
+    /// Insert window records after SETTEXTALIGN, matching MathType OLE previews.
+    /// </summary>
+    private static int FindWindowRecordInsertOffset(byte[] bytes, int wmfOffset)
+    {
+        foreach (var record in EnumerateWmfRecords(bytes, wmfOffset))
+        {
+            if (record.Function == META_SETTEXTALIGN_FUNCTION)
+            {
+                return record.Offset + checked((int)record.SizeWords * 2);
+            }
+        }
+        return wmfOffset + WMF_HEADER_SIZE;
+    }
+
+    /// <summary>
+    /// Build SETWINDOWORG and SETWINDOWEXT records for the WMF record stream.
+    /// </summary>
+    private static byte[] BuildSetWindowRecords(short xExt, short yExt)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        WriteWmfShortRecord(writer, META_SETWINDOWORG_FUNCTION, 0, 0);
+        // WMF SETWINDOWEXT stores parameters as yExt, xExt.
+        WriteWmfShortRecord(writer, META_SETWINDOWEXT_FUNCTION, yExt, xExt);
+        return stream.ToArray();
+    }
+
+    /// <summary>
+    /// Write one two-parameter WMF record.
+    /// </summary>
+    private static void WriteWmfShortRecord(BinaryWriter writer, ushort function, short first, short second)
+    {
+        writer.Write(5u);
+        writer.Write(function);
+        writer.Write(first);
+        writer.Write(second);
+    }
+
+    /// <summary>
+    /// Recalculate standard WMF header sizes after inserting records.
+    /// </summary>
+    private static void PatchWmfHeaderSizes(byte[] bytes, int wmfOffset)
+    {
+        BitConverter.GetBytes((uint)((bytes.Length - wmfOffset) / 2)).CopyTo(bytes, wmfOffset + 6);
+        var maxRecordSize = EnumerateWmfRecords(bytes, wmfOffset)
+            .Select(record => record.SizeWords)
+            .DefaultIfEmpty(0u)
+            .Max();
+        BitConverter.GetBytes(maxRecordSize).CopyTo(bytes, wmfOffset + 12);
+    }
+
+    /// <summary>
+    /// Enumerate WMF records from a standard WMF header.
+    /// </summary>
+    private static IEnumerable<WmfRecord> EnumerateWmfRecords(byte[] bytes, int wmfOffset)
+    {
+        var offset = wmfOffset + WMF_HEADER_SIZE;
+        while (offset + 6 <= bytes.Length)
+        {
+            var sizeWords = BitConverter.ToUInt32(bytes, offset);
+            var function = BitConverter.ToUInt16(bytes, offset + 4);
+            if (sizeWords < 3)
+            {
+                yield break;
+            }
+
+            var recordBytes = checked((int)sizeWords * 2);
+            if (offset + recordBytes > bytes.Length)
+            {
+                yield break;
+            }
+
+            yield return new WmfRecord(offset, sizeWords, function);
+            if (function == 0)
+            {
+                yield break;
+            }
+            offset += recordBytes;
+        }
+    }
+
     private static short ClampPositiveInt16(int value)
     {
         // .NET Framework does not provide Math.Clamp. Keep the placeable WMF
@@ -1774,6 +1936,20 @@ internal static class Program
 
         public ushort FormatId { get; }
         public byte[] Bytes { get; }
+    }
+
+    private sealed class WmfRecord
+    {
+        public WmfRecord(int offset, uint sizeWords, ushort function)
+        {
+            Offset = offset;
+            SizeWords = sizeWords;
+            Function = function;
+        }
+
+        public int Offset { get; }
+        public uint SizeWords { get; }
+        public ushort Function { get; }
     }
 
     private sealed class MathTypeLastDimensions

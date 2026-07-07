@@ -7,6 +7,7 @@ import os
 import platform
 import re
 import shutil
+import struct
 import subprocess
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -45,6 +46,12 @@ MATHTYPE_MT6_RELATIVE_PATHS = (
 MATHTYPE_DEFAULT_PREFS_TEMPLATE = resource_path("mathtype/Times+Symbol 12.eqp")
 MATHTYPE_CACHE_DIR = PMT_MATHTYPE_CACHE_DIR
 MATHTYPE_CACHE_VERSION = 1
+PLACEABLE_WMF_KEY_BYTES = bytes.fromhex("d7cdc69a")
+PLACEABLE_WMF_HEADER_SIZE = 22
+WMF_HEADER_SIZE = 18
+WMF_META_EOF = 0x0000
+WMF_META_SETWINDOWORG = 0x020B
+WMF_META_SETWINDOWEXT = 0x020C
 BEGIN_ALIGNED_RE = re.compile(r"\\begin\s*\{\s*aligned\s*\}")
 END_ALIGNED_RE = re.compile(r"\\end\s*\{\s*aligned\s*\}")
 MathTypeSingleConversionMethod = Literal["rust", "set-data"]
@@ -656,6 +663,42 @@ def cache_paths(cache_key: str) -> tuple[Path, Path, Path]:
     return folder / "equation.ole.bin", folder / "preview.wmf", folder / "metadata.json"
 
 
+def has_placeable_wmf_header(wmf_bytes: bytes) -> bool:
+    """Return True when bytes start with an Aldus placeable WMF header."""
+    return wmf_bytes.startswith(PLACEABLE_WMF_KEY_BYTES)
+
+
+def wmf_has_window_mapping(wmf_bytes: bytes) -> bool:
+    """Return True when a WMF record stream defines a replay window.
+
+    MathType SDK previews can display in Word but export blank PDFs when these
+    records are missing, because Word's PDF exporter replays the WMF records
+    without relying only on the placeable header bounds.
+    """
+    offset = PLACEABLE_WMF_HEADER_SIZE if has_placeable_wmf_header(wmf_bytes) else 0
+    if len(wmf_bytes) < offset + WMF_HEADER_SIZE:
+        return False
+
+    seen_org = False
+    seen_ext = False
+    position = offset + WMF_HEADER_SIZE
+    while position + 6 <= len(wmf_bytes):
+        size_words, function = struct.unpack_from("<IH", wmf_bytes, position)
+        if size_words < 3:
+            return False
+        next_position = position + size_words * 2
+        if next_position > len(wmf_bytes):
+            return False
+        if function == WMF_META_SETWINDOWORG:
+            seen_org = True
+        elif function == WMF_META_SETWINDOWEXT:
+            seen_ext = True
+        elif function == WMF_META_EOF:
+            break
+        position = next_position
+    return seen_org and seen_ext
+
+
 def valid_cached_parts(ole_path: Path, wmf_path: Path) -> bool:
     """Return True when cached MathType OLE and WMF files look usable."""
     if not ole_path.exists() or not wmf_path.exists():
@@ -663,8 +706,9 @@ def valid_cached_parts(ole_path: Path, wmf_path: Path) -> bool:
     try:
         compound = CompoundFile(ole_path.read_bytes())
         has_mathtype_payload = compound.read_stream("Equation Native").find(b"DSMT") >= 0
-        has_placeable_preview = wmf_path.read_bytes()[:4] == bytes.fromhex("d7cdc69a")
-        return has_mathtype_payload and has_placeable_preview
+        wmf_bytes = wmf_path.read_bytes()
+        has_placeable_preview = has_placeable_wmf_header(wmf_bytes)
+        return has_mathtype_payload and has_placeable_preview and wmf_has_window_mapping(wmf_bytes)
     except Exception as exc:
         log_warning(f"[mathtype] warning: ignoring invalid cached equation {ole_path}: {exc}")
         return False
@@ -1175,8 +1219,11 @@ def generate_equation_parts(
         compound = inspect_ole(ole_path)
         if compound.read_stream("Equation Native").find(b"DSMT") < 0:
             raise ValueError(f"generated OLE lacks DSMT marker: {ole_path}")
-        if not wmf_path.exists() or wmf_path.read_bytes()[:4] != bytes.fromhex("d7cdc69a"):
+        wmf_bytes = wmf_path.read_bytes() if wmf_path.exists() else b""
+        if not has_placeable_wmf_header(wmf_bytes):
             raise ValueError(f"generated WMF preview is missing placeable header: {wmf_path}")
+        if not wmf_has_window_mapping(wmf_bytes):
+            raise ValueError(f"generated WMF preview is missing window mapping records: {wmf_path}")
         equations.append(GeneratedEquation(latex=latex, ole_path=ole_path, wmf_path=wmf_path, metadata_path=metadata_path))
     log_info(f"[mathtype] cache summary: hits={cache_hits}, misses={cache_misses}, dir={MATHTYPE_CACHE_DIR}")
     return equations

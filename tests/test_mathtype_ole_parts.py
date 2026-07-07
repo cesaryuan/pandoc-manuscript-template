@@ -1,4 +1,5 @@
 from pathlib import Path
+import struct
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -13,6 +14,34 @@ def test_decode_process_output_falls_back_for_localized_helper_errors() -> None:
     message = "[ole-helper] 找不到文件\n"
 
     assert decode_process_output(message.encode("gb18030")) == message
+
+
+def minimal_wmf(include_window_mapping: bool = True) -> bytes:
+    """Build a tiny placeable WMF for preview validation tests."""
+    records = []
+    if include_window_mapping:
+        records.append(struct.pack("<IHhh", 5, ole_parts.WMF_META_SETWINDOWORG, 0, 0))
+        records.append(struct.pack("<IHhh", 5, ole_parts.WMF_META_SETWINDOWEXT, 448, 832))
+    records.append(struct.pack("<IH", 3, ole_parts.WMF_META_EOF))
+    record_bytes = b"".join(records)
+    standard_header = struct.pack(
+        "<HHHIHIH",
+        1,
+        9,
+        0x0300,
+        (ole_parts.WMF_HEADER_SIZE + len(record_bytes)) // 2,
+        0,
+        5,
+        0,
+    )
+    return ole_parts.PLACEABLE_WMF_KEY_BYTES + bytes(18) + standard_header + record_bytes
+
+
+def test_wmf_preview_validation_requires_window_mapping() -> None:
+    """Reject SDK-style WMFs that Word displays but exports as blank PDFs."""
+    assert ole_parts.has_placeable_wmf_header(minimal_wmf())
+    assert ole_parts.wmf_has_window_mapping(minimal_wmf())
+    assert not ole_parts.wmf_has_window_mapping(minimal_wmf(include_window_mapping=False))
 
 
 def test_make_ole_from_mathtype_rust_uses_file_input(monkeypatch, tmp_path) -> None:
@@ -188,7 +217,7 @@ def test_generate_equation_parts_both_uses_independent_backend_caches(monkeypatc
         method = kwargs["conversion_method"]
         calls.append(method)
         ole_path.write_bytes(b"ole-" + method.encode())
-        wmf_path.write_bytes(bytes.fromhex("d7cdc69a") + b"-" + method.encode())
+        wmf_path.write_bytes(minimal_wmf())
         metadata_path.write_text('{"method":"' + method + '"}', encoding="utf-8")
 
     monkeypatch.setattr(ole_parts, "generate_uncached_equation_parts", fake_generate_uncached)

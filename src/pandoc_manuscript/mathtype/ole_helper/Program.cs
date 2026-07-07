@@ -681,10 +681,7 @@ internal static class Program
             {
                 Log("MTXFormEqn(MTEF->PICT file) wrote a non-placeable file; leaving bytes unchanged");
             }
-            bytes = EnsureWmfWindowRecords(
-                bytes,
-                checked((int)(dims._bounds._right - dims._bounds._left)),
-                checked((int)(dims._bounds._bottom - dims._bounds._top)));
+            bytes = EnsureWmfWindowRecords(bytes, 0, 0);
             File.WriteAllBytes(fullOutputPath, bytes);
 
             Log($"SDK xform wrote preview file {fullOutputPath}, bytes={bytes.Length}");

@@ -27,6 +27,9 @@ from ..runtime.logging import log_debug
 from ..runtime.paths import PMT_MATHTYPE_CACHE_DIR
 from ..runtime.resources import package_resource_path
 
+# Bump when the rendering logic changes so cached previews are regenerated
+# (the cache key folds in preview_renderer_digest()).
+RENDERER_VERSION = "2"
 # MathType's in-repo sizing template is "Times+Symbol 12"; use 12pt as the em
 # size when a formula has no resolved Word font size.
 DEFAULT_EM_PT = 12.0
@@ -39,17 +42,14 @@ SOFFICE_MACOS_PATH = Path("/Applications/LibreOffice.app/Contents/MacOS/soffice"
 # units/inch stores its bounds in signed 16-bit words.
 TWIPS_PER_PT = 20
 WMF_UNITS_PER_INCH = 1440
-# Raster fallback: render the bitmap at ~3x the on-screen size (~288 dpi) so the
-# embedded picture stays crisp when the metafile path is unavailable.
-RASTER_FALLBACK_SCALE = 3.0
-
-
-class MetafileExportError(RuntimeError):
-    """LibreOffice could not export an SVG to a WMF/EMF metafile.
-
-    Happens on rare, very complex equations that exceed LibreOffice's metafile
-    exporter; the caller falls back to a rasterized bitmap wrapped in a WMF.
-    """
+# We rasterize the equation and wrap it in a WMF rather than using LibreOffice's
+# SVG->WMF export: that exporter reliably gets the width right but silently
+# clips the height on ~13% of equations (tall operators, calligraphic letters,
+# sub/superscripts), and the lost ink is unrecoverable from the metafile. A
+# bitmap rendered at RASTER_SCALE x the display size keeps previews crisp
+# (~288 dpi) while guaranteeing correct, never-clipped geometry from the SVG's
+# own (correct) metrics.
+RASTER_SCALE = 3.0
 
 
 @dataclass(frozen=True)
@@ -191,24 +191,13 @@ def _soffice_convert(src: Path, out_path: Path, fmt: str) -> None:
         shutil.move(str(produced), str(out_path))
 
 
-def svg_to_wmf(svg_path: Path, wmf_path: Path) -> None:
-    """Convert an SVG to a placeable WMF using LibreOffice headless.
-
-    Raises MetafileExportError when LibreOffice returns success but writes no
-    metafile (its exporter fails silently on very complex equations).
-    """
-    _soffice_convert(svg_path, wmf_path, "wmf")
-    if not wmf_path.exists():
-        raise MetafileExportError(f"LibreOffice produced no WMF for {svg_path}")
-
-
 def _wmf_wrapping_bitmap(dib: bytes, src_w: int, src_h: int, width_pt: float, height_pt: float) -> bytes:
-    """Build a placeable WMF that draws a DIB, for the raster fallback path.
+    """Build a placeable WMF that draws a DIB at a given point size.
 
     The metafile holds one StretchDIBits record mapping the bitmap into a window
     sized in twips, so the picture displays at the equation's true point size
     (with the bitmap's own resolution) and passes the same placeable-header and
-    window-mapping checks the LibreOffice WMFs do.
+    window-mapping checks a native WMF would.
     """
     dest_w = max(1, round(width_pt * TWIPS_PER_PT))
     dest_h = max(1, round(height_pt * TWIPS_PER_PT))
@@ -258,17 +247,16 @@ def _wmf_wrapping_bitmap(dib: bytes, src_w: int, src_h: int, width_pt: float, he
     return placeable + header + records
 
 
-def svg_to_wmf_via_bitmap(svg_path: Path, wmf_path: Path, width_pt: float, height_pt: float) -> None:
+def svg_to_wmf(svg_path: Path, wmf_path: Path, width_pt: float, height_pt: float) -> None:
     """Rasterize an SVG (via LibreOffice BMP) and wrap it in a placeable WMF.
 
-    Fallback for equations LibreOffice cannot export as a metafile. The SVG is
-    rasterized larger than its display size for a crisp bitmap, then drawn back
-    at the true point size inside the WMF window.
+    The SVG is rasterized larger than its display size for a crisp bitmap, then
+    drawn back at the true point size inside the WMF window.
     """
     scaled_svg = svg_path.with_name(f"{svg_path.stem}.raster.svg")
     text = svg_path.read_text(encoding="utf-8")
-    text = re.sub(r'width="([0-9.]+)pt"', lambda m: f'width="{float(m.group(1)) * RASTER_FALLBACK_SCALE:.3f}pt"', text, count=1)
-    text = re.sub(r'height="([0-9.]+)pt"', lambda m: f'height="{float(m.group(1)) * RASTER_FALLBACK_SCALE:.3f}pt"', text, count=1)
+    text = re.sub(r'width="([0-9.]+)pt"', lambda m: f'width="{float(m.group(1)) * RASTER_SCALE:.3f}pt"', text, count=1)
+    text = re.sub(r'height="([0-9.]+)pt"', lambda m: f'height="{float(m.group(1)) * RASTER_SCALE:.3f}pt"', text, count=1)
     scaled_svg.write_text(text, encoding="utf-8")
 
     bmp_path = svg_path.with_suffix(".bmp")
@@ -295,13 +283,7 @@ def make_wmf_metadata_cross_platform(
     em_pt = font_size_pt if font_size_pt and font_size_pt > 0 else DEFAULT_EM_PT
     svg_path = wmf_output.with_suffix(".svg")
     metrics = render_latex_to_svg(latex, svg_path, em_pt)
-    try:
-        svg_to_wmf(svg_path, wmf_output)
-    except MetafileExportError:
-        # Rare very-complex equation LibreOffice cannot vectorize: keep the build
-        # going with a crisp rasterized preview wrapped in a placeable WMF.
-        log_debug(f"[mathtype] metafile export failed for {latex!r}; using rasterized WMF fallback")
-        svg_to_wmf_via_bitmap(svg_path, wmf_output, metrics.width_pt, metrics.height_pt)
+    svg_to_wmf(svg_path, wmf_output, metrics.width_pt, metrics.height_pt)
 
     metadata = {
         "width_pt": metrics.width_pt,
@@ -328,10 +310,12 @@ def preview_renderer_digest() -> str:
     backend identity, but not exact tool patch levels (kept coarse on purpose).
     """
     parts = [
+        f"v{RENDERER_VERSION}",
         TEX2SVG_SCRIPT.read_text(encoding="utf-8") if TEX2SVG_SCRIPT.exists() else "",
         (JS_DIR / "package.json").read_text(encoding="utf-8") if (JS_DIR / "package.json").exists() else "",
         "soffice" if find_soffice() else "no-soffice",
         f"em={DEFAULT_EM_PT}",
+        f"scale={RASTER_SCALE}",
     ]
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 

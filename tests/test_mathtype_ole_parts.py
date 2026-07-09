@@ -4,7 +4,13 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import json
+
+import pytest
+
 from pandoc_manuscript.mathtype import ole_parts
+from pandoc_manuscript.mathtype import preview_wmf
+from pandoc_manuscript.mathtype import docx_ole
 from pandoc_manuscript.mathtype import convert_marked_docx as convert_marked_docx_module
 from pandoc_manuscript.mathtype.ole_parts import decode_process_output
 
@@ -204,6 +210,9 @@ def test_generate_equation_parts_both_uses_independent_backend_caches(monkeypatc
     calls = []
     warnings = []
 
+    # `both` cross-checks the MathType SDK against rust, so it is Windows-only;
+    # off Windows it degrades to `rust`. Pin the platform to exercise both here.
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
     monkeypatch.setattr(ole_parts, "iter_equation_requests_with_progress", lambda requests: enumerate(requests, start=1))
     monkeypatch.setattr(ole_parts, "mathtype_ole_mtef_sha256", lambda path: f"mtef:{Path(path).name}")
     monkeypatch.setattr(ole_parts, "json_result_sha256", lambda path: f"json:{Path(path).name}")
@@ -390,6 +399,211 @@ def test_mathtype_cache_key_includes_rust_converter_and_method_digests() -> None
     assert base != changed_exe
     assert base != changed_method
     assert set_data_base == set_data_changed_rust
+
+
+def test_generate_equation_parts_degrades_sdk_modes_to_rust_off_windows(monkeypatch, tmp_path) -> None:
+    """Off Windows, SDK-dependent modes fall back to the cross-platform rust backend."""
+    methods = []
+
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(ole_parts, "iter_equation_requests_with_progress", lambda requests: enumerate(requests, start=1))
+    monkeypatch.setattr(ole_parts, "mathtype_rust_source_digest", lambda: "rust-source")
+    monkeypatch.setattr(ole_parts, "mathtype_rust_exe_digest_for_method", lambda method: "rust-exe")
+    monkeypatch.setattr(ole_parts, "preview_renderer_digest", lambda: "renderer")
+    monkeypatch.setattr(ole_parts, "restore_cached_equation", lambda *args: False)
+    monkeypatch.setattr(ole_parts, "store_cached_equation", lambda *args: None)
+    monkeypatch.setattr(ole_parts, "inspect_ole", lambda path: FakeCompound())
+    monkeypatch.setattr(ole_parts, "log_warning", lambda message: None)
+
+    def fake_generate_uncached(index, input_path, ole_path, wmf_path, metadata_path, mtef_path, **kwargs):
+        methods.append(kwargs["conversion_method"])
+        ole_path.write_bytes(b"ole")
+        wmf_path.write_bytes(minimal_wmf())
+        metadata_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(ole_parts, "generate_uncached_equation_parts", fake_generate_uncached)
+
+    ole_parts.generate_equation_parts([ole_parts.EquationRequest("x")], tmp_path, conversion_method="both")
+
+    assert methods == ["rust"]
+
+
+def test_make_ole_wmf_metadata_with_rust_uses_cross_platform_off_windows(monkeypatch, tmp_path) -> None:
+    """Off Windows, draw the preview with the cross-platform LaTeX->WMF renderer."""
+    calls = {}
+    input_path = tmp_path / "eq.tex"
+    input_path.write_text("$x^2$", encoding="utf-8")
+
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(ole_parts, "make_ole_from_mathtype_rust", lambda *a, **k: calls.setdefault("rust_ole", True))
+    monkeypatch.setattr(ole_parts, "make_wmf_metadata_from_mtef", lambda *a, **k: calls.setdefault("sdk", True))
+
+    def fake_cross(latex, wmf_output, metadata_output, font_size_pt=None):
+        calls["cross"] = (latex, font_size_pt)
+
+    monkeypatch.setattr(ole_parts, "make_wmf_metadata_cross_platform", fake_cross)
+
+    ole_parts.make_ole_wmf_metadata_with_mathtype_rust(
+        input_path,
+        tmp_path / "eq.ole.bin",
+        tmp_path / "eq.wmf",
+        tmp_path / "eq.json",
+        tmp_path / "eq.mtef.bin",
+        font_size_pt=10.5,
+    )
+
+    assert calls.get("rust_ole") is True
+    assert calls.get("cross") == ("$x^2$", 10.5)
+    assert "sdk" not in calls
+
+
+def test_make_ole_wmf_metadata_with_rust_uses_sdk_on_windows(monkeypatch, tmp_path) -> None:
+    """On Windows, keep drawing the preview through the MathType SDK path."""
+    calls = {}
+    input_path = tmp_path / "eq.tex"
+    input_path.write_text("$x$", encoding="utf-8")
+
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(ole_parts, "make_ole_from_mathtype_rust", lambda *a, **k: None)
+    monkeypatch.setattr(ole_parts, "make_wmf_metadata_from_mtef", lambda *a, **k: calls.setdefault("sdk", True))
+    monkeypatch.setattr(ole_parts, "make_wmf_metadata_cross_platform", lambda *a, **k: calls.setdefault("cross", True))
+
+    ole_parts.make_ole_wmf_metadata_with_mathtype_rust(
+        input_path,
+        tmp_path / "eq.ole.bin",
+        tmp_path / "eq.wmf",
+        tmp_path / "eq.json",
+        tmp_path / "eq.mtef.bin",
+    )
+
+    assert calls.get("sdk") is True
+    assert "cross" not in calls
+
+
+def test_check_mathtype_availability_non_windows_ready(monkeypatch) -> None:
+    """Non-Windows is usable when mathtype-rust and the preview renderer are present."""
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(ole_parts.shutil, "which", lambda name: "/usr/bin/cargo" if name == "cargo" else None)
+    monkeypatch.setattr(ole_parts, "cross_platform_renderer_available", lambda: (True, []))
+
+    availability = ole_parts.check_mathtype_availability()
+
+    assert availability.usable
+    assert availability.reasons == ()
+
+
+def test_check_mathtype_availability_non_windows_reports_missing_tools(monkeypatch, tmp_path) -> None:
+    """Non-Windows surfaces the missing rust toolchain and renderer tools."""
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(ole_parts.shutil, "which", lambda name: None)
+    monkeypatch.setattr(ole_parts, "MATHTYPE_RUST_EXE", tmp_path / "missing-mathtype-rust")
+    monkeypatch.setattr(
+        ole_parts,
+        "cross_platform_renderer_available",
+        lambda: (False, ["LibreOffice (soffice) was not found; needed to convert SVG to WMF."]),
+    )
+
+    availability = ole_parts.check_mathtype_availability()
+
+    assert not availability.usable
+    assert any("mathtype-rust" in reason for reason in availability.reasons)
+    assert any("soffice" in reason for reason in availability.reasons)
+
+
+def test_mathtype_cache_key_preview_digest_only_changes_cross_platform_key() -> None:
+    """The preview renderer digest scopes to the cross-platform path only."""
+    windows_style = ole_parts.mathtype_cache_key("x", None, None, "helper", "src", "exe", "rust")
+    windows_explicit_none = ole_parts.mathtype_cache_key(
+        "x", None, None, "helper", "src", "exe", "rust", preview_digest=None
+    )
+    with_preview = ole_parts.mathtype_cache_key(
+        "x", None, None, "helper", "src", "exe", "rust", preview_digest="renderer-v1"
+    )
+    with_preview_v2 = ole_parts.mathtype_cache_key(
+        "x", None, None, "helper", "src", "exe", "rust", preview_digest="renderer-v2"
+    )
+
+    # A None digest must not disturb the historical (Windows/SDK) key bytes.
+    assert windows_style == windows_explicit_none
+    assert with_preview != windows_style
+    assert with_preview != with_preview_v2
+
+
+def test_make_wmf_metadata_cross_platform_writes_sdk_compatible_metadata(monkeypatch, tmp_path) -> None:
+    """Emit width/height and mathtype.baseline_from_bottom_pt so placement matches the SDK schema."""
+    wmf_output = tmp_path / "eq.wmf"
+    metadata_output = tmp_path / "eq.json"
+
+    def fake_render(latex, svg_path, em_pt):
+        svg_path.write_text("<svg/>", encoding="utf-8")
+        assert em_pt == 10.5
+        return preview_wmf.PreviewMetrics(width_pt=48.9, height_pt=21.3, baseline_from_bottom_pt=7.2)
+
+    sized = []
+
+    def fake_wmf(svg, wmf, width_pt, height_pt):
+        sized.append((width_pt, height_pt))
+        wmf.write_bytes(b"WMF")
+
+    monkeypatch.setattr(preview_wmf, "render_latex_to_svg", fake_render)
+    monkeypatch.setattr(preview_wmf, "svg_to_wmf", fake_wmf)
+
+    preview_wmf.make_wmf_metadata_cross_platform("$x$", wmf_output, metadata_output, font_size_pt=10.5)
+
+    data = json.loads(metadata_output.read_text(encoding="utf-8"))
+    assert data["width_pt"] == 48.9
+    assert data["mathtype"]["baseline_from_bottom_pt"] == 7.2
+    assert wmf_output.read_bytes() == b"WMF"
+    # Preview is sized from the SVG's own (correct) metrics.
+    assert sized == [(48.9, 21.3)]
+
+
+def test_wmf_wrapping_bitmap_is_a_valid_sized_placeable_wmf() -> None:
+    """The bitmap preview wraps a DIB in a placeable, window-mapped WMF of the right size."""
+    # Minimal 2x2 24bpp bottom-up DIB: 40-byte header + two 4-byte-aligned rows.
+    info_header = struct.pack("<IiiHHIIiiII", 40, 2, 2, 1, 24, 0, 16, 0, 0, 0, 0)
+    dib = info_header + b"\x00" * 16
+
+    wmf = preview_wmf._wmf_wrapping_bitmap(dib, 2, 2, 20.0, 10.0)
+
+    assert ole_parts.has_placeable_wmf_header(wmf)
+    assert ole_parts.wmf_has_window_mapping(wmf)
+    width_pt, height_pt = docx_ole.wmf_size_points(wmf)
+    assert round(width_pt) == 20 and round(height_pt) == 10
+
+
+def test_cross_platform_renderer_available_reports_missing_node(monkeypatch) -> None:
+    """Report a clear reason when node is unavailable for rendering."""
+    monkeypatch.setattr(preview_wmf, "find_node", lambda: None)
+    monkeypatch.setattr(preview_wmf, "find_npm", lambda: "/usr/bin/npm")
+    monkeypatch.setattr(preview_wmf, "find_soffice", lambda: "/usr/bin/soffice")
+
+    ok, reasons = preview_wmf.cross_platform_renderer_available()
+
+    assert not ok
+    assert any("node" in reason for reason in reasons)
+
+
+REQUIRES_LOCAL_RENDERER = not preview_wmf.cross_platform_renderer_available()[0]
+
+
+@pytest.mark.skipif(REQUIRES_LOCAL_RENDERER, reason="node + MathJax + LibreOffice not available")
+def test_cross_platform_preview_end_to_end(tmp_path) -> None:
+    """End-to-end: render a real formula and produce a valid placeable WMF preview."""
+    wmf_output = tmp_path / "eq.wmf"
+    metadata_output = tmp_path / "eq.json"
+
+    preview_wmf.make_wmf_metadata_cross_platform(
+        r"$$\frac{1}{2}\alpha_i^2 + \sqrt{x}$$", wmf_output, metadata_output, font_size_pt=10.5
+    )
+
+    wmf_bytes = wmf_output.read_bytes()
+    assert ole_parts.has_placeable_wmf_header(wmf_bytes)
+    assert ole_parts.wmf_has_window_mapping(wmf_bytes)
+    width_pt, height_pt = docx_ole.wmf_size_points(wmf_bytes)
+    assert width_pt > 0 and height_pt > 0
+    data = json.loads(metadata_output.read_text(encoding="utf-8"))
+    assert data["mathtype"]["baseline_from_bottom_pt"] > 0
 
 
 class FakeCompound:

@@ -21,6 +21,11 @@ from ..runtime.paths import PMT_MATHTYPE_CACHE_DIR
 from ..runtime.resources import package_resource_path, source_tree_root
 
 from .compound_file import CompoundFile
+from .preview_wmf import (
+    cross_platform_renderer_available,
+    make_wmf_metadata_cross_platform,
+    preview_renderer_digest,
+)
 
 
 def resource_path(path: str | Path) -> Path:
@@ -248,10 +253,24 @@ def check_mathtype_availability() -> MathTypeAvailability:
 
     system = platform.system()
     if system != "Windows":
-        reasons.append(
-            "MathType OLE conversion requires Windows because it uses COM/OLE "
-            f"({MATHTYPE_PROG_ID}); detected system: {system or 'unknown'}."
+        # Non-Windows uses the default `rust` backend: mathtype-rust builds the
+        # editable OLE body, and a LaTeX->SVG->WMF renderer draws the preview.
+        # The Windows-only `set-data` (MathType COM/SDK) backend is unavailable.
+        details.append(
+            f"Non-Windows system detected ({system or 'unknown'}); using cross-platform "
+            "mathtype-rust + LaTeX->WMF preview instead of the MathType SDK."
         )
+        if shutil.which("cargo") is None and not MATHTYPE_RUST_EXE.exists():
+            reasons.append(
+                f"mathtype-rust needs `cargo` to build, or a prebuilt executable at {MATHTYPE_RUST_EXE}; "
+                "neither was found."
+            )
+        else:
+            details.append("mathtype-rust converter is available (cargo or a prebuilt executable).")
+        renderer_ok, renderer_reasons = cross_platform_renderer_available()
+        reasons.extend(renderer_reasons)
+        if renderer_ok:
+            details.append("Cross-platform preview renderer is available (node + MathJax + LibreOffice).")
         return MathTypeAvailability(tuple(reasons), tuple(details))
 
     details.append("Windows detected.")
@@ -631,6 +650,7 @@ def mathtype_cache_key(
     rust_source_digest: str | None,
     rust_exe_digest: str | None,
     conversion_method: MathTypeSingleConversionMethod,
+    preview_digest: str | None = None,
 ) -> str:
     """Build a stable cache key from the exact MathType inputs.
 
@@ -653,6 +673,10 @@ def mathtype_cache_key(
         "mathtype_rust_exe_sha256": rust_exe_digest,
         "conversion_method": conversion_method,
     }
+    # Only present on the cross-platform preview path, so Windows/SDK cache keys
+    # stay byte-identical to before.
+    if preview_digest is not None:
+        payload["preview_renderer_sha256"] = preview_digest
     data = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(data).hexdigest()
 
@@ -766,6 +790,11 @@ def generate_cached_equation_parts_for_method(
     conversion_method: MathTypeSingleConversionMethod,
 ) -> bool:
     """Restore or generate one equation for one cache-isolated backend."""
+    preview_digest = (
+        preview_renderer_digest()
+        if conversion_method != "set-data" and platform.system() != "Windows"
+        else None
+    )
     cache_key = mathtype_cache_key(
         latex,
         font_size_key,
@@ -774,6 +803,7 @@ def generate_cached_equation_parts_for_method(
         rust_source_digest,
         rust_exe_digest,
         conversion_method,
+        preview_digest=preview_digest,
     )
     if restore_cached_equation(cache_key, ole_path, wmf_path, metadata_path):
         log_debug(f"[mathtype] cache hit eq={index} method={conversion_method} key={cache_key[:12]}")
@@ -789,6 +819,7 @@ def generate_cached_equation_parts_for_method(
         mtef_path,
         prefs_file=prefs_file,
         conversion_method=conversion_method,
+        font_size_pt=font_size_key,
     )
     store_cached_equation(cache_key, ole_path, wmf_path, metadata_path)
     return False
@@ -967,19 +998,30 @@ def make_ole_wmf_metadata_with_mathtype_rust(
     metadata_path: Path,
     mtef_path: Path,
     prefs_file: Path | None = None,
+    font_size_pt: float | None = None,
 ) -> None:
-    """Generate OLE, WMF, and metadata through Rust MTEF conversion."""
+    """Generate the OLE body with Rust, then the WMF preview + metadata.
+
+    The editable OLE/MTEF body is produced by mathtype-rust on every platform.
+    The preview WMF and its size/baseline metadata come from the MathType SDK on
+    Windows, or from the cross-platform LaTeX->SVG->WMF renderer elsewhere.
+    """
     make_ole_from_mathtype_rust(input_path, ole_path, mtef_path, prefs_file=prefs_file)
-    sdk_ole_path = ole_path.with_name(f"{ole_path.stem}.sdk{ole_path.suffix}")
-    make_wmf_metadata_from_mtef(
-        mtef_path,
-        sdk_ole_path,
-        wmf_path,
-        metadata_path,
-        prefs_file=prefs_file,
-    )
-    if sdk_ole_path.exists():
-        sdk_ole_path.unlink()
+    if platform.system() == "Windows":
+        sdk_ole_path = ole_path.with_name(f"{ole_path.stem}.sdk{ole_path.suffix}")
+        make_wmf_metadata_from_mtef(
+            mtef_path,
+            sdk_ole_path,
+            wmf_path,
+            metadata_path,
+            prefs_file=prefs_file,
+        )
+        if sdk_ole_path.exists():
+            sdk_ole_path.unlink()
+        return
+
+    latex = input_path.read_text(encoding="utf-8")
+    make_wmf_metadata_cross_platform(latex, wmf_path, metadata_path, font_size_pt=font_size_pt)
 
 
 def make_ole_wmf_metadata_with_mathtype_set_data(
@@ -1009,6 +1051,7 @@ def generate_uncached_equation_parts(
     mtef_path: Path,
     prefs_file: Path | None = None,
     conversion_method: MathTypeConversionMethod = DEFAULT_MATHTYPE_CONVERSION_METHOD,
+    font_size_pt: float | None = None,
 ) -> None:
     """Generate MathType parts using the configured conversion backend."""
     if conversion_method == "both":
@@ -1022,6 +1065,7 @@ def generate_uncached_equation_parts(
             metadata_path,
             mtef_path,
             prefs_file=prefs_file,
+            font_size_pt=font_size_pt,
         )
         log_debug(f"[mathtype] mathtype-rust conversion succeeded for equation {index}")
         return
@@ -1059,6 +1103,7 @@ def generate_uncached_equation_parts(
                 metadata_path,
                 mtef_path,
                 prefs_file=prefs_file,
+                font_size_pt=font_size_pt,
             )
         except (RuntimeError, FileNotFoundError) as fallback_exc:
             raise RuntimeError(
@@ -1098,6 +1143,15 @@ def generate_equation_parts(
 ) -> list[GeneratedEquation]:
     """Generate OLE bins and WMF previews for all marker-bound formulas."""
     conversion_method = normalize_conversion_method(conversion_method)
+    # The Windows-only `set-data` backend uses the MathType SDK, which does not
+    # exist off Windows. Degrade the SDK-dependent modes to the cross-platform
+    # `rust` backend so shipped styles (which default to `both`) still build.
+    if platform.system() != "Windows" and conversion_method in {"set-data", "both", "auto"}:
+        log_warning(
+            f"[mathtype] '{conversion_method}' needs the Windows MathType SDK; "
+            "using the cross-platform 'rust' backend on this system instead."
+        )
+        conversion_method = "rust"
     output_dir.mkdir(parents=True, exist_ok=True)
     equations: list[GeneratedEquation] = []
     prefs_template = MATHTYPE_DEFAULT_PREFS_TEMPLATE if MATHTYPE_DEFAULT_PREFS_TEMPLATE.exists() else None

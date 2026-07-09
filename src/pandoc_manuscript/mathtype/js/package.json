@@ -1,0 +1,10 @@
+{
+  "name": "pmt-mathtype-tex2svg",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "LaTeX -> SVG renderer used for cross-platform MathType WMF previews.",
+  "dependencies": {
+    "mathjax-full": "3.2.2"
+  }
+}

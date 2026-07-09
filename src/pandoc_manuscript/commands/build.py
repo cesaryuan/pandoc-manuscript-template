@@ -28,6 +28,7 @@ from ..runtime.paths import (
     pmt_path,
 )
 from ..docx.equation_layout import sync_eqn_block_template_with_page_margins
+from ..docx.page_margins import write_reference_doc_with_page_margins
 from ..docx.postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from ..docx.postprocess import postprocess_docx as run_docx_postprocess
 from ..runtime.resources import package_resource_path, template_root
@@ -468,6 +469,34 @@ def reference_doc_args() -> list[str]:
     return ['--reference-doc', to_pandoc_path(Path(SETTINGS.reference_doc))]
 
 
+def active_reference_doc() -> Path:
+    """Return the source reference DOCX selected for this build."""
+    if SETTINGS.reference_doc:
+        return Path(SETTINGS.reference_doc)
+    return resource_path("pandoc/manuscript-template/reference-doc.docx")
+
+
+def generated_reference_doc_path() -> Path:
+    """Return the temporary reference DOCX path prepared for Pandoc."""
+    reference_dir = PMT_WORK_DIR / "reference-doc"
+    return reference_dir / f"{SETTINGS.project_name}.reference.docx"
+
+
+def docx_reference_doc_args(metadata: dict[str, Any]) -> list[str]:
+    """Return the reference-doc argument, applying docxPageMargins before Pandoc."""
+    source = active_reference_doc()
+    target = generated_reference_doc_path()
+    result = write_reference_doc_with_page_margins(source, target, metadata)
+    if result is None:
+        return reference_doc_args()
+
+    log_info(
+        "[INFO] Prepared reference DOCX with docxPageMargins: "
+        f"{to_pandoc_path(target)} margins={result['margins']}"
+    )
+    return ['--reference-doc', to_pandoc_path(target)]
+
+
 def style_metadata_args(metadata: dict[str, Any] | None = None) -> list[str]:
     """Return Pandoc CLI args for project style metadata when style.yml exists."""
     if metadata is not None and should_use_style_metadata_file():
@@ -520,7 +549,7 @@ def build_docx(*, warn_hat_order: bool = True):
         warn_mathtype_hat_style_order(Path(SETTINGS.manuscript_file))
     pandoc_output = docx_file
     pandoc_env = {}
-    extra_args.extend(reference_doc_args())
+    extra_args.extend(docx_reference_doc_args(metadata))
     extra_args.extend(docx_metadata_filter_args())
 
     embed_svg_images = should_embed_docx_svg_images(metadata)

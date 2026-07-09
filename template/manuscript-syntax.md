@@ -530,8 +530,9 @@ The PNG converter uses the Python `resvg-py` dependency.
 
 The DOCX post-processing step can update paragraph styles from the merged YAML metadata. Add style names under `docxStyle`; each key is matched against an existing DOCX style name, and missing styles are reported as warnings without stopping the build. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
 
-Set DOCX page margins under `docxPageMargins`. The values are applied to every
-section in the generated DOCX during post-processing. Omit a side to keep the
+Set DOCX page margins under `docxPageMargins`. The values are written into the
+reference DOCX before Pandoc conversion, so Pandoc calculates image widths from
+the same writable page width that Word will use. Omit a side to keep the
 reference DOCX value for that side unchanged:
 
 ```yaml

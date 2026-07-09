@@ -37,7 +37,7 @@ docxConvertSvgToPng: false
 # '连续', '每页重编', '每节重编', 'continuous', 'restart-page', or 'restart-section'.
 show-line-numbers: '连续'
 
-# DOCX page margins applied to every section during post-processing.
+# DOCX page margins written into the reference DOCX before Pandoc conversion.
 docxPageMargins:
   top: 2.54cm
   bottom: 2.54cm

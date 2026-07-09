@@ -11,13 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from ...runtime.logging import log_info, log_success, log_warning
-from ...runtime.paths import PMT_MATHTYPE_WORK_DIR, PMT_REPLY_PROBE_DIR
+from ...runtime.paths import PMT_MATHTYPE_WORK_DIR, PMT_REPLY_PROBE_DIR, PMT_REPLY_WORK_DIR
 from ...runtime.resources import template_root
 from ...mathtype.convert_marked_docx import convert_marked_docx
 from ...mathtype.marked_docx import extract_marked_equation_requests
 from ...mathtype.ole_parts import build_helper, check_mathtype_availability
 from ...mathtype.preflight import warn_mathtype_hat_style_order
 from ...docx import svg_filters as svg_filter_helpers
+from ...docx.page_margins import write_reference_doc_with_page_margins
 from ...docx.postprocess import postprocess_docx
 from ...docx.postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from ...docx.svg_filters import (
@@ -183,6 +184,20 @@ def cleanup_resolved_reply_path(path: Path) -> None:
             log_warning(f"[WARN] Could not remove temporary reply file because it is still locked: {path}")
 
 
+def reply_reference_doc_for_pandoc(reference_doc: Path, output: Path, metadata: dict[str, Any]) -> Path:
+    """Return a reference DOCX with docxPageMargins already applied for Pandoc."""
+    target = PMT_REPLY_WORK_DIR / "reference-doc" / f"{output.stem}.reference.docx"
+    result = write_reference_doc_with_page_margins(reference_doc, target, metadata)
+    if result is None:
+        return reference_doc
+
+    log_info(
+        "[INFO] Prepared reply reference DOCX with docxPageMargins: "
+        f"{reply_resolve.to_pandoc_path(target)} margins={result['margins']}"
+    )
+    return target
+
+
 def build_reply_docx(
     reply: Path,
     manuscript: Path,
@@ -199,6 +214,7 @@ def build_reply_docx(
     reply_text = reply.read_text(encoding="utf-8")
     flattened_style = reply_resolve.write_reply_style_metadata_file(style)
     metadata = reply_resolve.load_reply_metadata(reply, flattened_style)
+    pandoc_reference_doc = reply_reference_doc_for_pandoc(reference_doc, output, metadata)
     use_mathtype = resolve_mathtype_enabled(metadata_bool(metadata.get("mathtype")))
     if use_mathtype and warn_hat_order:
         warn_mathtype_hat_style_order(reply)
@@ -248,7 +264,7 @@ def build_reply_docx(
             "-o",
             str(pandoc_output),
             "--reference-doc",
-            str(reference_doc),
+            str(pandoc_reference_doc),
             "--resource-path",
             reply_resource_path(reply),
             *docx_metadata_filter_args(),

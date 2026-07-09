@@ -139,6 +139,9 @@ This section presents the experimental results and analysis.
 
 To illustrate how standard figures are inserted and referenced in this template, we include a synthetic trend chart in @fig:single-example. The example uses an image stored under `examples/images/`, which is convenient for demonstrating relative paths in a reusable template repository.
 
+<!-- Test uncaptioned image-->
+![](examples/images/single-figure-example.png){width=100%}
+
 ![A single-figure example showing a synthetic performance trend across evaluation steps.](examples/images/single-figure-example.png){#fig:single-example width=85%}
 
 For most multi-panel layouts, prepare one SVG file that references the child image files with relative paths. The SVG example in @fig:subfigure-svg-example composes two synthetic panels from `examples/images/subfigure-a-example.png` and `examples/images/subfigure-b-example.png`, while Markdown treats the result as one normal figure with one caption and one cross-reference label.

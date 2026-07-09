@@ -550,6 +550,48 @@ def test_make_wmf_metadata_cross_platform_writes_sdk_compatible_metadata(monkeyp
     assert wmf_output.read_bytes() == b"WMF"
 
 
+def test_wmf_wrapping_bitmap_is_a_valid_sized_placeable_wmf() -> None:
+    """The raster fallback wraps a DIB in a placeable, window-mapped WMF of the right size."""
+    # Minimal 2x2 24bpp bottom-up DIB: 40-byte header + two 4-byte-aligned rows.
+    info_header = struct.pack("<IiiHHIIiiII", 40, 2, 2, 1, 24, 0, 16, 0, 0, 0, 0)
+    dib = info_header + b"\x00" * 16
+
+    wmf = preview_wmf._wmf_wrapping_bitmap(dib, 2, 2, 20.0, 10.0)
+
+    assert ole_parts.has_placeable_wmf_header(wmf)
+    assert ole_parts.wmf_has_window_mapping(wmf)
+    width_pt, height_pt = docx_ole.wmf_size_points(wmf)
+    assert round(width_pt) == 20 and round(height_pt) == 10
+
+
+def test_make_wmf_metadata_falls_back_to_bitmap_on_metafile_error(monkeypatch, tmp_path) -> None:
+    """When LibreOffice cannot vectorize, fall back to the rasterized WMF path."""
+    calls = []
+    wmf_output = tmp_path / "eq.wmf"
+    metadata_output = tmp_path / "eq.json"
+
+    def fake_render(latex, svg_path, em_pt):
+        svg_path.write_text("<svg/>", encoding="utf-8")
+        return preview_wmf.PreviewMetrics(width_pt=480.0, height_pt=14.0, baseline_from_bottom_pt=3.0)
+
+    def fake_wmf(svg_path, out):
+        raise preview_wmf.MetafileExportError("too complex")
+
+    def fake_bitmap(svg_path, out, width_pt, height_pt):
+        calls.append((width_pt, height_pt))
+        out.write_bytes(b"WMF-RASTER")
+
+    monkeypatch.setattr(preview_wmf, "render_latex_to_svg", fake_render)
+    monkeypatch.setattr(preview_wmf, "svg_to_wmf", fake_wmf)
+    monkeypatch.setattr(preview_wmf, "svg_to_wmf_via_bitmap", fake_bitmap)
+
+    preview_wmf.make_wmf_metadata_cross_platform("$x$", wmf_output, metadata_output, font_size_pt=None)
+
+    assert calls == [(480.0, 14.0)]
+    assert wmf_output.read_bytes() == b"WMF-RASTER"
+    assert json.loads(metadata_output.read_text())["mathtype"]["baseline_from_bottom_pt"] == 3.0
+
+
 def test_cross_platform_renderer_available_reports_missing_node(monkeypatch) -> None:
     """Report a clear reason when node is unavailable for rendering."""
     monkeypatch.setattr(preview_wmf, "find_node", lambda: None)

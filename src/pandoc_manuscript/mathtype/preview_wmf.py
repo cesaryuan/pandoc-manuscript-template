@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
+import struct
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +34,22 @@ JS_DIR = package_resource_path("mathtype/js")
 TEX2SVG_SCRIPT = JS_DIR / "tex2svg.mjs"
 MATHJAX_NODE_DIR = PMT_MATHTYPE_CACHE_DIR / "mathjax-node"
 SOFFICE_MACOS_PATH = Path("/Applications/LibreOffice.app/Contents/MacOS/soffice")
+
+# WMF preview geometry: 1 point = 20 twips, and a placeable WMF at 1440
+# units/inch stores its bounds in signed 16-bit words.
+TWIPS_PER_PT = 20
+WMF_UNITS_PER_INCH = 1440
+# Raster fallback: render the bitmap at ~3x the on-screen size (~288 dpi) so the
+# embedded picture stays crisp when the metafile path is unavailable.
+RASTER_FALLBACK_SCALE = 3.0
+
+
+class MetafileExportError(RuntimeError):
+    """LibreOffice could not export an SVG to a WMF/EMF metafile.
+
+    Happens on rare, very complex equations that exceed LibreOffice's metafile
+    exporter; the caller falls back to a rasterized bitmap wrapped in a WMF.
+    """
 
 
 @dataclass(frozen=True)
@@ -144,17 +162,17 @@ def render_latex_to_svg(latex: str, svg_path: Path, em_pt: float) -> PreviewMetr
     )
 
 
-def svg_to_wmf(svg_path: Path, wmf_path: Path) -> None:
-    """Convert an SVG to a placeable WMF using LibreOffice headless."""
+def _soffice_convert(src: Path, out_path: Path, fmt: str) -> None:
+    """Convert one file with LibreOffice headless into out_path (by extension)."""
     soffice = find_soffice()
     if soffice is None:
-        raise RuntimeError("LibreOffice (soffice) is required for SVG->WMF conversion but was not found")
+        raise RuntimeError("LibreOffice (soffice) is required for conversion but was not found")
 
-    svg_path = svg_path.resolve()
-    wmf_path = wmf_path.resolve()
-    wmf_path.parent.mkdir(parents=True, exist_ok=True)
-    # Use an isolated profile so conversion still works when the user has a
-    # LibreOffice window open (a shared profile lock otherwise no-ops the run).
+    src = src.resolve()
+    out_path = out_path.resolve()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    # Isolated profile so conversion works even when a LibreOffice window is open
+    # (a shared profile lock otherwise silently no-ops the run).
     profile_dir = (PMT_MATHTYPE_CACHE_DIR / "soffice-profile").resolve()
     profile_dir.mkdir(parents=True, exist_ok=True)
 
@@ -163,16 +181,108 @@ def svg_to_wmf(svg_path: Path, wmf_path: Path) -> None:
         "--headless",
         f"-env:UserInstallation=file://{profile_dir}",
         "--convert-to",
-        "wmf",
+        fmt,
         "--outdir",
-        str(wmf_path.parent),
-        str(svg_path),
+        str(out_path.parent),
+        str(src),
     ])
-    produced = wmf_path.parent / f"{svg_path.stem}.wmf"
-    if not produced.exists():
-        raise RuntimeError(f"soffice did not create a WMF for {svg_path}")
-    if produced != wmf_path:
-        shutil.move(str(produced), str(wmf_path))
+    produced = out_path.parent / f"{src.stem}.{fmt}"
+    if produced != out_path and produced.exists():
+        shutil.move(str(produced), str(out_path))
+
+
+def svg_to_wmf(svg_path: Path, wmf_path: Path) -> None:
+    """Convert an SVG to a placeable WMF using LibreOffice headless.
+
+    Raises MetafileExportError when LibreOffice returns success but writes no
+    metafile (its exporter fails silently on very complex equations).
+    """
+    _soffice_convert(svg_path, wmf_path, "wmf")
+    if not wmf_path.exists():
+        raise MetafileExportError(f"LibreOffice produced no WMF for {svg_path}")
+
+
+def _wmf_wrapping_bitmap(dib: bytes, src_w: int, src_h: int, width_pt: float, height_pt: float) -> bytes:
+    """Build a placeable WMF that draws a DIB, for the raster fallback path.
+
+    The metafile holds one StretchDIBits record mapping the bitmap into a window
+    sized in twips, so the picture displays at the equation's true point size
+    (with the bitmap's own resolution) and passes the same placeable-header and
+    window-mapping checks the LibreOffice WMFs do.
+    """
+    dest_w = max(1, round(width_pt * TWIPS_PER_PT))
+    dest_h = max(1, round(height_pt * TWIPS_PER_PT))
+    if len(dib) % 2:  # WMF records are word-aligned
+        dib += b"\x00"
+
+    def record(function: int, params: bytes) -> bytes:
+        size_words = 3 + len(params) // 2  # 2 words size + 1 word function + params
+        return struct.pack("<IH", size_words, function) + params
+
+    set_window_org = record(0x020B, struct.pack("<hh", 0, 0))
+    set_window_ext = record(0x020C, struct.pack("<hh", dest_h, dest_w))  # (Y, X)
+    stretch = record(
+        0x0F43,  # META_STRETCHDIB
+        struct.pack("<IH", 0x00CC0020, 0)  # SRCCOPY, DIB_RGB_COLORS
+        + struct.pack("<hhhh", src_h, src_w, 0, 0)  # SrcHeight, SrcWidth, YSrc, XSrc
+        + struct.pack("<hhhh", dest_h, dest_w, 0, 0)  # DestHeight, DestWidth, YDest, XDest
+        + dib,
+    )
+    eof = record(0x0000, b"")
+    records = set_window_org + set_window_ext + stretch + eof
+
+    max_record_words = max(len(r) for r in (set_window_org, set_window_ext, stretch, eof)) // 2
+    header = struct.pack(
+        "<HHHIHIH",
+        1,            # mtType: in-memory
+        9,            # mtHeaderSize (words)
+        0x0300,       # mtVersion
+        (18 + len(records)) // 2,  # mtSize (total words)
+        0,            # mtNoObjects
+        max_record_words,
+        0,            # mtNoParameters
+    )
+
+    # Aldus placeable header: key, hwmf, bbox, units/inch, reserved, checksum.
+    placeable = struct.pack(
+        "<IHhhhhHI",
+        0x9AC6CDD7, 0,
+        0, 0, dest_w, dest_h,
+        WMF_UNITS_PER_INCH, 0,
+    )
+    checksum = 0
+    for (word,) in struct.iter_unpack("<H", placeable[:20]):
+        checksum ^= word
+    placeable += struct.pack("<H", checksum)
+
+    return placeable + header + records
+
+
+def svg_to_wmf_via_bitmap(svg_path: Path, wmf_path: Path, width_pt: float, height_pt: float) -> None:
+    """Rasterize an SVG (via LibreOffice BMP) and wrap it in a placeable WMF.
+
+    Fallback for equations LibreOffice cannot export as a metafile. The SVG is
+    rasterized larger than its display size for a crisp bitmap, then drawn back
+    at the true point size inside the WMF window.
+    """
+    scaled_svg = svg_path.with_name(f"{svg_path.stem}.raster.svg")
+    text = svg_path.read_text(encoding="utf-8")
+    text = re.sub(r'width="([0-9.]+)pt"', lambda m: f'width="{float(m.group(1)) * RASTER_FALLBACK_SCALE:.3f}pt"', text, count=1)
+    text = re.sub(r'height="([0-9.]+)pt"', lambda m: f'height="{float(m.group(1)) * RASTER_FALLBACK_SCALE:.3f}pt"', text, count=1)
+    scaled_svg.write_text(text, encoding="utf-8")
+
+    bmp_path = svg_path.with_suffix(".bmp")
+    _soffice_convert(scaled_svg, bmp_path, "bmp")
+    if not bmp_path.exists():
+        raise RuntimeError(f"LibreOffice produced no BMP fallback for {svg_path}")
+
+    bmp = bmp_path.read_bytes()
+    # BMP = 14-byte BITMAPFILEHEADER + DIB (BITMAPINFOHEADER + pixels).
+    width_px, height_px = struct.unpack_from("<ii", bmp, 18)
+    dib = bmp[14:]
+    wmf_path.write_bytes(_wmf_wrapping_bitmap(dib, width_px, abs(height_px), width_pt, height_pt))
+    bmp_path.unlink(missing_ok=True)
+    scaled_svg.unlink(missing_ok=True)
 
 
 def make_wmf_metadata_cross_platform(
@@ -185,7 +295,13 @@ def make_wmf_metadata_cross_platform(
     em_pt = font_size_pt if font_size_pt and font_size_pt > 0 else DEFAULT_EM_PT
     svg_path = wmf_output.with_suffix(".svg")
     metrics = render_latex_to_svg(latex, svg_path, em_pt)
-    svg_to_wmf(svg_path, wmf_output)
+    try:
+        svg_to_wmf(svg_path, wmf_output)
+    except MetafileExportError:
+        # Rare very-complex equation LibreOffice cannot vectorize: keep the build
+        # going with a crisp rasterized preview wrapped in a placeable WMF.
+        log_debug(f"[mathtype] metafile export failed for {latex!r}; using rasterized WMF fallback")
+        svg_to_wmf_via_bitmap(svg_path, wmf_output, metrics.width_pt, metrics.height_pt)
 
     metadata = {
         "width_pt": metrics.width_pt,

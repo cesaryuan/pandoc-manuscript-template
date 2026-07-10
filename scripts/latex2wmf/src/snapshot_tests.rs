@@ -11,10 +11,6 @@ static SNAPSHOT_LOCK: Mutex<()> = Mutex::new(());
 
 /// Render one copied manuscript formula and compare its WMF and JSON bytes.
 fn assert_formula_snapshots(sample_name: &str, backend: SvgBackend, formula_style: FormulaStyle) {
-    // Serializing these cases avoids loading many embedded Typst font sets at once.
-    let _guard = SNAPSHOT_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let sample_path = manifest_dir
         .join("samples")
@@ -22,6 +18,20 @@ fn assert_formula_snapshots(sample_name: &str, backend: SvgBackend, formula_styl
         .join(format!("{sample_name}.tex"));
     let latex = fs::read_to_string(&sample_path)
         .unwrap_or_else(|err| panic!("failed to read {}: {err}", sample_path.display()));
+    assert_latex_snapshots(sample_name, &latex, backend, formula_style);
+}
+
+/// Render one explicit regression formula and compare its WMF and JSON bytes.
+fn assert_latex_snapshots(
+    snapshot_name: &str,
+    latex: &str,
+    backend: SvgBackend,
+    formula_style: FormulaStyle,
+) {
+    // Serializing these cases avoids loading many embedded Typst font sets at once.
+    let _guard = SNAPSHOT_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let result = render_formula_svg(&latex, SNAPSHOT_FONT_SIZE_PT, backend, formula_style)
         .and_then(|rendered| {
             let wmf = svg_to_wmf(&rendered.svg, rendered.width_pt, rendered.height_pt)?;
@@ -39,16 +49,16 @@ fn assert_formula_snapshots(sample_name: &str, backend: SvgBackend, formula_styl
     settings.set_prepend_module_to_snapshot(false);
     settings.bind(|| match result {
         Ok((wmf, metadata)) => {
-            let wmf_snapshot_name = format!("{sample_name}.wmf");
+            let wmf_snapshot_name = format!("{snapshot_name}.wmf");
             insta::assert_binary_snapshot!(wmf_snapshot_name.as_str(), wmf);
-            let json_snapshot_name = format!("{sample_name}_metadata.json");
+            let json_snapshot_name = format!("{snapshot_name}_metadata.json");
             insta::assert_binary_snapshot!(json_snapshot_name.as_str(), metadata);
         }
         // Unsupported formulas remain explicit cases; gaining support replaces
         // the error snapshot with a real WMF snapshot during review.
         Err(error) => {
-            let snapshot_name = format!("{sample_name}.error");
-            insta::assert_snapshot!(snapshot_name.as_str(), error);
+            let error_snapshot_name = format!("{snapshot_name}.error");
+            insta::assert_snapshot!(error_snapshot_name.as_str(), error);
         }
     });
 }
@@ -120,6 +130,12 @@ manuscript_snapshot_cases!(
 #[test]
 fn ratex_inline_fraction_snapshot() {
     assert_formula_snapshots("eq_053", SvgBackend::Ratex, FormulaStyle::Inline);
+}
+
+/// Snapshot XITS italic ink that extends below Typst's zero-descent frame.
+#[test]
+fn typst_inline_italic_f_snapshot() {
+    assert_latex_snapshots("italic_f", "f", SvgBackend::Typst, FormulaStyle::Inline);
 }
 
 /// Keep the copied corpus byte-identical to the canonical manuscript samples.

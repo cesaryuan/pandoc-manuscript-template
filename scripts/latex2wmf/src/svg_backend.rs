@@ -11,6 +11,7 @@ const RATEX_SAFETY_PADDING_EM: f64 = 0.02;
 const WORD_HALF_POINT_PT: f64 = 0.5;
 const TYPST_FORMULA_LABEL: &str = "latex2wmf-formula";
 const TYPST_MATH_FONT_NAME: &str = "XITS Math";
+const TYPST_BASELINE_SOURCE: &str = "typst-frame-baseline+svg-ink-bounds";
 const XITS_MATH_FONT: &[u8] = include_bytes!("../assets/fonts/XITSMath-Regular.otf");
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -90,6 +91,15 @@ pub(crate) struct RenderedSvg {
     pub(crate) height_pt: f64,
     pub(crate) baseline_from_bottom_pt: f64,
     pub(crate) baseline_source: &'static str,
+}
+
+/// Absolute SVG ink extents after `use` references and transforms are resolved.
+#[derive(Clone, Copy, Debug)]
+struct SvgInkBounds {
+    left: f64,
+    top: f64,
+    right: f64,
+    bottom: f64,
 }
 
 /// Render LaTeX math through the selected self-contained SVG backend.
@@ -206,6 +216,41 @@ fn wrap_svg_with_padding(
     ))
 }
 
+/// Measure visible path ink in the Typst frame's point coordinate space.
+fn measure_svg_ink_bounds(
+    raw_svg: &str,
+    frame_width_pt: f64,
+    frame_height_pt: f64,
+) -> Result<SvgInkBounds, String> {
+    let tree = usvg::Tree::from_str(raw_svg, &usvg::Options::default())
+        .map_err(|err| format!("failed to parse generated SVG for ink bounds: {err}"))?;
+    let viewport_width = f64::from(tree.size().width());
+    let viewport_height = f64::from(tree.size().height());
+    if viewport_width <= 0.0 || viewport_height <= 0.0 {
+        return Err("generated SVG has an empty viewport while measuring ink".to_string());
+    }
+    // usvg normalizes physical units to CSS pixels. Convert its absolute
+    // bounds back to the Typst frame/viewBox point coordinates before mixing
+    // them with baseline and layout measurements.
+    let scale_x = frame_width_pt / viewport_width;
+    let scale_y = frame_height_pt / viewport_height;
+    let bounds = tree.root().abs_stroke_bounding_box();
+    let ink = SvgInkBounds {
+        left: f64::from(bounds.x()) * scale_x,
+        top: f64::from(bounds.y()) * scale_y,
+        right: f64::from(bounds.right()) * scale_x,
+        bottom: f64::from(bounds.bottom()) * scale_y,
+    };
+    if [ink.left, ink.top, ink.right, ink.bottom]
+        .iter()
+        .all(|value| value.is_finite())
+    {
+        Ok(ink)
+    } else {
+        Err("generated SVG has non-finite ink bounds".to_string())
+    }
+}
+
 /// Convert LaTeX with MiTeX, compile through typst-as-lib, and export one SVG page.
 fn render_typst_svg(
     latex: &str,
@@ -263,15 +308,27 @@ fn render_typst_svg(
     // Read the labelled box's actual descent before the page compositor drops
     // child baselines; this keeps Word placement tied to Typst's font layout.
     let content_depth_pt = formula_frame.descent().to_pt().max(0.0).abs();
-    let baseline_from_top_pt = ceil_to_half_point(content_height_pt - content_depth_pt);
-    let baseline_from_bottom_pt = ceil_to_half_point(content_depth_pt);
-    let width_pt = ceil_to_half_point(content_width_pt);
-    let height_pt = baseline_from_top_pt + baseline_from_bottom_pt;
-    let horizontal_padding_pt = (width_pt - content_width_pt) / 2.0;
-    let top_padding_pt = baseline_from_top_pt - (content_height_pt - content_depth_pt);
     let mut formula_page = page.clone();
     formula_page.frame = formula_frame.clone();
     let raw_svg = typst_svg::svg(&formula_page, &typst_svg::SvgOptions::default());
+    let ink = measure_svg_ink_bounds(&raw_svg, content_width_pt, content_height_pt)?;
+    let baseline_y_pt = content_height_pt - content_depth_pt;
+
+    // Typst frames describe layout advances, not all glyph ink. XITS italic
+    // `f`, for example, has zero frame descent while its hook extends below
+    // the baseline. Union the frame and actual SVG ink before quantization so
+    // Word's WMF window cannot clip these overhanging paths.
+    let content_left_pt = ink.left.min(0.0);
+    let content_top_pt = ink.top.min(0.0);
+    let content_right_pt = ink.right.max(content_width_pt);
+    let content_bottom_pt = ink.bottom.max(content_height_pt);
+    let expanded_width_pt = content_right_pt - content_left_pt;
+    let baseline_from_top_pt = ceil_to_half_point(baseline_y_pt - content_top_pt);
+    let baseline_from_bottom_pt = ceil_to_half_point(content_bottom_pt - baseline_y_pt);
+    let width_pt = ceil_to_half_point(expanded_width_pt);
+    let height_pt = baseline_from_top_pt + baseline_from_bottom_pt;
+    let horizontal_padding_pt = -content_left_pt + (width_pt - expanded_width_pt) / 2.0;
+    let top_padding_pt = baseline_from_top_pt - baseline_y_pt;
     Ok(RenderedSvg {
         // Add only transparent canvas space so Typst paths keep their scale
         // while the shared WMF dimensions remain exactly representable.
@@ -285,7 +342,7 @@ fn render_typst_svg(
         width_pt,
         height_pt,
         baseline_from_bottom_pt,
-        baseline_source: "typst-frame-descent",
+        baseline_source: TYPST_BASELINE_SOURCE,
     })
 }
 
@@ -310,7 +367,9 @@ fn find_labeled_typst_formula_frame(frame: &Frame) -> Option<&Frame> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FormulaStyle, SvgBackend, render_formula_svg, strip_math_delimiters};
+    use super::{
+        FormulaStyle, SvgBackend, TYPST_BASELINE_SOURCE, render_formula_svg, strip_math_delimiters,
+    };
 
     /// Accept both inline and display delimiters produced by upstream callers.
     #[test]
@@ -359,8 +418,26 @@ mod tests {
         )
         .expect("Typst fraction should render");
 
-        assert_eq!(simple.baseline_source, "typst-frame-descent");
+        assert_eq!(simple.baseline_source, TYPST_BASELINE_SOURCE);
         assert!(fraction.baseline_from_bottom_pt > simple.baseline_from_bottom_pt);
+    }
+
+    /// Preserve XITS italic ink that extends below a zero-descent Typst frame.
+    #[test]
+    fn typst_expands_canvas_for_italic_ink_overflow() {
+        let rendered = render_formula_svg("f", 12.0, SvgBackend::Typst, FormulaStyle::Inline)
+            .expect("XITS italic f should render");
+        let tree = usvg::Tree::from_str(&rendered.svg, &usvg::Options::default())
+            .expect("wrapped Typst SVG should parse");
+        let ink = tree.root().abs_stroke_bounding_box();
+        let viewport_width = f64::from(tree.size().width());
+        let viewport_height = f64::from(tree.size().height());
+
+        assert!(rendered.baseline_from_bottom_pt > 0.0);
+        assert!(f64::from(ink.x()) >= -1e-6);
+        assert!(f64::from(ink.y()) >= -1e-6);
+        assert!(f64::from(ink.right()) <= viewport_width + 1e-6);
+        assert!(f64::from(ink.bottom()) <= viewport_height + 1e-6);
     }
 
     /// Keep inline fractions compact instead of applying display-style layout.

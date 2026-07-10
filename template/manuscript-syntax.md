@@ -174,9 +174,10 @@ Set `mathtypeSvgBackend` to choose how the cross-platform `rust` path produces
 formula SVG. `ratex` (the default) parses LaTeX directly, embeds glyph outlines,
 and reports its exact layout depth for Word baseline placement. `typst` converts
 LaTeX math to Typst with MiTeX, renders it with the bundled XITS Math font,
-and reads the labelled formula frame's actual descent before page composition
-drops child baselines. Both backends reject SVG features outside the formula
-vector subset instead of silently rasterizing them.
+reads the labelled formula frame's actual descent before page composition drops
+child baselines, and expands the transparent canvas to include glyph ink that
+overhangs that frame. Both backends reject SVG features outside the formula vector
+subset instead of silently rasterizing them.
 `pmt` also preserves whether Pandoc marked each formula as inline or display:
 RaTeX uses text style for inline formulas and display style for display formulas,
 so fractions, large operators, and limits keep the layout expected in prose.

@@ -35,7 +35,9 @@ scripts\latex2wmf\target\debug\latex2wmf.exe `
 `typst-as-lib`。RaTeX 后端直接使用布局 depth；Typst 后端把公式放进带内部 label 的
 box，在页面合成丢弃子元素 baseline 之前读取该 box 的真实 `Frame::descent()`，因此
 JSON 分别把 `baseline_source` 标记为 `ratex-layout-depth` 或
-`typst-frame-descent`。
+`typst-frame-baseline+svg-ink-bounds`。Typst 的 frame 表示布局尺寸，但部分斜体字形会
+越过 frame；转换器同时测量解析后的 SVG ink bounds，只扩展透明画布，避免 `f` 等
+下伸或侧向越界轮廓在 WMF 中被裁掉。
 
 Typst 后端固定使用内嵌的 XITS Math `1.302`，不扫描系统字体，所以不同平台和 wheel
 安装后的字形、尺寸及 baseline 保持一致。字体来自官方
@@ -67,7 +69,9 @@ JSON metadata，分别存放为 `snapshots/<backend>/eq_*.snap.wmf` 和
 WMF/JSON 快照。
 
 `snapshots/ratex-inline` 另外保留一个含分式的行内 RaTeX WMF/JSON 快照，用来检查
-`Text` 样式和 `Display` 样式之间的实际渲染差异。
+`Text` 样式和 `Display` 样式之间的实际渲染差异。`snapshots/typst-inline` 保留
+XITS 斜体 `f` 的 WMF/JSON 快照，直接检查超出零 descent frame 的下伸 ink 没有被
+WMF 画布裁掉。
 
 普通回归测试：
 

@@ -2,4 +2,4 @@
 source: src/snapshot_tests.rs
 expression: error
 ---
-Typst produced an empty formula page
+Typst produced an empty formula frame

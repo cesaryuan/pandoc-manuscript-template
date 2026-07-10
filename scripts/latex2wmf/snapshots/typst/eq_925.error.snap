@@ -2,4 +2,4 @@
 source: src/snapshot_tests.rs
 expression: error
 ---
-typst-as-lib compilation failed: Typst source error: [SourceDiagnostic { severity: Error, span: DiagSpan { span: Span(297998314798143), extra: 0 }, message: "unknown variable: mitexsqrt", trace: [], hints: ["if you meant to display multiple letters as is, try adding spaces between each letter: `m i t e x s q r t`", "or if you meant to display this as text, try placing it in quotes: `\"mitexsqrt\"`"] }]; warnings=[]
+typst-as-lib compilation failed: Typst source error: [SourceDiagnostic { severity: Error, span: DiagSpan { span: Span(300336053374781), extra: 0 }, message: "unknown variable: mitexsqrt", trace: [], hints: ["if you meant to display multiple letters as is, try adding spaces between each letter: `m i t e x s q r t`", "or if you meant to display this as text, try placing it in quotes: `\"mitexsqrt\"`"] }]; warnings=[]

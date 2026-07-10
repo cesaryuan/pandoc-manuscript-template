@@ -1,6 +1,5 @@
 ---
 source: src/snapshot_tests.rs
-assertion_line: 50
 expression: metadata
 extension: json
 snapshot_kind: binary

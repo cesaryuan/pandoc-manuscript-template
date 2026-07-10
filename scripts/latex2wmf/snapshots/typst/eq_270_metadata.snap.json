@@ -1,21 +1,22 @@
 {
   "bounds": {
-    "height_pt": 10.2816,
-    "width_pt": 44.65613333333333
+    "height_pt": 11.5,
+    "width_pt": 42.5
   },
   "mathtype": {
-    "baseline_from_bottom_pt": 2.4000000000000004,
-    "baseline_from_bottom_raw": 77,
-    "height_pt": 10.2816,
-    "height_raw": 329,
+    "baseline_from_bottom_pt": 0.5,
+    "baseline_from_bottom_raw": 16,
+    "height_pt": 11.5,
+    "height_raw": 368,
     "horiz_pos": 0,
     "horiz_pos_type": 0,
-    "width_pt": 44.65613333333333,
-    "width_raw": 1429
+    "width_pt": 42.5,
+    "width_raw": 1360
   },
   "renderer": {
-    "baseline_source": "typst-0.2em-estimate",
+    "baseline_source": "typst-frame-baseline+svg-ink-bounds",
     "font_size_pt": 12.0,
+    "math_font": "XITS Math",
     "math_style": "display",
     "svg_backend": "typst",
     "wmf_geometry": "flattened-svg-paths"

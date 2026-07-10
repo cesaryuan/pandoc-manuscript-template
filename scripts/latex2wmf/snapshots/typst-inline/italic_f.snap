@@ -1,6 +1,6 @@
 ---
 source: src/snapshot_tests.rs
-expression: metadata
-extension: json
+expression: wmf
+extension: wmf
 snapshot_kind: binary
 ---

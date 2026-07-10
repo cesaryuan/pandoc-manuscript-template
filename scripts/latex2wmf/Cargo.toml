@@ -16,6 +16,7 @@ serde_json = "1.0.145"
 tiny-skia-path = "0.12.0"
 typst-as-lib = { version = "0.16.0", features = ["typst-kit-fonts", "typst-kit-embed-fonts"] }
 typst-layout = "0.15.0"
+typst-library = "0.15.0"
 typst-svg = "0.15.0"
 usvg = { version = "0.47.0", default-features = false }
 

@@ -1392,6 +1392,7 @@ dependencies = [
  "tiny-skia-path",
  "typst-as-lib",
  "typst-layout",
+ "typst-library",
  "typst-svg",
  "usvg",
 ]

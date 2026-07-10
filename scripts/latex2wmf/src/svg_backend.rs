@@ -5,9 +5,13 @@ use ratex_svg::{SvgOptions, render_to_svg};
 use ratex_types::math_style::MathStyle;
 use typst_as_lib::{TypstEngine, typst_kit_options::TypstKitFontOptions};
 use typst_layout::PagedDocument;
+use typst_library::layout::{Frame, FrameItem};
 
 const RATEX_SAFETY_PADDING_EM: f64 = 0.02;
 const WORD_HALF_POINT_PT: f64 = 0.5;
+const TYPST_FORMULA_LABEL: &str = "latex2wmf-formula";
+const TYPST_MATH_FONT_NAME: &str = "XITS Math";
+const XITS_MATH_FONT: &[u8] = include_bytes!("../assets/fonts/XITSMath-Regular.otf");
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SvgBackend {
@@ -32,6 +36,14 @@ impl SvgBackend {
         match self {
             Self::Ratex => "ratex",
             Self::Typst => "typst",
+        }
+    }
+
+    /// Return the mathematical font family used by this deterministic backend.
+    pub(crate) fn math_font(self) -> &'static str {
+        match self {
+            Self::Ratex => "KaTeX",
+            Self::Typst => TYPST_MATH_FONT_NAME,
         }
     }
 }
@@ -156,7 +168,10 @@ fn render_ratex_svg(
 
 /// Round a positive point extent upward to Word's half-point grid.
 fn ceil_to_half_point(value: f64) -> f64 {
-    ((value / WORD_HALF_POINT_PT) - 1e-9).ceil() * WORD_HALF_POINT_PT
+    let rounded = ((value / WORD_HALF_POINT_PT) - 1e-9).ceil() * WORD_HALF_POINT_PT;
+    // Rust preserves negative zero through ceil; normalize it so JSON does not
+    // report a visually confusing `-0.0pt` baseline for zero-depth glyphs.
+    if rounded == 0.0 { 0.0 } else { rounded }
 }
 
 /// Rewrap a formula SVG with independent horizontal and top padding.
@@ -205,10 +220,15 @@ fn render_typst_svg(
         FormulaStyle::Display => format!("$ {typst_math} $"),
     };
     let source = format!(
-        "#set page(width: auto, height: auto, margin: 0pt, fill: none)\n#set text(size: {font_size_pt}pt)\n{math_source}"
+        "#set page(width: auto, height: auto, margin: 0pt, fill: none)\n\
+         #set text(size: {font_size_pt}pt)\n\
+         #show math.equation: set text(font: \"{TYPST_MATH_FONT_NAME}\")\n\
+         #box[{math_source}] <{TYPST_FORMULA_LABEL}>"
     );
     let engine = TypstEngine::builder()
         .main_file(source)
+        // Bundle XITS Math so wheels render identically without system font lookup.
+        .fonts([XITS_MATH_FONT])
         .search_fonts_with(
             TypstKitFontOptions::default()
                 .include_system_fonts(false)
@@ -229,23 +249,29 @@ fn render_typst_svg(
         ));
     }
     let page = &document.pages()[0];
-    let content_width_pt = page.frame.width().to_pt();
-    let content_height_pt = page.frame.height().to_pt();
+    let formula_frame = find_labeled_typst_formula_frame(&page.frame)
+        .ok_or_else(|| "Typst formula frame label was not preserved during layout".to_string())?;
+    if !formula_frame.has_baseline() {
+        return Err("Typst formula frame does not expose a layout baseline".to_string());
+    }
+    let content_width_pt = formula_frame.width().to_pt();
+    let content_height_pt = formula_frame.height().to_pt();
     if content_width_pt <= 0.0 || content_height_pt <= 0.0 {
-        return Err("Typst produced an empty formula page".to_string());
+        return Err("Typst produced an empty formula frame".to_string());
     }
 
-    // Typst's exported page frame does not retain the inline box baseline.
-    // A 0.2-em math depth matches its default math axis closely enough for
-    // Word placement while keeping the limitation explicit in the metadata.
-    let content_depth_pt = (font_size_pt * 0.2).min(content_height_pt);
+    // Read the labelled box's actual descent before the page compositor drops
+    // child baselines; this keeps Word placement tied to Typst's font layout.
+    let content_depth_pt = formula_frame.descent().to_pt().max(0.0).abs();
     let baseline_from_top_pt = ceil_to_half_point(content_height_pt - content_depth_pt);
     let baseline_from_bottom_pt = ceil_to_half_point(content_depth_pt);
     let width_pt = ceil_to_half_point(content_width_pt);
     let height_pt = baseline_from_top_pt + baseline_from_bottom_pt;
     let horizontal_padding_pt = (width_pt - content_width_pt) / 2.0;
     let top_padding_pt = baseline_from_top_pt - (content_height_pt - content_depth_pt);
-    let raw_svg = typst_svg::svg(page, &typst_svg::SvgOptions::default());
+    let mut formula_page = page.clone();
+    formula_page.frame = formula_frame.clone();
+    let raw_svg = typst_svg::svg(&formula_page, &typst_svg::SvgOptions::default());
     Ok(RenderedSvg {
         // Add only transparent canvas space so Typst paths keep their scale
         // while the shared WMF dimensions remain exactly representable.
@@ -259,8 +285,27 @@ fn render_typst_svg(
         width_pt,
         height_pt,
         baseline_from_bottom_pt,
-        baseline_source: "typst-0.2em-estimate",
+        baseline_source: "typst-frame-descent",
     })
+}
+
+/// Find the labelled formula box that preserves Typst's layout baseline.
+fn find_labeled_typst_formula_frame(frame: &Frame) -> Option<&Frame> {
+    for (_, item) in frame.items() {
+        let FrameItem::Group(group) = item else {
+            continue;
+        };
+        if group
+            .label
+            .is_some_and(|label| label.resolve().as_str() == TYPST_FORMULA_LABEL)
+        {
+            return Some(&group.frame);
+        }
+        if let Some(found) = find_labeled_typst_formula_frame(&group.frame) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -299,6 +344,23 @@ mod tests {
             assert_eq!((rendered.height_pt * 2.0).fract(), 0.0);
             assert_eq!((rendered.baseline_from_bottom_pt * 2.0).fract(), 0.0);
         }
+    }
+
+    /// Use Typst's formula frame rather than a fixed em-based baseline guess.
+    #[test]
+    fn typst_baseline_tracks_formula_depth() {
+        let simple = render_formula_svg("b", 12.0, SvgBackend::Typst, FormulaStyle::Inline)
+            .expect("simple Typst formula should render");
+        let fraction = render_formula_svg(
+            r"\frac{x_i}{y_j}",
+            12.0,
+            SvgBackend::Typst,
+            FormulaStyle::Display,
+        )
+        .expect("Typst fraction should render");
+
+        assert_eq!(simple.baseline_source, "typst-frame-descent");
+        assert!(fraction.baseline_from_bottom_pt > simple.baseline_from_bottom_pt);
     }
 
     /// Keep inline fractions compact instead of applying display-style layout.

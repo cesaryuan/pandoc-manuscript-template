@@ -17,11 +17,11 @@ mathtype: true
 # set-data: LaTeX -> MathType OLE TeX input -> OLE/WMF/JSON.
 # auto: try set-data first, then fall back to rust.
 # both: generate both backends, warn if OLE/JSON differ, and use set-data.
-mathtypeConversionMethod: rust-sdk
+mathtypeConversionMethod: rust
 # SVG renderer used by the cross-platform rust backend: ratex or typst.
-# ratex parses LaTeX directly and provides exact baseline depth. typst first
-# converts LaTeX math with MiTeX and uses an estimated baseline.
-mathtypeSvgBackend: ratex
+# ratex parses LaTeX directly. typst converts through MiTeX, uses bundled XITS
+# Math, and reads the formula frame's actual baseline depth.
+mathtypeSvgBackend: typst
 
 # Set to true to inline local child images inside referenced SVG files during
 # DOCX builds. This keeps SVG text/vector elements sharp while making linked

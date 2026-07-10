@@ -41,6 +41,20 @@ class CustomBuildHook(BuildHookInterface):
                 destination = f"pandoc_manuscript/mathtype/bin/{executable.name}"
             force_include[str(executable)] = destination
 
+        # XITS Math is compiled into latex2wmf; ship its OFL and upstream
+        # notices so installed wheels retain the required attribution.
+        font_assets = root / "scripts" / "latex2wmf" / "assets" / "fonts"
+        font_notices = (
+            "XITS-NOTICE.txt",
+            "XITS-OFL.txt",
+            "XITS-README.txt",
+        )
+        for notice in font_notices:
+            source = font_assets / notice
+            if not source.exists():
+                raise FileNotFoundError(f"XITS Math notice is missing: {source}")
+            force_include[str(source)] = f"pandoc_manuscript/mathtype/bin/{notice}"
+
         # Native helpers make this a platform wheel even though the Python
         # package itself has no extension module or CPython ABI dependency.
         platform_tag = next(iter(sys_tags())).platform

@@ -99,6 +99,7 @@ pub(crate) fn serialize_metadata(
         },
         "renderer": {
             "svg_backend": svg_backend.as_str(),
+            "math_font": svg_backend.math_font(),
             "math_style": formula_style.as_str(),
             "baseline_source": rendered.baseline_source,
             "font_size_pt": font_size_pt,

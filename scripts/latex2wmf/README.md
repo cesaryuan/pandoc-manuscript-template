@@ -32,9 +32,15 @@ scripts\latex2wmf\target\debug\latex2wmf.exe `
 
 `--svg-backend` 可选 `ratex`（默认）或 `typst`。Typst 后端不是直接解析 LaTeX：
 它先用 Apache-2.0 许可的 MiTeX 转成 Typst 数学语法，再交给
-`typst-as-lib`。RaTeX 后端能从布局结果取得精确 baseline depth；Typst 导出的页面
-不保留 inline box baseline，因此 JSON 会把 `baseline_source` 标记为
-`typst-0.2em-estimate`。
+`typst-as-lib`。RaTeX 后端直接使用布局 depth；Typst 后端把公式放进带内部 label 的
+box，在页面合成丢弃子元素 baseline 之前读取该 box 的真实 `Frame::descent()`，因此
+JSON 分别把 `baseline_source` 标记为 `ratex-layout-depth` 或
+`typst-frame-descent`。
+
+Typst 后端固定使用内嵌的 XITS Math `1.302`，不扫描系统字体，所以不同平台和 wheel
+安装后的字形、尺寸及 baseline 保持一致。字体来自官方
+[`xits`](https://ctan.org/pkg/xits) CTAN 包，并按 SIL Open Font License 1.1 分发；
+来源、校验值、上游说明和许可证保存在 `assets/fonts`。
 
 RaTeX 的布局盒有时会比斜体字形轮廓略紧，例如单个 `b` 的轮廓可能越过零深度
 盒子的底边。转换器把 `0.02em` 作为四周的最小安全留白，然后仅扩展透明画布，使

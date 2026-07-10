@@ -16,6 +16,7 @@
   "renderer": {
     "baseline_source": "typst-0.2em-estimate",
     "font_size_pt": 12.0,
+    "math_style": "display",
     "svg_backend": "typst",
     "wmf_geometry": "flattened-svg-paths"
   }

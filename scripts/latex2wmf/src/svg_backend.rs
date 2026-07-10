@@ -33,6 +33,42 @@ impl SvgBackend {
     }
 }
 
+/// Formula context controlling TeX text-style versus display-style layout.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FormulaStyle {
+    Inline,
+    Display,
+}
+
+impl FormulaStyle {
+    /// Parse the formula context passed by the DOCX integration.
+    pub(crate) fn parse(value: &str) -> Result<Self, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "inline" | "text" => Ok(Self::Inline),
+            "display" | "block" => Ok(Self::Display),
+            _ => Err(format!(
+                "unsupported math style {value:?}; expected inline or display"
+            )),
+        }
+    }
+
+    /// Return the canonical name written to metadata.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Inline => "inline",
+            Self::Display => "display",
+        }
+    }
+
+    /// Map the formula context to RaTeX's TeX math style.
+    fn ratex_style(self) -> MathStyle {
+        match self {
+            Self::Inline => MathStyle::Text,
+            Self::Display => MathStyle::Display,
+        }
+    }
+}
+
 pub(crate) struct RenderedSvg {
     pub(crate) svg: String,
     pub(crate) width_pt: f64,
@@ -46,10 +82,11 @@ pub(crate) fn render_formula_svg(
     latex: &str,
     font_size_pt: f64,
     backend: SvgBackend,
+    formula_style: FormulaStyle,
 ) -> Result<RenderedSvg, String> {
     match backend {
-        SvgBackend::Ratex => render_ratex_svg(latex, font_size_pt),
-        SvgBackend::Typst => render_typst_svg(latex, font_size_pt),
+        SvgBackend::Ratex => render_ratex_svg(latex, font_size_pt, formula_style),
+        SvgBackend::Typst => render_typst_svg(latex, font_size_pt, formula_style),
     }
 }
 
@@ -65,10 +102,14 @@ fn strip_math_delimiters(latex: &str) -> String {
 }
 
 /// Render directly with RaTeX and retain its exact layout baseline/depth.
-fn render_ratex_svg(latex: &str, font_size_pt: f64) -> Result<RenderedSvg, String> {
+fn render_ratex_svg(
+    latex: &str,
+    font_size_pt: f64,
+    formula_style: FormulaStyle,
+) -> Result<RenderedSvg, String> {
     let formula = strip_math_delimiters(latex);
     let ast = parse(&formula).map_err(|err| format!("RaTeX parse error: {err}"))?;
-    let layout_options = LayoutOptions::default().with_style(MathStyle::Display);
+    let layout_options = LayoutOptions::default().with_style(formula_style.ratex_style());
     let layout_box = layout(&ast, &layout_options);
     let display_list = to_display_list(&layout_box);
     let options = SvgOptions {
@@ -93,12 +134,20 @@ fn render_ratex_svg(latex: &str, font_size_pt: f64) -> Result<RenderedSvg, Strin
 }
 
 /// Convert LaTeX with MiTeX, compile through typst-as-lib, and export one SVG page.
-fn render_typst_svg(latex: &str, font_size_pt: f64) -> Result<RenderedSvg, String> {
+fn render_typst_svg(
+    latex: &str,
+    font_size_pt: f64,
+    formula_style: FormulaStyle,
+) -> Result<RenderedSvg, String> {
     let formula = strip_math_delimiters(latex);
     let typst_math = convert_math(&formula, None)
         .map_err(|err| format!("MiTeX LaTeX-to-Typst conversion failed: {err}"))?;
+    let math_source = match formula_style {
+        FormulaStyle::Inline => format!("${typst_math}$"),
+        FormulaStyle::Display => format!("$ {typst_math} $"),
+    };
     let source = format!(
-        "#set page(width: auto, height: auto, margin: 0pt, fill: none)\n#set text(size: {font_size_pt}pt)\n$ {typst_math} $"
+        "#set page(width: auto, height: auto, margin: 0pt, fill: none)\n#set text(size: {font_size_pt}pt)\n{math_source}"
     );
     let engine = TypstEngine::builder()
         .main_file(source)
@@ -143,7 +192,7 @@ fn render_typst_svg(latex: &str, font_size_pt: f64) -> Result<RenderedSvg, Strin
 
 #[cfg(test)]
 mod tests {
-    use super::{SvgBackend, render_formula_svg, strip_math_delimiters};
+    use super::{FormulaStyle, SvgBackend, render_formula_svg, strip_math_delimiters};
 
     /// Accept both inline and display delimiters produced by upstream callers.
     #[test]
@@ -155,10 +204,36 @@ mod tests {
     /// Prove the default backend emits outlined, non-empty SVG geometry.
     #[test]
     fn ratex_renders_formula_svg() {
-        let rendered = render_formula_svg(r"\frac{1}{2}", 12.0, SvgBackend::Ratex)
-            .expect("RaTeX rendering should work");
+        let rendered = render_formula_svg(
+            r"\frac{1}{2}",
+            12.0,
+            SvgBackend::Ratex,
+            FormulaStyle::Display,
+        )
+        .expect("RaTeX rendering should work");
         assert!(rendered.svg.contains("<path"));
         assert!(rendered.width_pt > 0.0);
         assert!(rendered.height_pt > rendered.baseline_from_bottom_pt);
+    }
+
+    /// Keep inline fractions compact instead of applying display-style layout.
+    #[test]
+    fn ratex_inline_fraction_is_shorter_than_display_fraction() {
+        let inline = render_formula_svg(
+            r"\frac{1}{2}",
+            12.0,
+            SvgBackend::Ratex,
+            FormulaStyle::Inline,
+        )
+        .expect("inline fraction should render");
+        let display = render_formula_svg(
+            r"\frac{1}{2}",
+            12.0,
+            SvgBackend::Ratex,
+            FormulaStyle::Display,
+        )
+        .expect("display fraction should render");
+
+        assert!(inline.height_pt < display.height_pt);
     }
 }

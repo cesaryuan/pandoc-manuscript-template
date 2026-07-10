@@ -1,0 +1,7 @@
+---
+source: src/snapshot_tests.rs
+assertion_line: 43
+expression: wmf
+extension: wmf
+snapshot_kind: binary
+---

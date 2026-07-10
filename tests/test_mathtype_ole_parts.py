@@ -1,12 +1,15 @@
 from pathlib import Path
 import struct
 import sys
+import zipfile
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from pandoc_manuscript.mathtype import ole_parts
+from pandoc_manuscript.mathtype import marked_docx
+from pandoc_manuscript.mathtype import docx_ole
 from pandoc_manuscript.mathtype import convert_marked_docx as convert_marked_docx_module
 from pandoc_manuscript.mathtype.ole_parts import decode_process_output
 
@@ -86,6 +89,65 @@ def test_make_ole_from_mathtype_rust_uses_file_input(monkeypatch, tmp_path) -> N
             {"stderr_as_warning": False, "stdout_as_debug": True, "stderr_as_debug": True},
         )
     ]
+
+
+def test_cross_platform_wmf_passes_inline_math_style(monkeypatch, tmp_path) -> None:
+    """Pass marker context to latex2wmf so RaTeX selects text-style layout."""
+    calls = []
+    latex2wmf_exe = tmp_path / "latex2wmf.exe"
+    input_path = tmp_path / "eq.tex"
+    wmf_path = tmp_path / "eq.wmf"
+    metadata_path = tmp_path / "eq.json"
+
+    monkeypatch.setattr(ole_parts, "build_latex2wmf_converter", lambda: latex2wmf_exe)
+    monkeypatch.setattr(ole_parts, "run", lambda command, **kwargs: calls.append(command))
+
+    ole_parts.make_wmf_metadata_cross_platform(
+        input_path,
+        wmf_path,
+        metadata_path,
+        math_style="inline",
+    )
+
+    command = calls[0]
+    assert command[command.index("--math-style") + 1] == "inline"
+
+
+def test_marked_docx_preserves_inline_formula_context(tmp_path) -> None:
+    """Keep inline/display marker context when creating generation requests."""
+    source = tmp_path / "marked.docx"
+    document_xml = f"""
+    <w:document xmlns:w="{marked_docx.NS['w']}" xmlns:m="{marked_docx.NS['m']}">
+      <w:body><w:p>
+        <w:r><w:rPr><w:vanish/></w:rPr><w:t>MTLATEX:inline:x_1</w:t></w:r>
+        <m:oMath><m:r><m:t>x_1</m:t></m:r></m:oMath>
+      </w:p></w:body>
+    </w:document>
+    """.strip()
+    styles_xml = f"""
+    <w:styles xmlns:w="{marked_docx.NS['w']}">
+      <w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="24"/></w:rPr></w:rPrDefault></w:docDefaults>
+    </w:styles>
+    """.strip()
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("word/document.xml", document_xml)
+        archive.writestr("word/styles.xml", styles_xml)
+
+    requests = marked_docx.extract_marked_equation_requests(source)
+
+    assert requests == [ole_parts.EquationRequest(latex="x_1", font_size_pt=12.0, math_style="inline")]
+
+
+def test_inline_ole_baseline_is_raised_one_point() -> None:
+    """Correct Word's slight downward bias without moving display equations."""
+    inline = docx_ole.build_mathtype_template()
+    inline.baseline_from_bottom_pt = 3.0
+    inline.is_inline = True
+    display = docx_ole.build_mathtype_template()
+    display.baseline_from_bottom_pt = 3.0
+
+    assert docx_ole.mathtype_position_half_points(inline) == -4
+    assert docx_ole.mathtype_position_half_points(display) == -6
 
 
 def test_make_wmf_metadata_from_mtef_uses_sdk_xform_ole(monkeypatch, tmp_path) -> None:
@@ -472,6 +534,9 @@ def test_mathtype_cache_key_includes_rust_converter_and_method_digests() -> None
     changed_svg_backend = ole_parts.mathtype_cache_key(
         "x", None, None, "helper", "rust-src-a", "rust-exe", "rust", "typst"
     )
+    changed_math_style = ole_parts.mathtype_cache_key(
+        "x", None, None, "helper", "rust-src-a", "rust-exe", "rust", "ratex", "inline"
+    )
     set_data_base = ole_parts.mathtype_cache_key("x", None, None, "helper", "rust-src-a", "rust-exe", "set-data")
     set_data_changed_rust = ole_parts.mathtype_cache_key(
         "x",
@@ -481,6 +546,9 @@ def test_mathtype_cache_key_includes_rust_converter_and_method_digests() -> None
         "rust-src-b",
         "changed-rust-exe",
         "set-data",
+    )
+    set_data_inline = ole_parts.mathtype_cache_key(
+        "x", None, None, "helper", "rust-src-a", "rust-exe", "set-data", "ratex", "inline"
     )
 
     rust_sdk_base = ole_parts.mathtype_cache_key(
@@ -493,9 +561,11 @@ def test_mathtype_cache_key_includes_rust_converter_and_method_digests() -> None
     assert base != changed_exe
     assert base != changed_method
     assert base != changed_svg_backend
+    assert base != changed_math_style
     assert base == changed_helper
     assert rust_sdk_base != rust_sdk_changed_helper
     assert set_data_base == set_data_changed_rust
+    assert set_data_base == set_data_inline
 
 
 class FakeCompound:

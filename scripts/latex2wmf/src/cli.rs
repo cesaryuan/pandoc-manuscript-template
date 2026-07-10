@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use serde_json::json;
 
-use crate::svg_backend::{RenderedSvg, SvgBackend, render_formula_svg};
+use crate::svg_backend::{FormulaStyle, RenderedSvg, SvgBackend, render_formula_svg};
 use crate::wmf::svg_to_wmf;
 
 const DEFAULT_FONT_SIZE_PT: f64 = 12.0;
@@ -17,6 +17,7 @@ struct Options {
     metadata_output: PathBuf,
     svg_output: Option<PathBuf>,
     svg_backend: SvgBackend,
+    formula_style: FormulaStyle,
     font_size_pt: f64,
 }
 
@@ -42,7 +43,12 @@ pub(crate) fn run() -> Result<(), String> {
         _ => return Err("pass exactly one of --latex or --input".to_string()),
     };
 
-    let rendered = render_formula_svg(&raw_latex, options.font_size_pt, options.svg_backend)?;
+    let rendered = render_formula_svg(
+        &raw_latex,
+        options.font_size_pt,
+        options.svg_backend,
+        options.formula_style,
+    )?;
     let wmf = svg_to_wmf(&rendered.svg, rendered.width_pt, rendered.height_pt)?;
     write_parented(&options.output, &wmf)?;
 
@@ -50,7 +56,12 @@ pub(crate) fn run() -> Result<(), String> {
         write_parented(path, rendered.svg.as_bytes())?;
     }
 
-    let json_bytes = serialize_metadata(&rendered, options.svg_backend, options.font_size_pt)?;
+    let json_bytes = serialize_metadata(
+        &rendered,
+        options.svg_backend,
+        options.formula_style,
+        options.font_size_pt,
+    )?;
     write_parented(&options.metadata_output, &json_bytes)?;
 
     eprintln!(
@@ -67,6 +78,7 @@ pub(crate) fn run() -> Result<(), String> {
 pub(crate) fn serialize_metadata(
     rendered: &RenderedSvg,
     svg_backend: SvgBackend,
+    formula_style: FormulaStyle,
     font_size_pt: f64,
 ) -> Result<Vec<u8>, String> {
     let raw_scale = 32.0;
@@ -87,6 +99,7 @@ pub(crate) fn serialize_metadata(
         },
         "renderer": {
             "svg_backend": svg_backend.as_str(),
+            "math_style": formula_style.as_str(),
             "baseline_source": rendered.baseline_source,
             "font_size_pt": font_size_pt,
             "wmf_geometry": "flattened-svg-paths"
@@ -119,6 +132,7 @@ where
     let mut metadata_output = None;
     let mut svg_output = None;
     let mut svg_backend = SvgBackend::Ratex;
+    let mut formula_style = FormulaStyle::Display;
     let mut font_size_pt = DEFAULT_FONT_SIZE_PT;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -133,6 +147,12 @@ where
                     .next()
                     .ok_or_else(|| "--svg-backend requires ratex or typst".to_string())?;
                 svg_backend = SvgBackend::parse(&value)?;
+            }
+            "--math-style" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| "--math-style requires inline or display".to_string())?;
+                formula_style = FormulaStyle::parse(&value)?;
             }
             "--font-size" => {
                 let value = args
@@ -160,20 +180,21 @@ where
         metadata_output: metadata_output.ok_or_else(usage)?,
         svg_output,
         svg_backend,
+        formula_style,
         font_size_pt,
     }))
 }
 
 /// Return command help for direct developer use and packaging smoke tests.
 fn usage() -> String {
-    "Usage: latex2wmf (--latex <tex> | --input <file>) --output <preview.wmf> --metadata-output <metadata.json> [--svg-output <formula.svg>] [--svg-backend ratex|typst] [--font-size <pt>]"
+    "Usage: latex2wmf (--latex <tex> | --input <file>) --output <preview.wmf> --metadata-output <metadata.json> [--svg-output <formula.svg>] [--svg-backend ratex|typst] [--math-style inline|display] [--font-size <pt>]"
         .to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::{ParseAction, parse_args};
-    use crate::svg_backend::SvgBackend;
+    use crate::svg_backend::{FormulaStyle, SvgBackend};
 
     /// Preserve a non-failing help path for packaging probes.
     #[test]
@@ -202,5 +223,25 @@ mod tests {
             panic!("expected parsed options");
         };
         assert_eq!(options.svg_backend, SvgBackend::Typst);
+    }
+
+    /// Accept inline math style at the CLI boundary used by DOCX conversion.
+    #[test]
+    fn inline_math_style_is_selectable() {
+        let action = parse_args([
+            "--latex".to_string(),
+            r"\frac{1}{2}".to_string(),
+            "--output".to_string(),
+            "x.wmf".to_string(),
+            "--metadata-output".to_string(),
+            "x.json".to_string(),
+            "--math-style".to_string(),
+            "inline".to_string(),
+        ])
+        .expect("inline style should parse");
+        let ParseAction::Run(options) = action else {
+            panic!("expected parsed options");
+        };
+        assert_eq!(options.formula_style, FormulaStyle::Inline);
     }
 }

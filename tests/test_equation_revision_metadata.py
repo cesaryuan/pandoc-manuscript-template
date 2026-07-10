@@ -68,6 +68,32 @@ $$
     assert "PMT_EQUATION_METADATA:" in document_xml
 
 
+def test_mathtype_marker_filter_preserves_inline_and_display_context(tmp_path, monkeypatch) -> None:
+    """Record math style before DOCX equation layout can flatten it to InlineMath."""
+    pandoc = shutil.which("pandoc")
+    if pandoc is None:
+        pytest.skip("pandoc is not installed")
+
+    filter_path = Path(__file__).resolve().parents[1] / "pandoc" / "filters" / "mathtype_markers.lua"
+    output_path = tmp_path / "mathtype-markers.docx"
+    markdown = "Inline $x_i$.\n\n$$\n\\frac{1}{2}\n$$\n"
+    monkeypatch.setenv("PMT_ENABLE_MATHTYPE_MARKERS", "true")
+
+    subprocess.run(
+        [pandoc, "--lua-filter", str(filter_path), "-f", "markdown", "-o", str(output_path)],
+        input=markdown,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    with zipfile.ZipFile(output_path) as archive:
+        document_xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "MTLATEX:inline:x_i" in document_xml
+    assert r"MTLATEX:display:\frac{1}{2}" in document_xml
+
+
 def test_process_equation_metadata_colors_native_word_display_equations(tmp_path) -> None:
     """Color native Word display-equation runs red when the hidden marker is present."""
     pandoc = shutil.which("pandoc")

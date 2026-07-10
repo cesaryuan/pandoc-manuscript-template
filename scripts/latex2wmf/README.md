@@ -26,6 +26,7 @@ scripts\latex2wmf\target\debug\latex2wmf.exe `
   --metadata-output C:\tmp\formula.json `
   --svg-output C:\tmp\formula.svg `
   --svg-backend ratex `
+  --math-style inline `
   --font-size 12
 ```
 
@@ -34,6 +35,11 @@ scripts\latex2wmf\target\debug\latex2wmf.exe `
 `typst-as-lib`。RaTeX 后端能从布局结果取得精确 baseline depth；Typst 导出的页面
 不保留 inline box baseline，因此 JSON 会把 `baseline_source` 标记为
 `typst-0.2em-estimate`。
+
+`--math-style` 可选 `inline` 或 `display`，默认是 `display`。`pmt` 构建 DOCX 时会根据
+Pandoc 公式标记自动选择：行内公式使用 RaTeX `Text` 样式，展示公式使用 `Display`
+样式。它会影响分式、巨算符和上下限等结构的大小与间距；直接调用 CLI 时应显式传入
+与公式所在位置一致的值。
 
 ## Manuscript WMF snapshots
 
@@ -44,6 +50,9 @@ JSON metadata，分别存放为 `snapshots/<backend>/eq_*.snap.wmf` 和
 `snapshots/<backend>/eq_*_metadata.snap.json`；不使用 SVG 作为快照。当前不支持的
 公式保留错误文本快照，因此将来开始支持时也会产生需要审核的变化，并新增真实
 WMF/JSON 快照。
+
+`snapshots/ratex-inline` 另外保留一个含分式的行内 RaTeX WMF/JSON 快照，用来检查
+`Text` 样式和 `Display` 样式之间的实际渲染差异。
 
 普通回归测试：
 

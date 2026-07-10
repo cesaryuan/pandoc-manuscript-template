@@ -3,13 +3,12 @@
 -- This filter emits hidden WordprocessingML markers for:
 -- 1. table attributes consumed by Python DOCX postprocessing,
 -- 2. revised native Word display equations marked with `revision=true`,
--- 3. optional MathType equation-source markers used by MathType conversion.
+-- MathType source markers live in mathtype_markers.lua because they must run
+-- before pandoc-crossref preserves display equations as inline DOCX math.
 
 local table_marker_prefix = "PMT_TABLE_METADATA:"
 local equation_marker_prefix = "PMT_EQUATION_METADATA:"
 local captioned_table_index = 0
-local mathtype_markers_enabled = (os.getenv("PMT_ENABLE_MATHTYPE_MARKERS") or ""):lower() == "true"
-local mathtype_counter = 0
 
 local supported_table_keys = {
   ["cell_margin"] = true,
@@ -106,21 +105,6 @@ local function block_is_display_equation(block)
   return false
 end
 
-local function mathtype_marker_run(latex, kind)
-  mathtype_counter = mathtype_counter + 1
-  latex = latex:gsub("^%s+", ""):gsub("%s+$", "")
-  local marker = "MTLATEX:" .. kind .. ":" .. latex
-  local xml = table.concat({
-    '<w:r>',
-    '<w:rPr><w:vanish/></w:rPr>',
-    '<w:t xml:space="preserve">',
-    xml_escape(marker),
-    '</w:t>',
-    '</w:r>',
-  })
-  return pandoc.RawInline("openxml", xml)
-end
-
 function Table(table)
   if FORMAT ~= "docx" then
     return nil
@@ -161,13 +145,4 @@ function Div(div)
     table.insert(blocks, block)
   end
   return blocks
-end
-
-function Math(math)
-  if FORMAT ~= "docx" or not mathtype_markers_enabled then
-    return nil
-  end
-
-  local kind = math.mathtype == "DisplayMath" and "display" or "inline"
-  return { mathtype_marker_run(math.text, kind), math }
 end

@@ -27,7 +27,7 @@ from .docx_ole import (
     NS,
 )
 
-from .ole_parts import EquationRequest, GeneratedEquation
+from .ole_parts import EquationRequest, GeneratedEquation, MathTypeMathStyle
 
 
 MATH_TYPE_MARKER_PREFIX = "MTLATEX:"
@@ -38,7 +38,7 @@ class MarkedFormulaBinding:
     """A hidden LaTeX marker bound to the OMML node that immediately follows it."""
 
     latex: str
-    kind: str
+    kind: MathTypeMathStyle
     marker_run: ET.Element
     omml_node: ET.Element
 
@@ -325,6 +325,9 @@ def extract_marked_equation_requests(source: Path) -> list[EquationRequest]:
             EquationRequest(
                 latex=binding.latex,
                 font_size_pt=resolution.font_size_pt,
+                # Preserve the marker context so RaTeX does not render inline
+                # formulas with display-style fractions, operators, or limits.
+                math_style=binding.kind,
             )
         )
     return requests
@@ -388,6 +391,7 @@ def replace_marked_omml_with_generated(source: Path, target: Path, equations: li
                 ole_bytes=equation.ole_path.read_bytes(),
                 image_bytes=equation.wmf_path.read_bytes(),
                 baseline_from_bottom_pt=equation.baseline_from_bottom_pt,
+                is_inline=equation.math_style == "inline",
             )
 
             remove_marker_run(parent_map, binding.marker_run, index)

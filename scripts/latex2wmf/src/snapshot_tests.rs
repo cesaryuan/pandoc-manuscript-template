@@ -3,14 +3,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use crate::cli::serialize_metadata;
-use crate::svg_backend::{SvgBackend, render_formula_svg};
+use crate::svg_backend::{FormulaStyle, SvgBackend, render_formula_svg};
 use crate::wmf::svg_to_wmf;
 
 const SNAPSHOT_FONT_SIZE_PT: f64 = 12.0;
 static SNAPSHOT_LOCK: Mutex<()> = Mutex::new(());
 
 /// Render one copied manuscript formula and compare its WMF and JSON bytes.
-fn assert_formula_snapshots(sample_name: &str, backend: SvgBackend) {
+fn assert_formula_snapshots(sample_name: &str, backend: SvgBackend, formula_style: FormulaStyle) {
     // Serializing these cases avoids loading many embedded Typst font sets at once.
     let _guard = SNAPSHOT_LOCK
         .lock()
@@ -22,14 +22,20 @@ fn assert_formula_snapshots(sample_name: &str, backend: SvgBackend) {
         .join(format!("{sample_name}.tex"));
     let latex = fs::read_to_string(&sample_path)
         .unwrap_or_else(|err| panic!("failed to read {}: {err}", sample_path.display()));
-    let result = render_formula_svg(&latex, SNAPSHOT_FONT_SIZE_PT, backend).and_then(|rendered| {
-        let wmf = svg_to_wmf(&rendered.svg, rendered.width_pt, rendered.height_pt)?;
-        let metadata = serialize_metadata(&rendered, backend, SNAPSHOT_FONT_SIZE_PT)?;
-        Ok((wmf, metadata))
-    });
+    let result = render_formula_svg(&latex, SNAPSHOT_FONT_SIZE_PT, backend, formula_style)
+        .and_then(|rendered| {
+            let wmf = svg_to_wmf(&rendered.svg, rendered.width_pt, rendered.height_pt)?;
+            let metadata =
+                serialize_metadata(&rendered, backend, formula_style, SNAPSHOT_FONT_SIZE_PT)?;
+            Ok((wmf, metadata))
+        });
 
     let mut settings = insta::Settings::clone_current();
-    settings.set_snapshot_path(PathBuf::from("../snapshots").join(backend.as_str()));
+    let snapshot_directory = match formula_style {
+        FormulaStyle::Inline => format!("{}-inline", backend.as_str()),
+        FormulaStyle::Display => backend.as_str().to_string(),
+    };
+    settings.set_snapshot_path(PathBuf::from("../snapshots").join(snapshot_directory));
     settings.set_prepend_module_to_snapshot(false);
     settings.bind(|| match result {
         Ok((wmf, metadata)) => {
@@ -74,7 +80,11 @@ macro_rules! manuscript_snapshot_cases {
                 #[doc = concat!("Compare the RaTeX WMF snapshot for `", stringify!($case), "`.")]
                 #[test]
                 fn $case() {
-                    assert_formula_snapshots(stringify!($case), SvgBackend::Ratex);
+                    assert_formula_snapshots(
+                        stringify!($case),
+                        SvgBackend::Ratex,
+                        FormulaStyle::Display,
+                    );
                 }
             )+
         }
@@ -86,7 +96,11 @@ macro_rules! manuscript_snapshot_cases {
                 #[doc = concat!("Compare the Typst WMF snapshot for `", stringify!($case), "`.")]
                 #[test]
                 fn $case() {
-                    assert_formula_snapshots(stringify!($case), SvgBackend::Typst);
+                    assert_formula_snapshots(
+                        stringify!($case),
+                        SvgBackend::Typst,
+                        FormulaStyle::Display,
+                    );
                 }
             )+
         }
@@ -101,6 +115,12 @@ manuscript_snapshot_cases!(
     eq_920, eq_921, eq_922, eq_923, eq_924, eq_925, eq_926, eq_927, eq_928, eq_929, eq_930, eq_931,
     eq_932, eq_933, eq_934, eq_935,
 );
+
+/// Snapshot a fraction in RaTeX text style to protect inline DOCX rendering.
+#[test]
+fn ratex_inline_fraction_snapshot() {
+    assert_formula_snapshots("eq_053", SvgBackend::Ratex, FormulaStyle::Inline);
+}
 
 /// Keep the copied corpus byte-identical to the canonical manuscript samples.
 #[test]

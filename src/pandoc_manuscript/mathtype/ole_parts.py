@@ -47,7 +47,7 @@ MATHTYPE_MT6_RELATIVE_PATHS = (
 # Keep the sizing template in-repo so builds do not depend on a local MathType preferences path.
 MATHTYPE_DEFAULT_PREFS_TEMPLATE = resource_path("mathtype/Times+Symbol 12.eqp")
 MATHTYPE_CACHE_DIR = PMT_MATHTYPE_CACHE_DIR
-MATHTYPE_CACHE_VERSION = 3
+MATHTYPE_CACHE_VERSION = 4
 PLACEABLE_WMF_KEY_BYTES = bytes.fromhex("d7cdc69a")
 PLACEABLE_WMF_HEADER_SIZE = 22
 WMF_HEADER_SIZE = 18
@@ -59,6 +59,7 @@ END_ALIGNED_RE = re.compile(r"\\end\s*\{\s*aligned\s*\}")
 MathTypeSingleConversionMethod = Literal["rust", "rust-sdk", "set-data"]
 MathTypeConversionMethod = Literal["rust", "rust-sdk", "set-data", "auto", "both"]
 MathTypeSvgBackend = Literal["ratex", "typst"]
+MathTypeMathStyle = Literal["inline", "display"]
 DEFAULT_MATHTYPE_CONVERSION_METHOD: MathTypeConversionMethod = "rust"
 DEFAULT_MATHTYPE_SVG_BACKEND: MathTypeSvgBackend = "ratex"
 
@@ -135,6 +136,7 @@ class EquationRequest:
 
     latex: str
     font_size_pt: float | None = None
+    math_style: MathTypeMathStyle = "display"
 
 
 @dataclass
@@ -145,6 +147,7 @@ class GeneratedEquation:
     ole_path: Path
     wmf_path: Path
     metadata_path: Path | None = None
+    math_style: MathTypeMathStyle = "display"
 
     @property
     def baseline_from_bottom_pt(self) -> float | None:
@@ -741,6 +744,7 @@ def mathtype_cache_key(
     rust_exe_digest: str | None,
     conversion_method: MathTypeSingleConversionMethod,
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
+    math_style: MathTypeMathStyle = "display",
 ) -> str:
     """Build a stable cache key from the exact MathType inputs.
 
@@ -750,12 +754,15 @@ def mathtype_cache_key(
     converter implementation or backend selection that produced them.
     """
     svg_backend_key: str | None = svg_backend
+    math_style_key: str | None = math_style
     if conversion_method == "set-data":
         rust_source_digest = None
         rust_exe_digest = None
         svg_backend_key = None
+        math_style_key = None
     elif conversion_method == "rust-sdk":
         svg_backend_key = None
+        math_style_key = None
     else:
         # The cross-platform Rust path does not execute the MathType helper.
         helper_digest = None
@@ -770,6 +777,7 @@ def mathtype_cache_key(
         "mathtype_rust_exe_sha256": rust_exe_digest,
         "conversion_method": conversion_method,
         "svg_backend": svg_backend_key,
+        "math_style": math_style_key,
     }
     data = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(data).hexdigest()
@@ -883,6 +891,7 @@ def generate_cached_equation_parts_for_method(
     prefs_file: Path | None,
     conversion_method: MathTypeSingleConversionMethod,
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
+    math_style: MathTypeMathStyle = "display",
 ) -> bool:
     """Restore or generate one equation for one cache-isolated backend."""
     cache_key = mathtype_cache_key(
@@ -894,6 +903,7 @@ def generate_cached_equation_parts_for_method(
         rust_exe_digest,
         conversion_method,
         svg_backend,
+        math_style,
     )
     if restore_cached_equation(cache_key, ole_path, wmf_path, metadata_path):
         log_debug(f"[mathtype] cache hit eq={index} method={conversion_method} key={cache_key[:12]}")
@@ -911,6 +921,7 @@ def generate_cached_equation_parts_for_method(
         conversion_method=conversion_method,
         svg_backend=svg_backend,
         font_size_pt=font_size_key,
+        math_style=math_style,
     )
     store_cached_equation(cache_key, ole_path, wmf_path, metadata_path)
     return False
@@ -931,6 +942,7 @@ def generate_cached_equation_parts_auto(
     mtef_path: Path,
     prefs_file: Path | None,
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
+    math_style: MathTypeMathStyle = "display",
 ) -> tuple[int, int]:
     """Try the preferred set-data cache/generator first, then rust fallback."""
     try:
@@ -950,6 +962,7 @@ def generate_cached_equation_parts_auto(
             prefs_file,
             "set-data",
             svg_backend,
+            math_style,
         )
         return int(hit), int(not hit)
     except (RuntimeError, FileNotFoundError):
@@ -973,6 +986,7 @@ def generate_cached_equation_parts_auto(
             prefs_file,
             "rust",
             svg_backend,
+            math_style,
         )
         return int(hit), 1 + int(not hit)
 
@@ -1092,6 +1106,7 @@ def make_wmf_metadata_cross_platform(
     metadata_output: Path,
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
     font_size_pt: float | None = None,
+    math_style: MathTypeMathStyle = "display",
 ) -> None:
     """Generate formula WMF and placement JSON without MathType or Windows."""
     executable = build_latex2wmf_converter()
@@ -1105,6 +1120,8 @@ def make_wmf_metadata_cross_platform(
         str(metadata_output),
         "--svg-backend",
         svg_backend,
+        "--math-style",
+        math_style,
         "--font-size",
         format_font_size_pt(font_size_pt or 12.0),
     ]
@@ -1120,6 +1137,7 @@ def make_ole_wmf_metadata_with_mathtype_rust(
     prefs_file: Path | None = None,
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
     font_size_pt: float | None = None,
+    math_style: MathTypeMathStyle = "display",
 ) -> None:
     """Generate OLE, WMF, and metadata through cross-platform Rust tools."""
     make_ole_from_mathtype_rust(input_path, ole_path, mtef_path, prefs_file=prefs_file)
@@ -1129,6 +1147,7 @@ def make_ole_wmf_metadata_with_mathtype_rust(
         metadata_path,
         svg_backend=svg_backend,
         font_size_pt=font_size_pt,
+        math_style=math_style,
     )
 
 
@@ -1185,6 +1204,7 @@ def generate_uncached_equation_parts(
     conversion_method: MathTypeConversionMethod = DEFAULT_MATHTYPE_CONVERSION_METHOD,
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
     font_size_pt: float | None = None,
+    math_style: MathTypeMathStyle = "display",
 ) -> None:
     """Generate MathType parts using the configured conversion backend."""
     if conversion_method == "both":
@@ -1200,6 +1220,7 @@ def generate_uncached_equation_parts(
             prefs_file=prefs_file,
             svg_backend=svg_backend,
             font_size_pt=font_size_pt,
+            math_style=math_style,
         )
         log_debug(f"[mathtype] mathtype-rust conversion succeeded for equation {index}")
         return
@@ -1251,6 +1272,7 @@ def generate_uncached_equation_parts(
                 prefs_file=prefs_file,
                 svg_backend=svg_backend,
                 font_size_pt=font_size_pt,
+                math_style=math_style,
             )
         except (RuntimeError, FileNotFoundError) as fallback_exc:
             raise RuntimeError(
@@ -1314,6 +1336,7 @@ def generate_equation_parts(
 
     for index, request in iter_equation_requests_with_progress(requests):
         latex = request.latex
+        math_style = request.math_style
         input_path = output_dir / f"eq_{index:03d}.tex"
         ole_path = output_dir / f"eq_{index:03d}.ole.bin"
         wmf_path = output_dir / f"eq_{index:03d}.wmf"
@@ -1352,6 +1375,7 @@ def generate_equation_parts(
                 prefs_path,
                 "rust",
                 svg_backend,
+                math_style,
             )
             set_data_hit = generate_cached_equation_parts_for_method(
                 index,
@@ -1369,6 +1393,7 @@ def generate_equation_parts(
                 prefs_path,
                 "set-data",
                 svg_backend,
+                math_style,
             )
             cache_hits += int(rust_hit) + int(set_data_hit)
             cache_misses += int(not rust_hit) + int(not set_data_hit)
@@ -1395,6 +1420,7 @@ def generate_equation_parts(
                 mtef_path,
                 prefs_path,
                 svg_backend,
+                math_style,
             )
             cache_hits += hits
             cache_misses += misses
@@ -1415,6 +1441,7 @@ def generate_equation_parts(
                 prefs_path,
                 conversion_method=conversion_method,
                 svg_backend=svg_backend,
+                math_style=math_style,
             )
             cache_hits += int(hit)
             cache_misses += int(not hit)
@@ -1426,6 +1453,14 @@ def generate_equation_parts(
             raise ValueError(f"generated WMF preview is missing placeable header: {wmf_path}")
         if not wmf_has_window_mapping(wmf_bytes):
             raise ValueError(f"generated WMF preview is missing window mapping records: {wmf_path}")
-        equations.append(GeneratedEquation(latex=latex, ole_path=ole_path, wmf_path=wmf_path, metadata_path=metadata_path))
+        equations.append(
+            GeneratedEquation(
+                latex=latex,
+                ole_path=ole_path,
+                wmf_path=wmf_path,
+                metadata_path=metadata_path,
+                math_style=math_style,
+            )
+        )
     log_info(f"[mathtype] cache summary: hits={cache_hits}, misses={cache_misses}, dir={MATHTYPE_CACHE_DIR}")
     return equations

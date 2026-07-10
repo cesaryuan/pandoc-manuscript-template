@@ -28,6 +28,7 @@ CONTENT_WMF = "image/x-wmf"
 PLACEABLE_WMF_KEY = 0x9AC6CDD7
 BASELINE_REFERENCE_HEIGHT_PT = 15.85
 BASELINE_REFERENCE_POSITION_HALF_POINTS = -10
+INLINE_BASELINE_CORRECTION_HALF_POINTS = 2
 
 
 for prefix, uri in NS.items():
@@ -43,6 +44,7 @@ class MathTypeTemplate:
     ole_bytes: bytes
     image_bytes: bytes
     baseline_from_bottom_pt: float | None = None
+    is_inline: bool = False
 
 
 MATHTYPE_OBJECT_TEMPLATE_XML = f"""
@@ -207,7 +209,12 @@ def mathtype_position_half_points(template: MathTypeTemplate) -> int:
     baseline, not the bottom of the preview box, aligns with the target line.
     """
     if template.baseline_from_bottom_pt is not None and template.baseline_from_bottom_pt > 0:
-        return -max(1, round(template.baseline_from_bottom_pt * 2))
+        position = -max(1, round(template.baseline_from_bottom_pt * 2))
+        if template.is_inline:
+            # Word places inline OLE previews about 1 pt below the surrounding
+            # text when the raw WMF depth is used without this correction.
+            position = min(-1, position + INLINE_BASELINE_CORRECTION_HALF_POINTS)
+        return position
 
     # Fallback for structural probes that clone a sample object without fresh
     # MathType metadata. The real conversion path should provide the baseline.

@@ -177,6 +177,9 @@ LaTeX math to Typst with MiTeX, then renders through `typst-as-lib`; because the
 exported Typst page does not retain the inline formula baseline, this backend
 uses a documented `0.2em` baseline estimate. Both backends reject SVG features
 outside the formula vector subset instead of silently rasterizing them.
+`pmt` also preserves whether Pandoc marked each formula as inline or display:
+RaTeX uses text style for inline formulas and display style for display formulas,
+so fractions, large operators, and limits keep the layout expected in prose.
 
 ## Subfigure Layouts
 

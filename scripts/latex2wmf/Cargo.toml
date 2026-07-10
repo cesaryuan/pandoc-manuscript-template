@@ -7,7 +7,7 @@ description = "Cross-platform LaTeX formula renderer for MathType-compatible WMF
 
 [dependencies]
 lyon_path = "1.0.16"
-mitex = "0.2.4"
+mitex = { git = "https://github.com/mitex-rs/mitex", tag = "0.2.7" }
 ratex-layout = "0.1.13"
 ratex-parser = "0.1.13"
 ratex-svg = { version = "0.1.13", features = ["embed-fonts"] }

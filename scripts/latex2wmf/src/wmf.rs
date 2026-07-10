@@ -36,13 +36,18 @@ struct Shape {
 }
 
 /// Convert the path-only formula subset of SVG into an Aldus placeable WMF.
-pub(crate) fn svg_to_wmf(svg: &str, width_pt: f64, height_pt: f64) -> Result<Vec<u8>, String> {
+pub(crate) fn svg_to_wmf(
+    svg: &str,
+    width_pt: f64,
+    height_pt: f64,
+    allow_empty: bool,
+) -> Result<Vec<u8>, String> {
     validate_dimensions(width_pt, height_pt)?;
     let tree = usvg::Tree::from_str(svg, &usvg::Options::default())
         .map_err(|err| format!("failed to parse generated SVG: {err}"))?;
     let mut shapes = Vec::new();
     collect_group_shapes(tree.root(), &mut shapes)?;
-    if shapes.is_empty() {
+    if shapes.is_empty() && !allow_empty {
         return Err("generated SVG contains no supported vector paths".to_string());
     }
 
@@ -424,7 +429,7 @@ mod tests {
     #[test]
     fn simple_path_has_placeable_and_window_records() {
         let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="10pt" height="10pt" viewBox="0 0 10 10"><path d="M1 1 L9 1 L9 9 L1 9 Z"/></svg>"#;
-        let bytes = svg_to_wmf(svg, 10.0, 10.0).expect("simple SVG should convert");
+        let bytes = svg_to_wmf(svg, 10.0, 10.0, false).expect("simple SVG should convert");
         assert_eq!(
             u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
             PLACEABLE_KEY
@@ -445,6 +450,22 @@ mod tests {
     #[test]
     fn images_are_rejected() {
         let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><image width="10" height="10" href="data:image/png;base64,iVBORw0KGgo="/></svg>"#;
-        assert!(svg_to_wmf(svg, 10.0, 10.0).is_err());
+        assert!(svg_to_wmf(svg, 10.0, 10.0, false).is_err());
+    }
+
+    /// Preserve the advance of a spacing-only formula as a valid blank WMF.
+    #[test]
+    fn empty_vector_canvas_is_serialized() {
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="10pt" height="10pt" viewBox="0 0 10 10"></svg>"#;
+        let bytes = svg_to_wmf(svg, 10.0, 10.0, true).expect("empty formula canvas should convert");
+        assert_eq!(
+            u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
+            PLACEABLE_KEY
+        );
+        assert!(
+            bytes
+                .windows(2)
+                .any(|word| word == META_SETWINDOWEXT.to_le_bytes())
+        );
     }
 }

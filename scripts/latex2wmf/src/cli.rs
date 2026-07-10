@@ -49,7 +49,12 @@ pub(crate) fn run() -> Result<(), String> {
         options.svg_backend,
         options.formula_style,
     )?;
-    let wmf = svg_to_wmf(&rendered.svg, rendered.width_pt, rendered.height_pt)?;
+    let wmf = svg_to_wmf(
+        &rendered.svg,
+        rendered.width_pt,
+        rendered.height_pt,
+        rendered.allow_empty_wmf,
+    )?;
     write_parented(&options.output, &wmf)?;
 
     if let Some(path) = options.svg_output.as_ref() {

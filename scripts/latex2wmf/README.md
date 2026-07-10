@@ -39,6 +39,14 @@ JSON 分别把 `baseline_source` 标记为 `ratex-layout-depth` 或
 越过 frame；转换器同时测量解析后的 SVG ink bounds，只扩展透明画布，避免 `f` 等
 下伸或侧向越界轮廓在 WMF 中被裁掉。
 
+MiTeX 的转换结果会调用 `mitexmathbf`、`mitexarray`、`mitexsqrt` 等其标准数学
+scope 中的辅助函数。`latex2wmf` 内嵌与 MiTeX 0.2.4 输出契约对应的精简数学 prelude，
+因此不需要在运行时下载 MiTeX Typst 包、WASM 插件或其他 `@preview` 包。纯间距公式
+（例如 `\quad`）没有可见路径，但仍会用 XITS 的隐藏 strut 取得真实字体高度，并
+生成保留排版宽度的合法空白 WMF。
+这类结果的 JSON `baseline_source` 为 `typst-font-strut-baseline`；有可见内容的 Typst
+公式仍使用 `typst-frame-baseline+svg-ink-bounds`。
+
 Typst 后端固定使用内嵌的 XITS Math `1.302`，不扫描系统字体，所以不同平台和 wheel
 安装后的字形、尺寸及 baseline 保持一致。字体来自官方
 [`xits`](https://ctan.org/pkg/xits) CTAN 包，并按 SIL Open Font License 1.1 分发；
@@ -66,7 +74,8 @@ Typst 后端运行全部样本。成功渲染的快照同时包含最终 WMF 字
 JSON metadata，分别存放为 `snapshots/<backend>/eq_*.snap.wmf` 和
 `snapshots/<backend>/eq_*_metadata.snap.json`；不使用 SVG 作为快照。当前不支持的
 公式保留错误文本快照，因此将来开始支持时也会产生需要审核的变化，并新增真实
-WMF/JSON 快照。
+WMF/JSON 快照。当前 64 个 manuscript 样本在 RaTeX 和 Typst 两个后端均有完整的
+WMF/JSON 快照，Typst 目录不再包含错误快照。
 
 `snapshots/ratex-inline` 另外保留一个含分式的行内 RaTeX WMF/JSON 快照，用来检查
 `Text` 样式和 `Display` 样式之间的实际渲染差异。`snapshots/typst-inline` 保留

@@ -10,9 +10,14 @@ use typst_library::layout::{Frame, FrameItem};
 const RATEX_SAFETY_PADDING_EM: f64 = 0.02;
 const WORD_HALF_POINT_PT: f64 = 0.5;
 const TYPST_FORMULA_LABEL: &str = "latex2wmf-formula";
+const TYPST_STRUT_LABEL: &str = "latex2wmf-strut";
 const TYPST_MATH_FONT_NAME: &str = "XITS Math";
 const TYPST_BASELINE_SOURCE: &str = "typst-frame-baseline+svg-ink-bounds";
+const TYPST_STRUT_BASELINE_SOURCE: &str = "typst-font-strut-baseline";
 const XITS_MATH_FONT: &[u8] = include_bytes!("../assets/fonts/XITSMath-Regular.otf");
+const MITEX_SCOPE_SOURCE: &str = include_str!("../assets/mitex/mod.typ");
+const MITEX_PRELUDE_SOURCE: &str = include_str!("../assets/mitex/prelude.typ");
+const MITEX_STANDARD_SOURCE: &str = include_str!("../assets/mitex/standard.typ");
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SvgBackend {
@@ -91,6 +96,7 @@ pub(crate) struct RenderedSvg {
     pub(crate) height_pt: f64,
     pub(crate) baseline_from_bottom_pt: f64,
     pub(crate) baseline_source: &'static str,
+    pub(crate) allow_empty_wmf: bool,
 }
 
 /// Absolute SVG ink extents after `use` references and transforms are resolved.
@@ -124,6 +130,24 @@ fn strip_math_delimiters(latex: &str) -> String {
         text = &text[1..text.len() - 1];
     }
     text.trim().to_string()
+}
+
+/// Quote generated Typst code as a source string for `eval`.
+fn typst_string_literal(value: &str) -> String {
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('"');
+    for character in value.chars() {
+        match character {
+            '\\' => quoted.push_str("\\\\"),
+            '"' => quoted.push_str("\\\""),
+            '\n' => quoted.push_str("\\n"),
+            '\r' => quoted.push_str("\\r"),
+            '\t' => quoted.push_str("\\t"),
+            _ => quoted.push(character),
+        }
+    }
+    quoted.push('"');
+    quoted
 }
 
 /// Render directly with RaTeX and retain its exact layout baseline/depth.
@@ -173,6 +197,7 @@ fn render_ratex_svg(
         height_pt,
         baseline_from_bottom_pt,
         baseline_source: "ratex-layout-depth",
+        allow_empty_wmf: false,
     })
 }
 
@@ -221,9 +246,12 @@ fn measure_svg_ink_bounds(
     raw_svg: &str,
     frame_width_pt: f64,
     frame_height_pt: f64,
-) -> Result<SvgInkBounds, String> {
+) -> Result<Option<SvgInkBounds>, String> {
     let tree = usvg::Tree::from_str(raw_svg, &usvg::Options::default())
         .map_err(|err| format!("failed to parse generated SVG for ink bounds: {err}"))?;
+    if !group_has_visible_path(tree.root()) {
+        return Ok(None);
+    }
     let viewport_width = f64::from(tree.size().width());
     let viewport_height = f64::from(tree.size().height());
     if viewport_width <= 0.0 || viewport_height <= 0.0 {
@@ -245,10 +273,43 @@ fn measure_svg_ink_bounds(
         .iter()
         .all(|value| value.is_finite())
     {
-        Ok(ink)
+        Ok(Some(ink))
     } else {
         Err("generated SVG has non-finite ink bounds".to_string())
     }
+}
+
+/// Return whether a normalized SVG group contains visible vector ink.
+fn group_has_visible_path(group: &usvg::Group) -> bool {
+    group.children().iter().any(|node| match node {
+        usvg::Node::Group(child) => group_has_visible_path(child),
+        usvg::Node::Path(path) => path.is_visible(),
+        usvg::Node::Image(_) | usvg::Node::Text(_) => false,
+    })
+}
+
+/// Build a blank WMF canvas for a spacing-only formula using XITS font metrics.
+fn render_typst_spacing_svg(
+    content_width_pt: f64,
+    strut_frame: &Frame,
+) -> Result<RenderedSvg, String> {
+    if !strut_frame.has_baseline() || strut_frame.height().to_pt() <= 0.0 {
+        return Err("Typst fallback strut does not expose usable font metrics".to_string());
+    }
+    let baseline_from_top_pt = ceil_to_half_point(strut_frame.baseline().to_pt());
+    let baseline_from_bottom_pt = ceil_to_half_point(strut_frame.descent().to_pt().max(0.0).abs());
+    let width_pt = ceil_to_half_point(content_width_pt);
+    let height_pt = baseline_from_top_pt + baseline_from_bottom_pt;
+    Ok(RenderedSvg {
+        svg: format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width_pt} {height_pt}" width="{width_pt}pt" height="{height_pt}pt"></svg>"#
+        ),
+        width_pt,
+        height_pt,
+        baseline_from_bottom_pt,
+        baseline_source: TYPST_STRUT_BASELINE_SOURCE,
+        allow_empty_wmf: true,
+    })
 }
 
 /// Convert LaTeX with MiTeX, compile through typst-as-lib, and export one SVG page.
@@ -260,18 +321,29 @@ fn render_typst_svg(
     let formula = strip_math_delimiters(latex);
     let typst_math = convert_math(&formula, None)
         .map_err(|err| format!("MiTeX LaTeX-to-Typst conversion failed: {err}"))?;
-    let math_source = match formula_style {
+    let evaluated_math_source = match formula_style {
         FormulaStyle::Inline => format!("${typst_math}$"),
         FormulaStyle::Display => format!("$ {typst_math} $"),
     };
+    let evaluated_math_literal = typst_string_literal(&evaluated_math_source);
     let source = format!(
-        "#set page(width: auto, height: auto, margin: 0pt, fill: none)\n\
+        "#import \"mitex/specs/mod.typ\": mitex-scope\n\
+         #set page(width: auto, height: auto, margin: 0pt, fill: none)\n\
          #set text(size: {font_size_pt}pt)\n\
          #show math.equation: set text(font: \"{TYPST_MATH_FONT_NAME}\")\n\
-         #box[{math_source}] <{TYPST_FORMULA_LABEL}>"
+         #let latex2wmf_formula = eval({evaluated_math_literal}, scope: mitex-scope)\n\
+         #box[\n\
+           #box[#latex2wmf_formula] <{TYPST_FORMULA_LABEL}>\n\
+           #box(width: 0pt)[#hide[$x$]] <{TYPST_STRUT_LABEL}>\n\
+         ]"
     );
     let engine = TypstEngine::builder()
         .main_file(source)
+        .with_static_source_file_resolver([
+            ("mitex/specs/mod.typ", MITEX_SCOPE_SOURCE),
+            ("mitex/specs/prelude.typ", MITEX_PRELUDE_SOURCE),
+            ("mitex/specs/latex/standard.typ", MITEX_STANDARD_SOURCE),
+        ])
         // Bundle XITS Math so wheels render identically without system font lookup.
         .fonts([XITS_MATH_FONT])
         .search_fonts_with(
@@ -301,8 +373,18 @@ fn render_typst_svg(
     }
     let content_width_pt = formula_frame.width().to_pt();
     let content_height_pt = formula_frame.height().to_pt();
-    if content_width_pt <= 0.0 || content_height_pt <= 0.0 {
+    if content_width_pt <= 0.0 {
         return Err("Typst produced an empty formula frame".to_string());
+    }
+
+    // Spacing-only formulas such as `\quad` have a real advance but no ink or
+    // frame height. Borrow only XITS's hidden strut metrics in that case.
+    if content_height_pt <= 0.0 {
+        let strut_frame =
+            find_labeled_typst_frame(&page.frame, TYPST_STRUT_LABEL).ok_or_else(|| {
+                "Typst fallback strut label was not preserved during layout".to_string()
+            })?;
+        return render_typst_spacing_svg(content_width_pt, strut_frame);
     }
 
     // Read the labelled box's actual descent before the page compositor drops
@@ -311,7 +393,13 @@ fn render_typst_svg(
     let mut formula_page = page.clone();
     formula_page.frame = formula_frame.clone();
     let raw_svg = typst_svg::svg(&formula_page, &typst_svg::SvgOptions::default());
-    let ink = measure_svg_ink_bounds(&raw_svg, content_width_pt, content_height_pt)?;
+    let Some(ink) = measure_svg_ink_bounds(&raw_svg, content_width_pt, content_height_pt)? else {
+        let strut_frame =
+            find_labeled_typst_frame(&page.frame, TYPST_STRUT_LABEL).ok_or_else(|| {
+                "Typst fallback strut label was not preserved during layout".to_string()
+            })?;
+        return render_typst_spacing_svg(content_width_pt, strut_frame);
+    };
     let baseline_y_pt = content_height_pt - content_depth_pt;
 
     // Typst frames describe layout advances, not all glyph ink. XITS italic
@@ -343,22 +431,28 @@ fn render_typst_svg(
         height_pt,
         baseline_from_bottom_pt,
         baseline_source: TYPST_BASELINE_SOURCE,
+        allow_empty_wmf: false,
     })
 }
 
 /// Find the labelled formula box that preserves Typst's layout baseline.
 fn find_labeled_typst_formula_frame(frame: &Frame) -> Option<&Frame> {
+    find_labeled_typst_frame(frame, TYPST_FORMULA_LABEL)
+}
+
+/// Find a labelled Typst group frame recursively in the laid-out page.
+fn find_labeled_typst_frame<'a>(frame: &'a Frame, expected_label: &str) -> Option<&'a Frame> {
     for (_, item) in frame.items() {
         let FrameItem::Group(group) = item else {
             continue;
         };
         if group
             .label
-            .is_some_and(|label| label.resolve().as_str() == TYPST_FORMULA_LABEL)
+            .is_some_and(|label| label.resolve().as_str() == expected_label)
         {
             return Some(&group.frame);
         }
-        if let Some(found) = find_labeled_typst_formula_frame(&group.frame) {
+        if let Some(found) = find_labeled_typst_frame(&group.frame, expected_label) {
             return Some(found);
         }
     }
@@ -368,7 +462,8 @@ fn find_labeled_typst_formula_frame(frame: &Frame) -> Option<&Frame> {
 #[cfg(test)]
 mod tests {
     use super::{
-        FormulaStyle, SvgBackend, TYPST_BASELINE_SOURCE, render_formula_svg, strip_math_delimiters,
+        FormulaStyle, SvgBackend, TYPST_BASELINE_SOURCE, TYPST_STRUT_BASELINE_SOURCE,
+        render_formula_svg, strip_math_delimiters,
     };
 
     /// Accept both inline and display delimiters produced by upstream callers.
@@ -438,6 +533,18 @@ mod tests {
         assert!(f64::from(ink.y()) >= -1e-6);
         assert!(f64::from(ink.right()) <= viewport_width + 1e-6);
         assert!(f64::from(ink.bottom()) <= viewport_height + 1e-6);
+    }
+
+    /// Preserve the width and real XITS metrics of a formula containing only space.
+    #[test]
+    fn typst_spacing_formula_uses_font_strut_metrics() {
+        let rendered = render_formula_svg(r"\quad", 12.0, SvgBackend::Typst, FormulaStyle::Inline)
+            .expect("Typst spacing formula should render");
+
+        assert_eq!(rendered.width_pt, 12.0);
+        assert!(rendered.height_pt > 0.0);
+        assert_eq!(rendered.baseline_source, TYPST_STRUT_BASELINE_SOURCE);
+        assert!(rendered.allow_empty_wmf);
     }
 
     /// Keep inline fractions compact instead of applying display-style layout.

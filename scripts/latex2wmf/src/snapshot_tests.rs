@@ -34,7 +34,12 @@ fn assert_latex_snapshots(
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let result = render_formula_svg(&latex, SNAPSHOT_FONT_SIZE_PT, backend, formula_style)
         .and_then(|rendered| {
-            let wmf = svg_to_wmf(&rendered.svg, rendered.width_pt, rendered.height_pt)?;
+            let wmf = svg_to_wmf(
+                &rendered.svg,
+                rendered.width_pt,
+                rendered.height_pt,
+                rendered.allow_empty_wmf,
+            )?;
             let metadata =
                 serialize_metadata(&rendered, backend, formula_style, SNAPSHOT_FONT_SIZE_PT)?;
             Ok((wmf, metadata))
@@ -136,6 +141,39 @@ fn ratex_inline_fraction_snapshot() {
 #[test]
 fn typst_inline_italic_f_snapshot() {
     assert_latex_snapshots("italic_f", "f", SvgBackend::Typst, FormulaStyle::Inline);
+}
+
+/// Exercise MiTeX's complete style, operator, and annotation runtime scope.
+#[test]
+fn typst_full_mitex_style_scope_snapshot() {
+    assert_latex_snapshots(
+        "mitex_scope_styles",
+        r"\displaystyle \operatorname*{argmax}_{x}\;\overbrace{x+y}^{n}",
+        SvgBackend::Typst,
+        FormulaStyle::Display,
+    );
+}
+
+/// Exercise MiTeX helpers that return colored and boxed Typst content.
+#[test]
+fn typst_full_mitex_color_scope_snapshot() {
+    assert_latex_snapshots(
+        "mitex_scope_color",
+        r"\textcolor{red}{x}+\boxed{y}",
+        SvgBackend::Typst,
+        FormulaStyle::Display,
+    );
+}
+
+/// Exercise MiTeX's matrix environment and extensible-arrow handlers.
+#[test]
+fn typst_full_mitex_structure_scope_snapshot() {
+    assert_latex_snapshots(
+        "mitex_scope_structures",
+        r"\begin{smallmatrix}a&b\\c&d\end{smallmatrix}\quad a\xrightarrow{n}b",
+        SvgBackend::Typst,
+        FormulaStyle::Display,
+    );
 }
 
 /// Keep the copied corpus byte-identical to the canonical manuscript samples.

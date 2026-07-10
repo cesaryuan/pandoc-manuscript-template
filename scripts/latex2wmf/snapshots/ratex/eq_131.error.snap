@@ -1,0 +1,5 @@
+---
+source: src/snapshot_tests.rs
+expression: error
+---
+RaTeX produced an empty formula box

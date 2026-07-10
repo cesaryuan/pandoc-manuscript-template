@@ -8,6 +8,8 @@
 //! consumed by the Python DOCX integration.
 
 mod cli;
+#[cfg(test)]
+mod snapshot_tests;
 mod svg_backend;
 mod wmf;
 

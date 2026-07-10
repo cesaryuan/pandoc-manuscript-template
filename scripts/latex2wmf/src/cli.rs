@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use serde_json::json;
 
-use crate::svg_backend::{SvgBackend, render_formula_svg};
+use crate::svg_backend::{RenderedSvg, SvgBackend, render_formula_svg};
 use crate::wmf::svg_to_wmf;
 
 const DEFAULT_FONT_SIZE_PT: f64 = 12.0;
@@ -50,6 +50,25 @@ pub(crate) fn run() -> Result<(), String> {
         write_parented(path, rendered.svg.as_bytes())?;
     }
 
+    let json_bytes = serialize_metadata(&rendered, options.svg_backend, options.font_size_pt)?;
+    write_parented(&options.metadata_output, &json_bytes)?;
+
+    eprintln!(
+        "[latex2wmf] backend={}, size={:.4}x{:.4}pt, wrote {}",
+        options.svg_backend.as_str(),
+        rendered.width_pt,
+        rendered.height_pt,
+        options.output.display()
+    );
+    Ok(())
+}
+
+/// Serialize the exact placement metadata written beside a generated WMF.
+pub(crate) fn serialize_metadata(
+    rendered: &RenderedSvg,
+    svg_backend: SvgBackend,
+    font_size_pt: f64,
+) -> Result<Vec<u8>, String> {
     let raw_scale = 32.0;
     let metadata = json!({
         "bounds": {
@@ -67,24 +86,14 @@ pub(crate) fn run() -> Result<(), String> {
             "horiz_pos": 0
         },
         "renderer": {
-            "svg_backend": options.svg_backend.as_str(),
+            "svg_backend": svg_backend.as_str(),
             "baseline_source": rendered.baseline_source,
-            "font_size_pt": options.font_size_pt,
+            "font_size_pt": font_size_pt,
             "wmf_geometry": "flattened-svg-paths"
         }
     });
-    let json_bytes = serde_json::to_vec_pretty(&metadata)
-        .map_err(|err| format!("failed to serialize metadata: {err}"))?;
-    write_parented(&options.metadata_output, &json_bytes)?;
-
-    eprintln!(
-        "[latex2wmf] backend={}, size={:.4}x{:.4}pt, wrote {}",
-        options.svg_backend.as_str(),
-        rendered.width_pt,
-        rendered.height_pt,
-        options.output.display()
-    );
-    Ok(())
+    serde_json::to_vec_pretty(&metadata)
+        .map_err(|err| format!("failed to serialize metadata: {err}"))
 }
 
 /// Write bytes after creating the output parent directory when necessary.

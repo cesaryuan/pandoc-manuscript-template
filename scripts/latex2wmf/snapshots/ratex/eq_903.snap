@@ -1,0 +1,6 @@
+---
+source: src/snapshot_tests.rs
+expression: wmf
+extension: wmf
+snapshot_kind: binary
+---

@@ -1,0 +1,22 @@
+{
+  "bounds": {
+    "height_pt": 10.2816,
+    "width_pt": 44.65613333333333
+  },
+  "mathtype": {
+    "baseline_from_bottom_pt": 2.4000000000000004,
+    "baseline_from_bottom_raw": 77,
+    "height_pt": 10.2816,
+    "height_raw": 329,
+    "horiz_pos": 0,
+    "horiz_pos_type": 0,
+    "width_pt": 44.65613333333333,
+    "width_raw": 1429
+  },
+  "renderer": {
+    "baseline_source": "typst-0.2em-estimate",
+    "font_size_pt": 12.0,
+    "svg_backend": "typst",
+    "wmf_geometry": "flattened-svg-paths"
+  }
+}

@@ -19,3 +19,5 @@ typst-layout = "0.15.0"
 typst-svg = "0.15.0"
 usvg = { version = "0.47.0", default-features = false }
 
+[dev-dependencies]
+insta = "1"

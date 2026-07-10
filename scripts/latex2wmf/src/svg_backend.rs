@@ -7,6 +7,7 @@ use typst_as_lib::{TypstEngine, typst_kit_options::TypstKitFontOptions};
 use typst_layout::PagedDocument;
 
 const RATEX_SAFETY_PADDING_EM: f64 = 0.02;
+const WORD_HALF_POINT_PT: f64 = 0.5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SvgBackend {
@@ -114,29 +115,80 @@ fn render_ratex_svg(
     let layout_options = LayoutOptions::default().with_style(formula_style.ratex_style());
     let layout_box = layout(&ast, &layout_options);
     let display_list = to_display_list(&layout_box);
-    // RaTeX's layout box can be slightly tighter than italic glyph outlines.
-    // Preserve a small em-relative margin so the SVG and WMF do not clip those
-    // overshoots, while retaining the layout baseline inside the padded box.
-    let padding_pt = font_size_pt * RATEX_SAFETY_PADDING_EM;
+    let content_width_pt = display_list.width * font_size_pt;
+    let content_height_pt = display_list.height * font_size_pt;
+    let content_depth_pt = display_list.depth.max(0.0) * font_size_pt;
+    let minimum_padding_pt = font_size_pt * RATEX_SAFETY_PADDING_EM;
+
+    // Expand whitespace, never the formula paths, so the WMF box and its two
+    // baseline-side extents land exactly on Word's half-point grid.
+    let baseline_from_top_pt = ceil_to_half_point(content_height_pt + minimum_padding_pt);
+    let baseline_from_bottom_pt = ceil_to_half_point(content_depth_pt + minimum_padding_pt);
+    let width_pt = ceil_to_half_point(content_width_pt + 2.0 * minimum_padding_pt);
+    let height_pt = baseline_from_top_pt + baseline_from_bottom_pt;
+    let horizontal_padding_pt = (width_pt - content_width_pt) / 2.0;
+    let top_padding_pt = baseline_from_top_pt - content_height_pt;
     let options = SvgOptions {
         font_size: font_size_pt,
-        padding: padding_pt,
+        padding: 0.0,
         stroke_width: (font_size_pt / 26.6667).max(0.25),
         embed_glyphs: true,
         font_dir: String::new(),
     };
-    let width_pt = display_list.width * font_size_pt + 2.0 * padding_pt;
-    let height_pt = (display_list.height + display_list.depth) * font_size_pt + 2.0 * padding_pt;
     if width_pt <= 0.0 || height_pt <= 0.0 {
         return Err("RaTeX produced an empty formula box".to_string());
     }
+    let raw_svg = render_to_svg(&display_list, &options);
     Ok(RenderedSvg {
-        svg: render_to_svg(&display_list, &options),
+        svg: wrap_svg_with_padding(
+            &raw_svg,
+            width_pt,
+            height_pt,
+            horizontal_padding_pt,
+            top_padding_pt,
+        )?,
         width_pt,
         height_pt,
-        baseline_from_bottom_pt: (display_list.depth * font_size_pt).max(0.0) + padding_pt,
+        baseline_from_bottom_pt,
         baseline_source: "ratex-layout-depth",
     })
+}
+
+/// Round a positive point extent upward to Word's half-point grid.
+fn ceil_to_half_point(value: f64) -> f64 {
+    ((value / WORD_HALF_POINT_PT) - 1e-9).ceil() * WORD_HALF_POINT_PT
+}
+
+/// Rewrap a formula SVG with independent horizontal and top padding.
+fn wrap_svg_with_padding(
+    raw_svg: &str,
+    width_pt: f64,
+    height_pt: f64,
+    horizontal_padding_pt: f64,
+    top_padding_pt: f64,
+) -> Result<String, String> {
+    let body_start = raw_svg
+        .find('>')
+        .map(|index| index + 1)
+        .ok_or_else(|| "generated formula SVG is missing its opening element".to_string())?;
+    let body_end = raw_svg
+        .rfind("</svg>")
+        .ok_or_else(|| "generated formula SVG is missing its closing element".to_string())?;
+    if body_start > body_end {
+        return Err("generated formula SVG has an invalid element order".to_string());
+    }
+    // f64's Display form preserves round-trip precision, avoiding another
+    // coordinate quantization before the final 1/20-point WMF conversion.
+    let width = width_pt.to_string();
+    let height = height_pt.to_string();
+    let translate_x = horizontal_padding_pt.to_string();
+    let translate_y = top_padding_pt.to_string();
+    let body = &raw_svg[body_start..body_end];
+    Ok(format!(
+        // Typst outlines reuse glyphs through xlink:href, so the new root must
+        // retain that namespace even though RaTeX paths do not require it.
+        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 {width} {height}" width="{width}pt" height="{height}pt"><g transform="translate({translate_x} {translate_y})">{body}</g></svg>"#
+    ))
 }
 
 /// Convert LaTeX with MiTeX, compile through typst-as-lib, and export one SVG page.
@@ -177,18 +229,33 @@ fn render_typst_svg(
         ));
     }
     let page = &document.pages()[0];
-    let width_pt = page.frame.width().to_pt();
-    let height_pt = page.frame.height().to_pt();
-    if width_pt <= 0.0 || height_pt <= 0.0 {
+    let content_width_pt = page.frame.width().to_pt();
+    let content_height_pt = page.frame.height().to_pt();
+    if content_width_pt <= 0.0 || content_height_pt <= 0.0 {
         return Err("Typst produced an empty formula page".to_string());
     }
 
     // Typst's exported page frame does not retain the inline box baseline.
     // A 0.2-em math depth matches its default math axis closely enough for
     // Word placement while keeping the limitation explicit in the metadata.
-    let baseline_from_bottom_pt = (font_size_pt * 0.2).min(height_pt);
+    let content_depth_pt = (font_size_pt * 0.2).min(content_height_pt);
+    let baseline_from_top_pt = ceil_to_half_point(content_height_pt - content_depth_pt);
+    let baseline_from_bottom_pt = ceil_to_half_point(content_depth_pt);
+    let width_pt = ceil_to_half_point(content_width_pt);
+    let height_pt = baseline_from_top_pt + baseline_from_bottom_pt;
+    let horizontal_padding_pt = (width_pt - content_width_pt) / 2.0;
+    let top_padding_pt = baseline_from_top_pt - (content_height_pt - content_depth_pt);
+    let raw_svg = typst_svg::svg(page, &typst_svg::SvgOptions::default());
     Ok(RenderedSvg {
-        svg: typst_svg::svg(page, &typst_svg::SvgOptions::default()),
+        // Add only transparent canvas space so Typst paths keep their scale
+        // while the shared WMF dimensions remain exactly representable.
+        svg: wrap_svg_with_padding(
+            &raw_svg,
+            width_pt,
+            height_pt,
+            horizontal_padding_pt,
+            top_padding_pt,
+        )?,
         width_pt,
         height_pt,
         baseline_from_bottom_pt,
@@ -222,6 +289,18 @@ mod tests {
         assert!(rendered.height_pt > rendered.baseline_from_bottom_pt);
     }
 
+    /// Keep every backend's public dimensions exactly on the half-point grid.
+    #[test]
+    fn both_backends_use_half_point_formula_boxes() {
+        for backend in [SvgBackend::Ratex, SvgBackend::Typst] {
+            let rendered = render_formula_svg("x_i", 12.0, backend, FormulaStyle::Inline)
+                .expect("formula should render on either backend");
+            assert_eq!((rendered.width_pt * 2.0).fract(), 0.0);
+            assert_eq!((rendered.height_pt * 2.0).fract(), 0.0);
+            assert_eq!((rendered.baseline_from_bottom_pt * 2.0).fract(), 0.0);
+        }
+    }
+
     /// Keep inline fractions compact instead of applying display-style layout.
     #[test]
     fn ratex_inline_fraction_is_shorter_than_display_fraction() {
@@ -249,7 +328,9 @@ mod tests {
         let rendered = render_formula_svg("b", 12.0, SvgBackend::Ratex, FormulaStyle::Inline)
             .expect("single ascender should render");
 
-        assert!((rendered.baseline_from_bottom_pt - 0.24).abs() < 1e-9);
-        assert!(rendered.svg.contains("viewBox=\"0 0 5.63004 8.81328\""));
+        assert_eq!(rendered.width_pt, 6.0);
+        assert_eq!(rendered.height_pt, 9.5);
+        assert_eq!(rendered.baseline_from_bottom_pt, 0.5);
+        assert!(rendered.svg.contains("viewBox=\"0 0 6 9.5\""));
     }
 }

@@ -37,11 +37,13 @@ scripts\latex2wmf\target\debug\latex2wmf.exe `
 `typst-0.2em-estimate`。
 
 RaTeX 的布局盒有时会比斜体字形轮廓略紧，例如单个 `b` 的轮廓可能越过零深度
-盒子的底边。转换器会在 SVG/WMF 四周保留 `0.02em` 的安全留白，并把底部留白计入
-JSON baseline depth；WMF 转换本身不会再裁剪或按墨迹边界 trim。
-尺寸和 baseline 保留 point 小数，不应预先取整：WMF 边界最终量化为 `1/20 pt`，
-Word 的 `w:position` 再把 baseline depth 舍入到最近的 `1/2 pt`。所有后端的 depth
-都直接映射到该位置，不附加手工位置偏移。
+盒子的底边。转换器把 `0.02em` 作为四周的最小安全留白，然后仅扩展透明画布，使
+baseline 上方高度、baseline 下方深度和总宽度分别向上落到 `1/2 pt` 网格；公式路径
+不会被缩放、裁剪或按墨迹边界 trim。Typst 后端也使用相同的半点画布规则。
+
+因此 JSON 中的宽度、高度和 baseline depth 都是 `1/2 pt` 的整数倍，WMF 的
+`1/20 pt` 逻辑边界可以精确表示这些尺寸，且不会因边界向上取整而对横纵方向施加
+额外缩放。Word 的 `w:position` 可以直接使用 baseline depth，不附加手工位置偏移。
 
 `--math-style` 可选 `inline` 或 `display`，默认是 `display`。`pmt` 构建 DOCX 时会根据
 Pandoc 公式标记自动选择：行内公式使用 RaTeX `Text` 样式，展示公式使用 `Display`

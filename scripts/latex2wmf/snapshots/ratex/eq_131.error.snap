@@ -2,4 +2,4 @@
 source: src/snapshot_tests.rs
 expression: error
 ---
-RaTeX produced an empty formula box
+generated SVG contains no supported vector paths

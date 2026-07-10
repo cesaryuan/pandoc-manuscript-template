@@ -1,17 +1,17 @@
 {
   "bounds": {
-    "height_pt": 13.789296,
-    "width_pt": 100.65399066666666
+    "height_pt": 14.269296,
+    "width_pt": 101.13399066666666
   },
   "mathtype": {
-    "baseline_from_bottom_pt": 3.0,
-    "baseline_from_bottom_raw": 96,
-    "height_pt": 13.789296,
-    "height_raw": 441,
+    "baseline_from_bottom_pt": 3.24,
+    "baseline_from_bottom_raw": 104,
+    "height_pt": 14.269296,
+    "height_raw": 457,
     "horiz_pos": 0,
     "horiz_pos_type": 0,
-    "width_pt": 100.65399066666666,
-    "width_raw": 3221
+    "width_pt": 101.13399066666666,
+    "width_raw": 3236
   },
   "renderer": {
     "baseline_source": "ratex-layout-depth",

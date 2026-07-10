@@ -83,6 +83,7 @@ exclude = [
   "**/__pycache__",
   "**/*.pyc",
   "scripts/mathtype-rust/target",
+  "scripts/latex2wmf/target",
 ]
 
 [tool.hatch.build.hooks.custom]

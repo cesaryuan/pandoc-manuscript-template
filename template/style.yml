@@ -12,11 +12,15 @@ citation-number-range-delimiter: "–"
 # local MathType/OLE conversion setup.
 mathtype: true
 # MathType conversion backend: rust, set-data, auto, or both.
-# rust: LaTeX -> mathtype-rust -> OLE/MTEF -> MathType SDK WMF/JSON.
+# rust: cross-platform LaTeX -> mathtype-rust OLE/MTEF + latex2wmf WMF/JSON.
 # set-data: LaTeX -> MathType OLE TeX input -> OLE/WMF/JSON.
 # auto: try set-data first, then fall back to rust.
 # both: generate both backends, warn if OLE/JSON differ, and use set-data.
-mathtypeConversionMethod: both
+mathtypeConversionMethod: rust
+# SVG renderer used by the cross-platform rust backend: ratex or typst.
+# ratex parses LaTeX directly and provides exact baseline depth. typst first
+# converts LaTeX math with MiTeX and uses an estimated baseline.
+mathtypeSvgBackend: ratex
 
 # Set to true to inline local child images inside referenced SVG files during
 # DOCX builds. This keeps SVG text/vector elements sharp while making linked

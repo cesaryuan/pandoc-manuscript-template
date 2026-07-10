@@ -290,7 +290,11 @@ def test_build_reply_docx_uses_svg_filters(tmp_path, monkeypatch) -> None:
         "load_reply_metadata",
         lambda *_: {"docxEmbedSvgImages": True, "docxConvertSvgToPng": False},
     )
-    monkeypatch.setattr(reply_output, "resolve_mathtype_enabled", lambda requested: False)
+    monkeypatch.setattr(
+        reply_output,
+        "resolve_mathtype_enabled",
+        lambda requested, conversion_method=None: False,
+    )
     monkeypatch.setattr(reply_resolve, "resolve_reference_map", lambda *args: {})
     monkeypatch.setattr(reply_resolve, "resolve_citation_map", lambda *args: {})
     monkeypatch.setattr(reply_resolve, "resolve_citation_cluster_map", lambda *args: {})

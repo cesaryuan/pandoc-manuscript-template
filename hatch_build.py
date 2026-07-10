@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+from packaging.tags import sys_tags
 
 
 class CustomBuildHook(BuildHookInterface):
-    """Build and include the Rust MathType fallback executable in wheels."""
+    """Build and include the platform's native MathType executables in wheels."""
 
     PLUGIN_NAME = "pmt-native-helpers"
 
@@ -25,26 +26,30 @@ class CustomBuildHook(BuildHookInterface):
         if self.target_name != "wheel" or version == "editable":
             return
 
-        if os.name != "nt":
-            # MathType wheel bundling is a Windows-only release concern. Other
-            # platforms still need to build successfully without the helper.
-            return
-
         root = Path(self.root)
-        executable = self.build_mathtype_rust_executable(root)
-        build_data.setdefault("force_include", {})[str(executable)] = (
-            f"pandoc_manuscript/mathtype/bin/{executable.name}"
+        executables = (
+            self.build_native_executable(root, "mathtype-rust"),
+            self.build_native_executable(root, "latex2wmf"),
         )
+        force_include = build_data.setdefault("force_include", {})
+        for executable in executables:
+            force_include[str(executable)] = f"pandoc_manuscript/mathtype/bin/{executable.name}"
 
-    def build_mathtype_rust_executable(self, root: Path) -> Path:
-        """Build the Windows MathType helper and return the executable path."""
-        manifest = root / "scripts" / "mathtype-rust" / "Cargo.toml"
+        # Native helpers make this a platform wheel even though the Python
+        # package itself has no extension module or CPython ABI dependency.
+        platform_tag = next(iter(sys_tags())).platform
+        build_data["pure_python"] = False
+        build_data["tag"] = f"py3-none-{platform_tag}"
+
+    def build_native_executable(self, root: Path, project_name: str) -> Path:
+        """Build one release-mode Rust helper and return its executable path."""
+        manifest = root / "scripts" / project_name / "Cargo.toml"
         if not manifest.exists():
-            raise FileNotFoundError(f"mathtype-rust manifest is missing: {manifest}")
+            raise FileNotFoundError(f"{project_name} manifest is missing: {manifest}")
         if shutil.which("cargo") is None:
-            raise RuntimeError("Building a wheel with MathType fallback requires `cargo` on PATH.")
+            raise RuntimeError("Building a wheel with MathType native helpers requires `cargo` on PATH.")
 
-        print("[pmt build] building Windows MathType helper with cargo", flush=True)
+        print(f"[pmt build] building {project_name} release helper with cargo", flush=True)
         subprocess.run(
             [
                 "cargo",
@@ -52,14 +57,16 @@ class CustomBuildHook(BuildHookInterface):
                 "--manifest-path",
                 str(manifest),
                 "--bin",
-                "mathtype-rust",
+                project_name,
+                "--release",
             ],
             cwd=root,
             check=True,
         )
 
-        exe_name = "mathtype-rust.exe"
-        executable = root / "scripts" / "mathtype-rust" / "target" / "debug" / exe_name
+        suffix = ".exe" if os.name == "nt" else ""
+        exe_name = f"{project_name}{suffix}"
+        executable = root / "scripts" / project_name / "target" / "release" / exe_name
         if not executable.exists():
             raise FileNotFoundError(f"cargo did not create expected executable: {executable}")
         return executable

@@ -199,6 +199,13 @@ def test_normalize_conversion_method_accepts_style_aliases() -> None:
     assert ole_parts.normalize_conversion_method("both") == "both"
 
 
+def test_normalize_svg_backend_accepts_documented_values() -> None:
+    """Normalize both cross-platform SVG renderer names from style metadata."""
+    assert ole_parts.normalize_svg_backend(None) == "ratex"
+    assert ole_parts.normalize_svg_backend("RaTeX") == "ratex"
+    assert ole_parts.normalize_svg_backend("typst-as-lib") == "typst"
+
+
 def test_generate_equation_parts_both_uses_independent_backend_caches(monkeypatch, tmp_path) -> None:
     """Generate both backends with separate cache methods and keep set-data output."""
     calls = []
@@ -329,7 +336,7 @@ def test_warn_if_conversion_outputs_differ_reports_ole_mtef_and_json(monkeypatch
 
 
 def test_convert_marked_docx_passes_style_conversion_method(monkeypatch, tmp_path) -> None:
-    """Pass style metadata backend selection into MathType part generation."""
+    """Pass conversion and SVG backend selections into MathType part generation."""
     seen = {}
 
     monkeypatch.setattr(
@@ -344,8 +351,14 @@ def test_convert_marked_docx_passes_style_conversion_method(monkeypatch, tmp_pat
     )
     monkeypatch.setattr(convert_marked_docx_module, "inspect_docx", lambda target: None)
 
-    def fake_generate_equation_parts(requests, output_dir, conversion_method="rust"):
+    def fake_generate_equation_parts(
+        requests,
+        output_dir,
+        conversion_method="rust",
+        svg_backend="ratex",
+    ):
         seen["conversion_method"] = conversion_method
+        seen["svg_backend"] = svg_backend
         return [
             ole_parts.GeneratedEquation(
                 latex=requests[0].latex,
@@ -360,11 +373,15 @@ def test_convert_marked_docx_passes_style_conversion_method(monkeypatch, tmp_pat
         tmp_path / "source.docx",
         tmp_path / "target.docx",
         tmp_path / "work",
-        metadata={"mathtypeConversionMethod": "set-data"},
+        metadata={
+            "mathtypeConversionMethod": "set-data",
+            "mathtypeSvgBackend": "typst",
+        },
     )
 
     assert replaced == 1
     assert seen["conversion_method"] == "set-data"
+    assert seen["svg_backend"] == "typst"
 
 
 def test_mathtype_cache_key_includes_rust_converter_and_method_digests() -> None:
@@ -374,6 +391,9 @@ def test_mathtype_cache_key_includes_rust_converter_and_method_digests() -> None
     changed_source = ole_parts.mathtype_cache_key("x", None, None, "helper", "rust-src-b", "rust-exe", "rust")
     changed_exe = ole_parts.mathtype_cache_key("x", None, None, "helper", "rust-src-a", "changed-rust-exe", "rust")
     changed_method = ole_parts.mathtype_cache_key("x", None, None, "helper", "rust-src-a", "rust-exe", "set-data")
+    changed_svg_backend = ole_parts.mathtype_cache_key(
+        "x", None, None, "helper", "rust-src-a", "rust-exe", "rust", "typst"
+    )
     set_data_base = ole_parts.mathtype_cache_key("x", None, None, "helper", "rust-src-a", "rust-exe", "set-data")
     set_data_changed_rust = ole_parts.mathtype_cache_key(
         "x",
@@ -389,6 +409,7 @@ def test_mathtype_cache_key_includes_rust_converter_and_method_digests() -> None
     assert base != changed_source
     assert base != changed_exe
     assert base != changed_method
+    assert base != changed_svg_backend
     assert set_data_base == set_data_changed_rust
 
 

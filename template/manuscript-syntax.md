@@ -161,10 +161,19 @@ than `\hat{\mathbf{C}}`. When a DOCX build actually starts MathType conversion,
 MathType-exported PDFs may hide the hat.
 
 Set `mathtypeConversionMethod` in `style.yml` to choose the MathType backend:
-`rust` uses LaTeX -> mathtype-rust -> OLE/MTEF -> SDK WMF/JSON, `set-data`
-uses MathType's TeX input OLE path, and `auto` tries `set-data` before falling
-back to `rust`. Use `both` to generate both backends, warn when their OLE/JSON
-results differ, and keep the `set-data` output in the DOCX.
+`rust` is cross-platform and combines LaTeX -> `mathtype-rust` -> OLE/MTEF
+with LaTeX -> SVG -> `latex2wmf` -> WMF/JSON. `set-data` uses MathType's
+Windows-only TeX input OLE path, and `auto` tries `set-data` before falling back
+to `rust`. Use `both` on Windows to generate both backends, warn when their
+OLE/JSON results differ, and keep the `set-data` output in the DOCX.
+
+Set `mathtypeSvgBackend` to choose how the cross-platform `rust` path produces
+formula SVG. `ratex` (the default) parses LaTeX directly, embeds glyph outlines,
+and reports its exact layout depth for Word baseline placement. `typst` converts
+LaTeX math to Typst with MiTeX, then renders through `typst-as-lib`; because the
+exported Typst page does not retain the inline formula baseline, this backend
+uses a documented `0.2em` baseline estimate. Both backends reject SVG features
+outside the formula vector subset instead of silently rasterizing them.
 
 ## Subfigure Layouts
 

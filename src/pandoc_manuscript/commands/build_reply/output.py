@@ -15,7 +15,7 @@ from ...runtime.paths import PMT_MATHTYPE_WORK_DIR, PMT_REPLY_PROBE_DIR, PMT_REP
 from ...runtime.resources import template_root
 from ...mathtype.convert_marked_docx import convert_marked_docx
 from ...mathtype.marked_docx import extract_marked_equation_requests
-from ...mathtype.ole_parts import build_helper, check_mathtype_availability
+from ...mathtype.ole_parts import check_mathtype_availability, normalize_conversion_method
 from ...mathtype.preflight import warn_mathtype_hat_style_order
 from ...docx import svg_filters as svg_filter_helpers
 from ...docx.page_margins import write_reference_doc_with_page_margins
@@ -50,13 +50,13 @@ def metadata_bool(value: Any) -> bool:
     return False
 
 
-def resolve_mathtype_enabled(requested: bool) -> bool:
+def resolve_mathtype_enabled(requested: bool, conversion_method: object | None = None) -> bool:
     """Return whether MathType conversion should run for this reply build."""
     if not requested:
         return False
 
     log_info("[INFO] MathType DOCX equations enabled by reply metadata: mathtype: true")
-    availability = check_mathtype_availability()
+    availability = check_mathtype_availability(conversion_method)
     if availability.usable:
         return True
 
@@ -124,7 +124,6 @@ def run_mathtype_conversion(marked_docx: Path, target_docx: Path, metadata: dict
         return
 
     log_info("\n[DOCX] Converting reply equations to MathType OLE objects...\n")
-    build_helper()
     convert_marked_docx(
         source=marked_docx,
         target=target_docx,
@@ -215,7 +214,11 @@ def build_reply_docx(
     flattened_style = reply_resolve.write_reply_style_metadata_file(style)
     metadata = reply_resolve.load_reply_metadata(reply, flattened_style)
     pandoc_reference_doc = reply_reference_doc_for_pandoc(reference_doc, output, metadata)
-    use_mathtype = resolve_mathtype_enabled(metadata_bool(metadata.get("mathtype")))
+    conversion_method = normalize_conversion_method(metadata.get("mathtypeConversionMethod"))
+    use_mathtype = resolve_mathtype_enabled(
+        metadata_bool(metadata.get("mathtype")),
+        conversion_method,
+    )
     if use_mathtype and warn_hat_order:
         warn_mathtype_hat_style_order(reply)
         if manuscript.exists() and manuscript.is_file() and manuscript.resolve() != reply.resolve():

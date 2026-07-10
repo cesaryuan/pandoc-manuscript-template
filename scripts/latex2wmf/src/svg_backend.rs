@@ -6,6 +6,8 @@ use ratex_types::math_style::MathStyle;
 use typst_as_lib::{TypstEngine, typst_kit_options::TypstKitFontOptions};
 use typst_layout::PagedDocument;
 
+const RATEX_SAFETY_PADDING_EM: f64 = 0.02;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SvgBackend {
     Ratex,
@@ -112,15 +114,19 @@ fn render_ratex_svg(
     let layout_options = LayoutOptions::default().with_style(formula_style.ratex_style());
     let layout_box = layout(&ast, &layout_options);
     let display_list = to_display_list(&layout_box);
+    // RaTeX's layout box can be slightly tighter than italic glyph outlines.
+    // Preserve a small em-relative margin so the SVG and WMF do not clip those
+    // overshoots, while retaining the layout baseline inside the padded box.
+    let padding_pt = font_size_pt * RATEX_SAFETY_PADDING_EM;
     let options = SvgOptions {
         font_size: font_size_pt,
-        padding: 0.0,
+        padding: padding_pt,
         stroke_width: (font_size_pt / 26.6667).max(0.25),
         embed_glyphs: true,
         font_dir: String::new(),
     };
-    let width_pt = display_list.width * font_size_pt;
-    let height_pt = (display_list.height + display_list.depth) * font_size_pt;
+    let width_pt = display_list.width * font_size_pt + 2.0 * padding_pt;
+    let height_pt = (display_list.height + display_list.depth) * font_size_pt + 2.0 * padding_pt;
     if width_pt <= 0.0 || height_pt <= 0.0 {
         return Err("RaTeX produced an empty formula box".to_string());
     }
@@ -128,7 +134,7 @@ fn render_ratex_svg(
         svg: render_to_svg(&display_list, &options),
         width_pt,
         height_pt,
-        baseline_from_bottom_pt: (display_list.depth * font_size_pt).max(0.0),
+        baseline_from_bottom_pt: (display_list.depth * font_size_pt).max(0.0) + padding_pt,
         baseline_source: "ratex-layout-depth",
     })
 }
@@ -235,5 +241,15 @@ mod tests {
         .expect("display fraction should render");
 
         assert!(inline.height_pt < display.height_pt);
+    }
+
+    /// Keep a zero-depth ascender glyph inside a padded, baseline-aware box.
+    #[test]
+    fn ratex_single_ascender_has_safety_depth() {
+        let rendered = render_formula_svg("b", 12.0, SvgBackend::Ratex, FormulaStyle::Inline)
+            .expect("single ascender should render");
+
+        assert!((rendered.baseline_from_bottom_pt - 0.24).abs() < 1e-9);
+        assert!(rendered.svg.contains("viewBox=\"0 0 5.63004 8.81328\""));
     }
 }

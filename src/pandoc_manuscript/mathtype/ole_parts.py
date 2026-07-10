@@ -159,7 +159,9 @@ class GeneratedEquation:
         if not isinstance(mathtype, dict):
             return None
         value = mathtype.get("baseline_from_bottom_pt")
-        if isinstance(value, (int, float)) and value > 0:
+        # A glyph without descenders can legitimately place its baseline at
+        # the preview bottom; zero is metadata, not a missing-baseline signal.
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
             return float(value)
         return None
 

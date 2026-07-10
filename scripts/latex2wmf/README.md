@@ -36,6 +36,10 @@ scripts\latex2wmf\target\debug\latex2wmf.exe `
 不保留 inline box baseline，因此 JSON 会把 `baseline_source` 标记为
 `typst-0.2em-estimate`。
 
+RaTeX 的布局盒有时会比斜体字形轮廓略紧，例如单个 `b` 的轮廓可能越过零深度
+盒子的底边。转换器会在 SVG/WMF 四周保留 `0.02em` 的安全留白，并把底部留白计入
+JSON baseline depth；WMF 转换本身不会再裁剪或按墨迹边界 trim。
+
 `--math-style` 可选 `inline` 或 `display`，默认是 `display`。`pmt` 构建 DOCX 时会根据
 Pandoc 公式标记自动选择：行内公式使用 RaTeX `Text` 样式，展示公式使用 `Display`
 样式。它会影响分式、巨算符和上下限等结构的大小与间距；直接调用 CLI 时应显式传入

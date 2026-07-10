@@ -208,12 +208,12 @@ def mathtype_position_half_points(template: MathTypeTemplate) -> int:
     uses half-points, and a negative value lowers the object so the equation
     baseline, not the bottom of the preview box, aligns with the target line.
     """
-    if template.baseline_from_bottom_pt is not None and template.baseline_from_bottom_pt > 0:
-        position = -max(1, round(template.baseline_from_bottom_pt * 2))
+    if template.baseline_from_bottom_pt is not None and template.baseline_from_bottom_pt >= 0:
+        position = -round(template.baseline_from_bottom_pt * 2)
         if template.is_inline:
-            # Word places inline OLE previews about 1 pt below the surrounding
-            # text when the raw WMF depth is used without this correction.
-            position = min(-1, position + INLINE_BASELINE_CORRECTION_HALF_POINTS)
+            # Compensate Word's slight downward bias, but never raise a
+            # zero-depth glyph above the surrounding text baseline.
+            position = min(0, position + INLINE_BASELINE_CORRECTION_HALF_POINTS)
         return position
 
     # Fallback for structural probes that clone a sample object without fresh

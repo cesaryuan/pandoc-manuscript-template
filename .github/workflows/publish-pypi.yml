@@ -31,6 +31,10 @@ jobs:
           rustup show active-toolchain
           cargo --version
 
+      - name: Check .NET SDK for the Windows helper
+        if: runner.os == 'Windows'
+        run: dotnet --version
+
       - name: Build platform wheel
         run: uv build --wheel
 
@@ -40,6 +44,28 @@ jobs:
           $wheel = (Get-ChildItem dist/*.whl | Select-Object -First 1).FullName
           uv run --isolated --no-project --with $wheel pmt --help
           uv run --isolated --no-project --with $wheel python -c "from pandoc_manuscript.mathtype.ole_parts import check_mathtype_availability; assert check_mathtype_availability('rust').usable"
+
+      - name: Verify binary-only wheel contents
+        shell: pwsh
+        run: |
+          $wheel = (Get-ChildItem dist/*.whl | Select-Object -First 1).FullName
+          $entries = tar -tf $wheel
+          $suffix = if ($IsWindows) { '.exe' } else { '' }
+          foreach ($name in @("mathtype-rust$suffix", "latex2wmf$suffix")) {
+            if (-not ($entries -match "pandoc_manuscript/mathtype/bin/$name")) {
+              throw "Wheel is missing native runtime: $name"
+            }
+          }
+          if ($IsWindows -and -not ($entries -match 'pandoc_manuscript/mathtype/ole_helper/bin/Release/net48/MathTypeOleHelper.exe')) {
+            throw 'Windows wheel is missing MathTypeOleHelper.exe'
+          }
+          $forbidden = $entries | Where-Object {
+            $_ -match 'scripts/(mathtype-rust|latex2wmf)/' -or
+            $_ -match 'pandoc_manuscript/mathtype/ole_helper/.*\.(cs|csproj|pdb|config)$'
+          }
+          if ($forbidden) {
+            throw "Wheel contains native helper source/debug files: $($forbidden -join ', ')"
+          }
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4

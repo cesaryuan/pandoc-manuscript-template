@@ -11,8 +11,9 @@ citation-number-range-delimiter: "–"
 # The default stays false so a freshly initialized project builds without a
 # local MathType/OLE conversion setup.
 mathtype: true
-# MathType conversion backend: rust, set-data, auto, or both.
+# MathType conversion backend: rust, rust-sdk, set-data, auto, or both.
 # rust: cross-platform LaTeX -> mathtype-rust OLE/MTEF + latex2wmf WMF/JSON.
+# rust-sdk: mathtype-rust OLE/MTEF + MathType SDK helper WMF/JSON (Windows).
 # set-data: LaTeX -> MathType OLE TeX input -> OLE/WMF/JSON.
 # auto: try set-data first, then fall back to rust.
 # both: generate both backends, warn if OLE/JSON differ, and use set-data.

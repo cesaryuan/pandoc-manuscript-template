@@ -163,9 +163,12 @@ MathType-exported PDFs may hide the hat.
 Set `mathtypeConversionMethod` in `style.yml` to choose the MathType backend:
 `rust` is cross-platform and combines LaTeX -> `mathtype-rust` -> OLE/MTEF
 with LaTeX -> SVG -> `latex2wmf` -> WMF/JSON. `set-data` uses MathType's
-Windows-only TeX input OLE path, and `auto` tries `set-data` before falling back
-to `rust`. Use `both` on Windows to generate both backends, warn when their
-OLE/JSON results differ, and keep the `set-data` output in the DOCX.
+Windows-only TeX input OLE path. `rust-sdk` preserves the older two-stage path:
+`mathtype-rust` generates OLE/MTEF, then the prebuilt MathType helper runs
+`sdk-xform-ole` to generate WMF/JSON. `auto` tries `set-data` before falling
+back to `rust`. Use `both` on Windows to generate both backends, warn when their
+OLE/JSON results differ, and keep the `set-data` output in the DOCX. Runtime
+conversion never builds the .NET helper; Windows wheels contain its executable.
 
 Set `mathtypeSvgBackend` to choose how the cross-platform `rust` path produces
 formula SVG. `ratex` (the default) parses LaTeX directly, embeds glyph outlines,

@@ -2,11 +2,23 @@ from pathlib import Path
 import struct
 import sys
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from pandoc_manuscript.mathtype import ole_parts
 from pandoc_manuscript.mathtype import convert_marked_docx as convert_marked_docx_module
 from pandoc_manuscript.mathtype.ole_parts import decode_process_output
+
+
+def test_missing_helper_is_not_built_during_conversion(monkeypatch, tmp_path) -> None:
+    """Require a prebuilt helper even when dotnet is available at runtime."""
+    missing_helper = tmp_path / "MathTypeOleHelper.exe"
+    monkeypatch.setattr(ole_parts, "HELPER_EXE", missing_helper)
+    monkeypatch.setattr(ole_parts.shutil, "which", lambda name: "dotnet.exe")
+
+    with pytest.raises(FileNotFoundError, match="prebuilt|bundles it|build the helper"):
+        ole_parts.require_helper_executable()
 
 
 def test_decode_process_output_falls_back_for_localized_helper_errors() -> None:
@@ -84,7 +96,9 @@ def test_make_wmf_metadata_from_mtef_uses_sdk_xform_ole(monkeypatch, tmp_path) -
     wmf_path = tmp_path / "eq.wmf"
     metadata_path = tmp_path / "eq.json"
     prefs_path = tmp_path / "size.eqp"
+    helper_exe = tmp_path / "MathTypeOleHelper.exe"
 
+    monkeypatch.setattr(ole_parts, "require_helper_executable", lambda: helper_exe)
     monkeypatch.setattr(ole_parts, "run", lambda command, **kwargs: calls.append(command))
 
     ole_parts.make_wmf_metadata_from_mtef(
@@ -104,6 +118,68 @@ def test_make_wmf_metadata_from_mtef_uses_sdk_xform_ole(monkeypatch, tmp_path) -
     assert command[command.index("--metadata-output") + 1] == str(metadata_path)
     assert command[command.index("--prefs-file") + 1] == str(prefs_path)
     assert "--binary" in command
+
+
+def test_generate_uncached_equation_parts_uses_rust_sdk_method(monkeypatch, tmp_path) -> None:
+    """Keep the former Rust plus MathType SDK pipeline under rust-sdk."""
+    calls = []
+
+    monkeypatch.setattr(
+        ole_parts,
+        "make_ole_wmf_metadata_with_mathtype_rust_sdk",
+        lambda *args, **kwargs: calls.append("rust-sdk"),
+    )
+
+    ole_parts.generate_uncached_equation_parts(
+        1,
+        tmp_path / "eq.tex",
+        tmp_path / "eq.ole.bin",
+        tmp_path / "eq.wmf",
+        tmp_path / "eq.json",
+        tmp_path / "eq.mtef.bin",
+        conversion_method="rust-sdk",
+    )
+
+    assert calls == ["rust-sdk"]
+
+
+def test_rust_sdk_generates_rust_ole_before_helper_preview(monkeypatch, tmp_path) -> None:
+    """Generate authoritative Rust OLE/MTEF before the temporary SDK preview OLE."""
+    calls = []
+    input_path = tmp_path / "eq.tex"
+    ole_path = tmp_path / "eq.ole.bin"
+    wmf_path = tmp_path / "eq.wmf"
+    metadata_path = tmp_path / "eq.json"
+    mtef_path = tmp_path / "eq.mtef.bin"
+
+    def fake_rust(input_file, output_file, mtef_output, prefs_file=None):
+        """Write the authoritative Rust artifacts for the ordering probe."""
+        calls.append("rust")
+        output_file.write_bytes(b"rust-ole")
+        mtef_output.write_bytes(b"rust-mtef")
+
+    def fake_sdk(mtef_file, helper_ole, wmf_output, metadata_output, prefs_file=None):
+        """Write preview artifacts after confirming the Rust MTEF exists."""
+        calls.append("sdk")
+        assert mtef_file.read_bytes() == b"rust-mtef"
+        helper_ole.write_bytes(b"temporary-sdk-ole")
+        wmf_output.write_bytes(b"wmf")
+        metadata_output.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(ole_parts, "make_ole_from_mathtype_rust", fake_rust)
+    monkeypatch.setattr(ole_parts, "make_wmf_metadata_from_mtef", fake_sdk)
+
+    ole_parts.make_ole_wmf_metadata_with_mathtype_rust_sdk(
+        input_path,
+        ole_path,
+        wmf_path,
+        metadata_path,
+        mtef_path,
+    )
+
+    assert calls == ["rust", "sdk"]
+    assert ole_path.read_bytes() == b"rust-ole"
+    assert not (tmp_path / "eq.ole.sdk.bin").exists()
 
 
 def test_generate_uncached_equation_parts_uses_rust_method(monkeypatch, tmp_path) -> None:
@@ -194,6 +270,8 @@ def test_normalize_conversion_method_accepts_style_aliases() -> None:
     """Normalize user-facing style metadata values to conversion backends."""
     assert ole_parts.normalize_conversion_method(None) == "rust"
     assert ole_parts.normalize_conversion_method("mathtype-rust") == "rust"
+    assert ole_parts.normalize_conversion_method("rust-sdk") == "rust-sdk"
+    assert ole_parts.normalize_conversion_method("sdk-xform-ole") == "rust-sdk"
     assert ole_parts.normalize_conversion_method("tex") == "set-data"
     assert ole_parts.normalize_conversion_method("fallback") == "auto"
     assert ole_parts.normalize_conversion_method("both") == "both"
@@ -214,7 +292,7 @@ def test_generate_equation_parts_both_uses_independent_backend_caches(monkeypatc
     monkeypatch.setattr(ole_parts, "iter_equation_requests_with_progress", lambda requests: enumerate(requests, start=1))
     monkeypatch.setattr(ole_parts, "mathtype_ole_mtef_sha256", lambda path: f"mtef:{Path(path).name}")
     monkeypatch.setattr(ole_parts, "json_result_sha256", lambda path: f"json:{Path(path).name}")
-    monkeypatch.setattr(ole_parts, "mathtype_rust_source_digest", lambda: "rust-source")
+    monkeypatch.setattr(ole_parts, "native_source_digest_for_method", lambda method: "rust-source")
     monkeypatch.setattr(ole_parts, "restore_cached_equation", lambda *args: False)
     monkeypatch.setattr(ole_parts, "store_cached_equation", lambda *args: None)
     monkeypatch.setattr(ole_parts, "inspect_ole", lambda path: FakeCompound())
@@ -405,11 +483,18 @@ def test_mathtype_cache_key_includes_rust_converter_and_method_digests() -> None
         "set-data",
     )
 
-    assert base != changed_helper
+    rust_sdk_base = ole_parts.mathtype_cache_key(
+        "x", None, None, "helper", "rust-src-a", "rust-exe", "rust-sdk"
+    )
+    rust_sdk_changed_helper = ole_parts.mathtype_cache_key(
+        "x", None, None, "changed-helper", "rust-src-a", "rust-exe", "rust-sdk"
+    )
     assert base != changed_source
     assert base != changed_exe
     assert base != changed_method
     assert base != changed_svg_backend
+    assert base == changed_helper
+    assert rust_sdk_base != rust_sdk_changed_helper
     assert set_data_base == set_data_changed_rust
 
 

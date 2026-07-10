@@ -90,8 +90,10 @@ scripts\latex2wmf\target\debug\latex2wmf.exe `
   --font-size 12
 ```
 
-旧的 MathType SDK `MTEF -> PICT/WMF` 命令仍可用于 Windows 侧对照实验，但
-`mathtypeConversionMethod: rust` 不再调用它，也不要求安装 MathType。
+旧的 MathType SDK `MTEF -> PICT/WMF` 链路保留为
+`mathtypeConversionMethod: rust-sdk`：先由本程序生成 OLE/MTEF，再由预构建的
+`MathTypeOleHelper.exe --method sdk-xform-ole` 生成 WMF/JSON。默认的 `rust`
+不调用 helper，也不要求安装 MathType。
 
 ## Source Layout
 

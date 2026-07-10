@@ -156,11 +156,9 @@ def test_runtime_resources_resolve_source_checkout_roots() -> None:
 
 
 def test_mathtype_helper_paths_live_under_mathtype_package() -> None:
-    """Resolve the MathType OLE helper from its new private mathtype location."""
-    assert "mathtype_ole_helper" not in str(ole_parts.HELPER_PROJECT)
-    assert ole_parts.HELPER_PROJECT.name == "MathTypeOleHelper.csproj"
-    assert ole_parts.HELPER_PROJECT.exists()
+    """Resolve only the prebuilt MathType OLE helper at conversion time."""
     assert "mathtype" in ole_parts.HELPER_EXE.parts
+    assert ole_parts.require_helper_executable() == ole_parts.HELPER_EXE
 
 
 def test_mathtype_rust_package_exe_lives_under_mathtype_package() -> None:

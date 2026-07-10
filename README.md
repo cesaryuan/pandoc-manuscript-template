@@ -64,7 +64,7 @@ Install these tools first:
 1. `uv` for running the CLI and Python environment
 2. `pandoc` 3.0+ and `pandoc-crossref`
 3. Optional: Microsoft Word or `soffice` for line-number source workflows
-4. Optional: MathType on Windows only if you select the `set-data`, `auto`, or `both` comparison path; the default `rust` path is self-contained
+4. Optional: MathType on Windows only if you select `rust-sdk`, `set-data`, `auto`, or `both`; the default `rust` path is self-contained
 
 If `pandoc` or `pandoc-crossref` are not on `PATH`, PMT can download managed project-local copies into `.pmt/tools`.
 

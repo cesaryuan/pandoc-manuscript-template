@@ -13,27 +13,33 @@ from packaging.tags import sys_tags
 
 
 class CustomBuildHook(BuildHookInterface):
-    """Build and include the platform's native MathType executables in wheels."""
+    """Build and include binary-only MathType runtime tools in wheels."""
 
     PLUGIN_NAME = "pmt-native-helpers"
 
     def initialize(self, version: str, build_data: dict[str, Any]) -> None:
-        """Compile mathtype-rust before wheel file selection.
+        """Compile platform runtime tools before wheel file selection.
 
-        The source tree intentionally does not store a copied executable under
-        ``src/``; this hook prevents stale wheel artifacts after Rust edits.
+        Rust executables are never copied into ``src/``, and the .NET helper is
+        rebuilt into ``.pmt`` so wheel contents cannot become stale.
         """
         if self.target_name != "wheel" or version == "editable":
             return
 
         root = Path(self.root)
-        executables = (
+        executables = [
             self.build_native_executable(root, "mathtype-rust"),
             self.build_native_executable(root, "latex2wmf"),
-        )
+        ]
+        if os.name == "nt":
+            executables.append(self.build_mathtype_ole_helper(root))
         force_include = build_data.setdefault("force_include", {})
         for executable in executables:
-            force_include[str(executable)] = f"pandoc_manuscript/mathtype/bin/{executable.name}"
+            if executable.name == "MathTypeOleHelper.exe":
+                destination = "pandoc_manuscript/mathtype/ole_helper/bin/Release/net48/MathTypeOleHelper.exe"
+            else:
+                destination = f"pandoc_manuscript/mathtype/bin/{executable.name}"
+            force_include[str(executable)] = destination
 
         # Native helpers make this a platform wheel even though the Python
         # package itself has no extension module or CPython ABI dependency.
@@ -69,4 +75,34 @@ class CustomBuildHook(BuildHookInterface):
         executable = root / "scripts" / project_name / "target" / "release" / exe_name
         if not executable.exists():
             raise FileNotFoundError(f"cargo did not create expected executable: {executable}")
+        return executable
+
+    def build_mathtype_ole_helper(self, root: Path) -> Path:
+        """Build the Windows SDK helper once while producing the wheel."""
+        project = root / "src" / "pandoc_manuscript" / "mathtype" / "ole_helper" / "MathTypeOleHelper.csproj"
+        if not project.exists():
+            raise FileNotFoundError(f"MathType OLE helper project is missing: {project}")
+        if shutil.which("dotnet") is None:
+            raise RuntimeError("Building the Windows wheel requires `dotnet` on PATH.")
+
+        # Keep wheel builds from rewriting the tracked source-checkout fallback binary.
+        output_dir = root / ".pmt" / "native-wheel" / "MathTypeOleHelper"
+        print("[pmt build] building MathTypeOleHelper release executable with dotnet", flush=True)
+        subprocess.run(
+            [
+                "dotnet",
+                "build",
+                str(project),
+                "-c",
+                "Release",
+                "-v:quiet",
+                "--output",
+                str(output_dir),
+            ],
+            cwd=root,
+            check=True,
+        )
+        executable = output_dir / "MathTypeOleHelper.exe"
+        if not executable.exists():
+            raise FileNotFoundError(f"dotnet did not create expected executable: {executable}")
         return executable

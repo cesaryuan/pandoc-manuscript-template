@@ -180,6 +180,9 @@ outside the formula vector subset instead of silently rasterizing them.
 `pmt` also preserves whether Pandoc marked each formula as inline or display:
 RaTeX uses text style for inline formulas and display style for display formulas,
 so fractions, large operators, and limits keep the layout expected in prose.
+The RaTeX path retains a small `0.02em` safety margin for glyph overshoot.
+All backends map their point-valued baseline depth directly to Word's nearest
+half-point run position without rounding dimensions or adding a manual offset.
 
 ## Subfigure Layouts
 

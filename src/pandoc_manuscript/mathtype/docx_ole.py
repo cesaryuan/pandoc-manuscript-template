@@ -28,7 +28,6 @@ CONTENT_WMF = "image/x-wmf"
 PLACEABLE_WMF_KEY = 0x9AC6CDD7
 BASELINE_REFERENCE_HEIGHT_PT = 15.85
 BASELINE_REFERENCE_POSITION_HALF_POINTS = -10
-INLINE_BASELINE_CORRECTION_HALF_POINTS = 2
 
 
 for prefix, uri in NS.items():
@@ -44,7 +43,6 @@ class MathTypeTemplate:
     ole_bytes: bytes
     image_bytes: bytes
     baseline_from_bottom_pt: float | None = None
-    is_inline: bool = False
 
 
 MATHTYPE_OBJECT_TEMPLATE_XML = f"""
@@ -204,17 +202,12 @@ def apply_run_position(run: ET.Element, position_half_points: int) -> None:
 def mathtype_position_half_points(template: MathTypeTemplate) -> int:
     """Return Word's MathType baseline offset in half-points.
 
-    Prefer MathType's own baseline distance when available. Word's w:position
-    uses half-points, and a negative value lowers the object so the equation
-    baseline, not the bottom of the preview box, aligns with the target line.
+    Prefer the preview renderer's baseline distance when available. Word's
+    w:position uses half-points, and a negative value lowers the object so the
+    equation baseline, not the bottom of the preview box, aligns with the line.
     """
     if template.baseline_from_bottom_pt is not None and template.baseline_from_bottom_pt >= 0:
-        position = -round(template.baseline_from_bottom_pt * 2)
-        if template.is_inline:
-            # Compensate Word's slight downward bias, but never raise a
-            # zero-depth glyph above the surrounding text baseline.
-            position = min(0, position + INLINE_BASELINE_CORRECTION_HALF_POINTS)
-        return position
+        return -round(template.baseline_from_bottom_pt * 2)
 
     # Fallback for structural probes that clone a sample object without fresh
     # MathType metadata. The real conversion path should provide the baseline.

@@ -391,7 +391,6 @@ def replace_marked_omml_with_generated(source: Path, target: Path, equations: li
                 ole_bytes=equation.ole_path.read_bytes(),
                 image_bytes=equation.wmf_path.read_bytes(),
                 baseline_from_bottom_pt=equation.baseline_from_bottom_pt,
-                is_inline=equation.math_style == "inline",
             )
 
             remove_marker_run(parent_map, binding.marker_run, index)

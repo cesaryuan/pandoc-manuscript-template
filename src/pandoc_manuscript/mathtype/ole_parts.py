@@ -165,7 +165,6 @@ class GeneratedEquation:
             return float(value)
         return None
 
-
 @dataclass(frozen=True)
 class MathTypeAvailability:
     """Human-readable result of checking whether MathType conversion can run."""

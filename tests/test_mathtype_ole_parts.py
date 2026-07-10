@@ -138,20 +138,18 @@ def test_marked_docx_preserves_inline_formula_context(tmp_path) -> None:
     assert requests == [ole_parts.EquationRequest(latex="x_1", font_size_pt=12.0, math_style="inline")]
 
 
-def test_inline_ole_baseline_is_raised_without_crossing_text_baseline() -> None:
-    """Correct Word's downward bias without lifting shallow inline glyphs too far."""
+def test_preview_baseline_maps_directly_to_word_position() -> None:
+    """Map every backend's preview depth directly to Word half-points."""
     inline = docx_ole.build_mathtype_template()
     inline.baseline_from_bottom_pt = 3.0
-    inline.is_inline = True
     display = docx_ole.build_mathtype_template()
     display.baseline_from_bottom_pt = 3.0
 
-    assert docx_ole.mathtype_position_half_points(inline) == -4
+    assert docx_ole.mathtype_position_half_points(inline) == -6
     assert docx_ole.mathtype_position_half_points(display) == -6
 
     shallow = docx_ole.build_mathtype_template()
     shallow.baseline_from_bottom_pt = 0.24
-    shallow.is_inline = True
     assert docx_ole.mathtype_position_half_points(shallow) == 0
 
 
@@ -159,7 +157,8 @@ def test_zero_depth_baseline_does_not_use_height_fallback(tmp_path) -> None:
     """Keep an ascender-only glyph on its real zero-depth baseline."""
     metadata_path = tmp_path / "b.json"
     metadata_path.write_text(
-        '{"mathtype":{"baseline_from_bottom_pt":0.0}}',
+        '{"mathtype":{"baseline_from_bottom_pt":0.0},'
+        '"renderer":{"baseline_source":"ratex-layout-depth"}}',
         encoding="utf-8",
     )
     equation = ole_parts.GeneratedEquation(
@@ -171,7 +170,6 @@ def test_zero_depth_baseline_does_not_use_height_fallback(tmp_path) -> None:
     )
     template = docx_ole.build_mathtype_template()
     template.baseline_from_bottom_pt = equation.baseline_from_bottom_pt
-    template.is_inline = True
 
     assert equation.baseline_from_bottom_pt == 0.0
     assert docx_ole.mathtype_position_half_points(template) == 0

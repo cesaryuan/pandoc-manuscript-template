@@ -269,7 +269,10 @@ as `figures/model-comparison.svg` to cached self-contained SVG files under
 SVG as data URIs, while SVG text and vector elements remain SVG. The source
 Markdown and SVG files are not rewritten. If `docxConvertSvgToPng: true` is
 enabled, `docxEmbedSvgImages` is automatically disabled because the full SVG is
-rasterized instead.
+rasterized instead. If a linked child image is itself an SVG, the DOCX pipeline
+automatically converts the composed parent SVG to PNG even when
+`docxConvertSvgToPng` is false, because Word cannot render an SVG data URI nested
+inside another SVG.
 
 If one SVG must be rasterized for a specific submission target, add
 `to-png=true` to that image. Add `to-png-scale=2` on the same image when it

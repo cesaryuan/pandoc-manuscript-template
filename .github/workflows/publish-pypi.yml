@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -86,8 +86,8 @@ jobs:
           path: dist/*.whl
           if-no-files-found: error
 
-  build-sdist:
-    name: Build source distribution
+  build-linux-wheel:
+    name: Build manylinux_2_28 wheel
     runs-on: ubuntu-latest
 
     steps:
@@ -96,25 +96,69 @@ jobs:
         with:
           submodules: recursive
 
+      # Build inside the manylinux container so the bundled Rust executables
+      # genuinely support glibc 2.28 instead of merely carrying an older tag.
+      - name: Build Linux wheel
+        uses: pypa/cibuildwheel@v4.1.0
+        env:
+          CIBW_ARCHS_LINUX: x86_64
+          CIBW_BUILD: cp311-manylinux_x86_64
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_BEFORE_ALL_LINUX: curl -sSf https://sh.rustup.rs | sh -s -- -y
+          CIBW_ENVIRONMENT_LINUX: PATH=$HOME/.cargo/bin:$PATH
+        with:
+          output-dir: dist
+
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
 
       - name: Install Python
         run: uv python install 3.11
 
-      - name: Build source distribution
-        run: uv build --sdist
+      - name: Smoke test packaged native helpers
+        shell: pwsh
+        run: |
+          $wheel = (Get-ChildItem dist/*.whl | Select-Object -First 1).FullName
+          uv run --isolated --no-project --with $wheel pmt --help
+          uv run --isolated --no-project --with $wheel python -c "from pandoc_manuscript.mathtype.ole_parts import check_mathtype_availability; assert check_mathtype_availability('rust').usable"
 
-      - name: Upload source distribution
+      - name: Verify Linux wheel contents and compatibility tag
+        shell: pwsh
+        run: |
+          $wheel = Get-ChildItem dist/*.whl | Select-Object -First 1
+          if ($wheel.Name -notmatch 'manylinux_2_28_x86_64') {
+            throw "Linux wheel does not have the expected manylinux_2_28_x86_64 tag: $($wheel.Name)"
+          }
+          $entries = python -c @'
+          import sys
+          from zipfile import ZipFile
+
+          with ZipFile(sys.argv[1]) as wheel:
+              print("\n".join(wheel.namelist()))
+          '@ $wheel.FullName
+          foreach ($name in @("mathtype-rust", "latex2wmf")) {
+            if (-not ($entries -match "pandoc_manuscript/mathtype/bin/$name")) {
+              throw "Wheel is missing native runtime: $name"
+            }
+          }
+          $forbidden = $entries | Where-Object {
+            $_ -match 'scripts/(mathtype-rust|latex2wmf)/' -or
+            $_ -match 'pandoc_manuscript/mathtype/ole_helper/.*\.(cs|csproj|pdb|config)$'
+          }
+          if ($forbidden) {
+            throw "Wheel contains native helper source/debug files: $($forbidden -join ', ')"
+          }
+
+      - name: Upload Linux wheel
         uses: actions/upload-artifact@v4
         with:
-          name: sdist
-          path: dist/*.tar.gz
+          name: wheel-Linux
+          path: dist/*.whl
           if-no-files-found: error
 
   publish:
-    name: Publish all distributions
-    needs: [build-wheels, build-sdist]
+    name: Publish platform wheels
+    needs: [build-wheels, build-linux-wheel]
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -134,4 +178,6 @@ jobs:
           merge-multiple: true
 
       - name: Publish to PyPI
-        run: uv publish dist/*
+        # Native helper sources are intentionally not distributed. Publishing
+        # wheels only avoids creating an incomplete, non-buildable sdist.
+        run: uv publish dist/*.whl

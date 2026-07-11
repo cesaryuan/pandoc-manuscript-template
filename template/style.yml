@@ -1,8 +1,3 @@
-# 默认输出样式元数据。
-#
-# 请将稿件特有的元数据保留在 manuscript.md 中。构建时，稿件 YAML 头部中
-# 定义的值会覆盖这些默认值。
-
 # 设置为 true，可在构建期间将 DOCX 公式转换为 MathType OLE 对象。
 # 默认保持为 false，以便新初始化的项目无需配置本地 MathType/OLE 转换环境即可构建。
 mathtype: false
@@ -56,6 +51,7 @@ docxStyle:
     paragraphSpacing:
       before: 0pt
       after: 0pt
+
 # 审稿回复输出的覆盖配置。`pmt build reply` 会将上方的顶层元数据与本节合并，
 # 并在生成回复时优先采用本节中的值。
 reply:
@@ -68,8 +64,8 @@ reply:
   pandocMetadata: {}
 
 # 本节会作为 metadata 传给 Pandoc、pandoc-crossref 和 citeproc。
-# 可用值参考 https://pandoc.org/MANUAL.html
-# 
+# 请将稿件特有的元数据保留在 manuscript.md 中。构建时，稿件 YAML 头部中定义的值会覆盖这些默认值。
+# 可用值参考 https://pandoc.org/MANUAL.html https://lierdakil.github.io/pandoc-crossref/
 pandocMetadata:
   # Pandoc-crossref 交叉引用设置
   ## 项目标题前缀格式：{figureTitle} {number}{titleDelim} {caption}

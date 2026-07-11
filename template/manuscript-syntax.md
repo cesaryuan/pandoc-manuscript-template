@@ -587,9 +587,13 @@ docxPageMargins:
   right: 3.17cm
 ```
 
-For DOCX builds, `pmt` also derives the two OpenXML `w:pos` tab stops in
-`eqnBlockTemplate` from these left/right margins. This keeps tab-stop equations
-centered in the writable text width when page margins change.
+For DOCX builds, `pmt` derives the pandoc-crossref equation layout automatically;
+do not add `tableEqns`, `eqnBlockTemplate`, or `eqnBlockInlineMath` to
+`pandocMetadata`. When MathType conversion is active, PMT uses an inline
+OpenXML tab-stop template and derives its two `w:pos` values from the left/right
+margins. When MathType conversion is inactive or unavailable, PMT uses the
+three-column table template so native Word display equations remain centered
+with their numbers right-aligned.
 
 Common Chinese built-in names such as `标题 1`, `正文文本`, and `正文` are automatically mapped to the corresponding Word built-in style names like `Heading 1`, `Body Text`, and `Normal`. Custom styles still need to use their exact DOCX style names.
 

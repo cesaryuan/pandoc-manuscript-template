@@ -284,7 +284,7 @@ def test_build_reply_docx_uses_svg_filters(tmp_path, monkeypatch) -> None:
     resolved_reply = tmp_path / "reply.resolved.md"
     calls: list[tuple[list[str], dict[str, str]]] = []
 
-    monkeypatch.setattr(reply_resolve, "write_reply_style_metadata_file", lambda _: style)
+    monkeypatch.setattr(reply_resolve, "write_reply_style_metadata_file", lambda *args, **kwargs: style)
     monkeypatch.setattr(
         reply_output,
         "resolve_mathtype_enabled",
@@ -403,7 +403,7 @@ $$ x+y $$ {#eq:sum}
     output = tmp_path / "reply.txt"
     flattened_style = tmp_path / "style.reply.flat.yml"
 
-    monkeypatch.setattr(reply_resolve, "write_reply_style_metadata_file", lambda _: flattened_style)
+    monkeypatch.setattr(reply_resolve, "write_reply_style_metadata_file", lambda *args, **kwargs: flattened_style)
     monkeypatch.setattr(reply_resolve, "resolve_reference_map", lambda *args: {"fig:layout": "Figure 3"})
     monkeypatch.setattr(reply_resolve, "resolve_citation_map", lambda *args: {"a": "[1]", "b": "[2]"})
     monkeypatch.setattr(reply_resolve, "resolve_citation_cluster_map", lambda *args: {"[@a; @b]": "[1, 2]"})

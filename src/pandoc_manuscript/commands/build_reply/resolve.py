@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from ...docx.equation_layout import sync_eqn_block_template_with_page_margins
+from ...docx.equation_layout import derive_docx_equation_layout, sync_eqn_block_template_with_page_margins
 from ...runtime.logging import log_info, log_warning
 from ...runtime.metadata import EffectiveMetadata, PmtSettings, load_effective_metadata, write_pandoc_metadata
 from ...runtime.paths import PMT_REPLY_PROBE_DIR
@@ -76,10 +76,18 @@ def load_reply_metadata(reply: Path, style: Path) -> EffectiveMetadata:
     )
 
 
-def write_reply_style_metadata_file(effective: EffectiveMetadata) -> Path:
+def write_reply_style_metadata_file(
+    effective: EffectiveMetadata,
+    *,
+    use_mathtype: bool = False,
+) -> Path:
     """Write reply Pandoc metadata without leaking PMT-owned settings."""
-    metadata, tab_stops = sync_eqn_block_template_with_page_margins(
+    metadata = derive_docx_equation_layout(
         effective.pandoc_metadata,
+        use_mathtype=use_mathtype,
+    )
+    metadata, tab_stops = sync_eqn_block_template_with_page_margins(
+        metadata,
         effective.pmt_settings,
     )
     if tab_stops is not None:

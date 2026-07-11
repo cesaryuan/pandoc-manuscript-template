@@ -13,6 +13,18 @@ from ..runtime.metadata import PmtSettings
 DEFAULT_A4_PAGE_WIDTH_TWIPS = Mm(210).twips
 DEFAULT_REFERENCE_MARGIN_TWIPS = Inches(0.75).twips
 EQN_BLOCK_TEMPLATE_KEY = "eqnBlockTemplate"
+TABLE_EQNS_KEY = "tableEqns"
+EQN_BLOCK_INLINE_MATH_KEY = "eqnBlockInlineMath"
+WORD_TABLE_EQN_BLOCK_TEMPLATE = """\
++:------+:--------------------------------------------------:+--------:+
+|       | $$t$$                                              | $$nmi$$ |
++-------+----------------------------------------------------+---------+
+"""
+MATHTYPE_TAB_EQN_BLOCK_TEMPLATE = (
+    '`<w:pPr><w:tabs><w:tab w:val="center" w:leader="none" w:pos="4156" />'
+    '<w:tab w:val="right" w:leader="none" w:pos="8312" /></w:tabs></w:pPr>'
+    '<w:r><w:tab /></w:r>`{=openxml}$$t$$`<w:r><w:tab /></w:r>`{=openxml}$$nmi$$'
+)
 TAB_STOP_PATTERN_TEMPLATE = r'(<w:tab\b(?=[^>]*\bw:val="{val}")(?=[^>]*\bw:pos=")[^>]*\bw:pos=")\d+(")'
 
 
@@ -90,6 +102,23 @@ def replace_tab_stop_position(template: str, tab_value: str, position: int) -> s
     """Replace one OpenXML tab stop position inside an eqnBlockTemplate string."""
     pattern = re.compile(TAB_STOP_PATTERN_TEMPLATE.format(val=re.escape(tab_value)))
     return pattern.sub(rf"\g<1>{position}\2", template)
+
+
+def derive_docx_equation_layout(
+    pandoc_metadata: dict[str, Any],
+    *,
+    use_mathtype: bool,
+) -> dict[str, Any]:
+    """Derive pandoc-crossref equation layout from the active DOCX backend."""
+    derived = deepcopy(pandoc_metadata)
+    derived[TABLE_EQNS_KEY] = True
+    if use_mathtype:
+        derived[EQN_BLOCK_TEMPLATE_KEY] = MATHTYPE_TAB_EQN_BLOCK_TEMPLATE
+        derived[EQN_BLOCK_INLINE_MATH_KEY] = True
+    else:
+        derived[EQN_BLOCK_TEMPLATE_KEY] = WORD_TABLE_EQN_BLOCK_TEMPLATE
+        derived.pop(EQN_BLOCK_INLINE_MATH_KEY, None)
+    return derived
 
 
 def sync_eqn_block_template_with_page_margins(

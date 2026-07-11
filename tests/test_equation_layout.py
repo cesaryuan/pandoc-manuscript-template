@@ -8,6 +8,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from pandoc_manuscript.commands import build
 from pandoc_manuscript.commands.build_reply import resolve as reply_resolve
 from pandoc_manuscript.docx.equation_layout import (
+    MATHTYPE_TAB_EQN_BLOCK_TEMPLATE,
+    WORD_TABLE_EQN_BLOCK_TEMPLATE,
+    derive_docx_equation_layout,
     equation_tab_stops_from_settings,
     sync_eqn_block_template_with_page_margins,
 )
@@ -48,6 +51,25 @@ def test_eqn_block_template_sync_updates_openxml_positions() -> None:
     assert 'w:val="right" w:leader="none" w:pos="8312"' in synced["eqnBlockTemplate"]
 
 
+def test_docx_equation_layout_follows_active_mathtype_backend() -> None:
+    """Derive table equations for Word and inline tab equations for MathType."""
+    existing = {
+        "tableEqns": False,
+        "eqnBlockTemplate": "user value",
+        "eqnBlockInlineMath": False,
+    }
+
+    word = derive_docx_equation_layout(existing, use_mathtype=False)
+    mathtype = derive_docx_equation_layout(existing, use_mathtype=True)
+
+    assert word["tableEqns"] is True
+    assert word["eqnBlockTemplate"] == WORD_TABLE_EQN_BLOCK_TEMPLATE
+    assert "eqnBlockInlineMath" not in word
+    assert mathtype["tableEqns"] is True
+    assert mathtype["eqnBlockTemplate"] == MATHTYPE_TAB_EQN_BLOCK_TEMPLATE
+    assert mathtype["eqnBlockInlineMath"] is True
+
+
 def test_build_writes_adjusted_docx_metadata_file(tmp_path, monkeypatch) -> None:
     """Pass Pandoc a generated metadata file with margin-synced equation tabs."""
     monkeypatch.chdir(tmp_path)
@@ -60,7 +82,11 @@ def test_build_writes_adjusted_docx_metadata_file(tmp_path, monkeypatch) -> None
         pandoc_metadata={"eqnBlockTemplate": EQN_TEMPLATE},
         has_yaml_header=True,
     )
-    args = build.style_metadata_args(effective, sync_docx_layout=True)
+    args = build.style_metadata_args(
+        effective,
+        sync_docx_layout=True,
+        use_mathtype=True,
+    )
 
     metadata = yaml.safe_load(Path(args[1]).read_text(encoding="utf-8"))
     assert args[0] == "--metadata-file"

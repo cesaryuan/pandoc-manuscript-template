@@ -77,21 +77,6 @@ pandocMetadata:
   tblPrefix: "Table"
   secPrefix: "Section"
   eqnPrefix: "Equation"
-  # 支持公式居中、编号右对齐
-  tableEqns: true
-  ## 表格排版公式
-  # eqnBlockTemplate: | # 用表格排版公式，能正确显示行间公式
-  #   +:------+:--------------------------------------------------:+--------:+
-  #   |       | $$t$$                                              | $$nmi$$ |
-  #   +-------+----------------------------------------------------+---------+
-  ## 制表符排版 Word 公式
-  # eqnBlockTemplate: | # 用制表符排版公式，不需要后处理脚本，但行间公式在 DOCX 中会显示为行内公式
-  #    `<w:pPr><w:tabs><w:tab w:val="center" w:leader="none" w:pos="4156" /><w:tab w:val="right" w:leader="none" w:pos="8312" /></w:tabs></w:pPr><w:r><w:tab /></w:r>`{=openxml} $$t$$ `<w:r><w:tab /></w:r>`{=openxml} $$nmi$$
-  # eqnBlockInlineMath: true    # 支持公式居中、编号右对齐
-  ## 制表符排版 MathType 公式
-  eqnBlockTemplate: | # 用制表符排版公式，不需要后处理脚本，但行间公式在 DOCX 中会显示为行内公式
-     `<w:pPr><w:tabs><w:tab w:val="center" w:leader="none" w:pos="4156" /><w:tab w:val="right" w:leader="none" w:pos="8312" /></w:tabs></w:pPr><w:r><w:tab /></w:r>`{=openxml}$$t$$`<w:r><w:tab /></w:r>`{=openxml}$$nmi$$
-  eqnBlockInlineMath: true    # 支持公式居中、编号右对齐
 
   ## 章节编号和自动标签选项
   linkReferences: true        # 将引用转换为超链接

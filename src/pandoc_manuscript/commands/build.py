@@ -21,7 +21,7 @@ from ..runtime.paths import (
     PMT_WORK_DIR,
     pmt_path,
 )
-from ..docx.equation_layout import sync_eqn_block_template_with_page_margins
+from ..docx.equation_layout import derive_docx_equation_layout, sync_eqn_block_template_with_page_margins
 from ..docx.page_margins import write_reference_doc_with_page_margins
 from ..docx.postprocess.final_docx_syntax_check import validate_final_docx_syntax
 from ..docx.postprocess import postprocess_docx as run_docx_postprocess
@@ -396,11 +396,16 @@ def generated_pandoc_metadata_file(
     effective: EffectiveMetadata,
     *,
     sync_docx_layout: bool,
+    use_mathtype: bool = False,
 ) -> Path:
     """Write only Pandoc-facing metadata, optionally syncing DOCX equation tabs."""
     metadata = effective.pandoc_metadata
     tab_stops = None
     if sync_docx_layout:
+        metadata = derive_docx_equation_layout(
+            metadata,
+            use_mathtype=use_mathtype,
+        )
         metadata, tab_stops = sync_eqn_block_template_with_page_margins(
             metadata,
             effective.pmt_settings,
@@ -440,6 +445,7 @@ def run_pandoc(
     extra_args: list[str] | None = None,
     extra_env: dict[str, str] | None = None,
     sync_docx_layout: bool = False,
+    use_mathtype: bool = False,
 ) -> None:
     """Run Pandoc with original defaults so ${.} resolves beside that file."""
     extra_args = extra_args or []
@@ -447,7 +453,11 @@ def run_pandoc(
         pandoc_command(),
         '--defaults',
         str(defaults_file),
-        *style_metadata_args(effective, sync_docx_layout=sync_docx_layout),
+        *style_metadata_args(
+            effective,
+            sync_docx_layout=sync_docx_layout,
+            use_mathtype=use_mathtype,
+        ),
         *csl_args(effective.pandoc_metadata),
         '--output',
         to_pandoc_path(output_file),
@@ -501,11 +511,13 @@ def style_metadata_args(
     effective: EffectiveMetadata,
     *,
     sync_docx_layout: bool = False,
+    use_mathtype: bool = False,
 ) -> list[str]:
     """Return a generated metadata file containing no PMT-owned settings."""
     metadata_file = generated_pandoc_metadata_file(
         effective,
         sync_docx_layout=sync_docx_layout,
+        use_mathtype=use_mathtype,
     )
     return ["--metadata-file", to_pandoc_path(metadata_file)]
 
@@ -576,6 +588,7 @@ def build_docx(*, warn_hat_order: bool = True):
         extra_args=extra_args,
         extra_env=pandoc_env,
         sync_docx_layout=True,
+        use_mathtype=use_mathtype,
     )
 
     # Post-process DOCX if enabled

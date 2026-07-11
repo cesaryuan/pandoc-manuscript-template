@@ -201,12 +201,15 @@ def build_reply_docx(
     reply_text = reply.read_text(encoding="utf-8")
     effective = reply_resolve.load_reply_metadata(reply, style)
     pmt_settings = effective.pmt_settings
-    flattened_style = reply_resolve.write_reply_style_metadata_file(effective)
     pandoc_reference_doc = reply_reference_doc_for_pandoc(reference_doc, output, pmt_settings)
     conversion_method = normalize_conversion_method(pmt_settings.mathtype_conversion_method)
     use_mathtype = resolve_mathtype_enabled(
         pmt_settings.mathtype,
         conversion_method,
+    )
+    flattened_style = reply_resolve.write_reply_style_metadata_file(
+        effective,
+        use_mathtype=use_mathtype,
     )
     if use_mathtype and warn_hat_order:
         warn_mathtype_hat_style_order(reply)
@@ -301,7 +304,10 @@ def build_reply_txt(
     ensure_output_writable(output)
     reply_text = reply.read_text(encoding="utf-8")
     effective = reply_resolve.load_reply_metadata(reply, style)
-    flattened_style = reply_resolve.write_reply_style_metadata_file(effective)
+    flattened_style = reply_resolve.write_reply_style_metadata_file(
+        effective,
+        use_mathtype=False,
+    )
     resolved_text = reply_resolve.resolve_reply_markdown(
         reply_text,
         manuscript,

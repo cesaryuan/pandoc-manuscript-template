@@ -1,4 +1,4 @@
--- Apply a metadata-configured delimiter to citeproc numeric citation ranges.
+-- Apply the PMT-configured delimiter to citeproc numeric citation ranges.
 -- CSL requires collapsed citation-number ranges to use an en dash, so this
 -- narrowly adjusts the rendered citation output after citeproc has run.
 
@@ -10,13 +10,14 @@ local function trim(value)
   return value:gsub("^%s+", ""):gsub("%s+$", "")
 end
 
-local function metadata_string(value)
-  -- Read Pandoc metadata values from either style.yml or manuscript YAML.
+local function environment_string(name)
+  -- PMT-owned filter settings stay outside the Pandoc metadata namespace.
+  local value = os.getenv(name)
   if value == nil then
     return nil
   end
 
-  local text = trim(pandoc.utils.stringify(value))
+  local text = trim(value)
   if text == "" then
     return nil
   end
@@ -106,8 +107,7 @@ local function rewrite_citation_ranges(inlines)
 end
 
 function Pandoc(doc)
-  -- Manuscript YAML overrides style.yml:pandocMetadata in the build layer.
-  delimiter = metadata_string(doc.meta["citation-number-range-delimiter"])
+  delimiter = environment_string("PMT_CITATION_NUMBER_RANGE_DELIMITER")
   if delimiter == nil then
     return nil
   end

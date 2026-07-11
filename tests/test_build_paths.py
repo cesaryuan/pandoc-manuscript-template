@@ -44,6 +44,15 @@ def test_svg_to_png_cache_uses_pmt_cache(monkeypatch) -> None:
     assert env["PMT_SVG_TO_PNG_CONVERT_ALL"] == "false"
 
 
+def test_citation_range_delimiter_uses_filter_environment() -> None:
+    """Pass the PMT-owned citation delimiter without adding Pandoc metadata."""
+    settings = PmtSettings.model_validate({"citationNumberRangeDelimiter": "-"})
+
+    env = build.pandoc_filter_env(settings)
+
+    assert env == {"PMT_CITATION_NUMBER_RANGE_DELIMITER": "-"}
+
+
 def test_svg_embed_cache_uses_pmt_cache(monkeypatch) -> None:
     """Route self-contained SVG cache files away from final output directories."""
     monkeypatch.setattr(build.SETTINGS, "manuscript_file", "manuscript.md")

@@ -42,6 +42,7 @@ from .common import project_directory
 
 DEFAULT_OUTPUT_DIR = "output"
 DEFAULT_DOCX_CSL = "pandoc/csl/elsevier-vancouver.csl"
+PMT_CITATION_NUMBER_RANGE_DELIMITER_ENV = "PMT_CITATION_NUMBER_RANGE_DELIMITER"
 BuildTarget = Literal["docx", "latex", "json"]
 BUILD_CLI_CONFIG = SettingsConfigDict(
     cli_kebab_case=True,
@@ -424,6 +425,14 @@ def default_docx_csl() -> Path:
     return resource_path(DEFAULT_DOCX_CSL)
 
 
+def pandoc_filter_env(pmt_settings: PmtSettings) -> dict[str, str]:
+    """Return PMT settings passed to bundled Pandoc filters via the environment."""
+    delimiter = pmt_settings.citation_number_range_delimiter
+    if delimiter is None:
+        return {}
+    return {PMT_CITATION_NUMBER_RANGE_DELIMITER_ENV: delimiter}
+
+
 def run_pandoc(
     defaults_file: Path,
     output_file: Path,
@@ -445,7 +454,12 @@ def run_pandoc(
         *extra_args,
         SETTINGS.manuscript_file,
     ]
-    run_command(cmd, stream_output=True, env=pandoc_tools_env(extra_env))
+    filter_env = pandoc_filter_env(effective.pmt_settings)
+    run_command(
+        cmd,
+        stream_output=True,
+        env=pandoc_tools_env({**(extra_env or {}), **filter_env}),
+    )
 
 
 def reference_doc_args() -> list[str]:

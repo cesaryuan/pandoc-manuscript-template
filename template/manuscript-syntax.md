@@ -522,12 +522,15 @@ In reviewer replies, `pmt build-reply` resolves `@fig:...`, `@tbl:...`, `@sec:..
 
 TXT reply output is selected with an `.txt` output path, for example `pmt build-reply reply.md -o output/txt/reply.txt`. It keeps Markdown syntax for `**bold**`, `_emphasis_`, tables, and formulas, replaces images with `[Image: ...]` placeholders, resolves ``(Line `regex`)`` placeholders and manuscript cross-references, removes trailing `{#eq:...}`, `{#fig:...}`, and `{#tbl:...}` label attributes from formulas, images, and tables, strips reply-only `::: {custom-style="Reply to Reviewers"}` wrappers plus `<br>` tags, collapses the resulting extra blank lines to at most one blank line, and restores escaped ordered-list markers such as `1\.` to `1.`.
 
-Collapsed numeric citation ranges can use a journal-specific delimiter after Pandoc citeproc renders them. Set it under `pandocMetadata` in `style.yml`, or set it at the top level of the manuscript YAML header:
+Collapsed numeric citation ranges can use a journal-specific delimiter after Pandoc citeproc renders them. This is a PMT filter setting rather than Pandoc metadata, so configure it at the top level of `style.yml`:
 
 ```yaml
-pandocMetadata:
-  citation-number-range-delimiter: "-"  # [1-3]
+citationNumberRangeDelimiter: "-"  # [1-3]
 ```
+
+PMT passes this value to its Lua filter through the
+`PMT_CITATION_NUMBER_RANGE_DELIMITER` environment variable; it is not written
+into generated Pandoc metadata and cannot be overridden from manuscript YAML.
 
 To add a space after commas between non-consecutive numeric citations, edit the active CSL file's citation layout delimiter. For example, in `pandoc/csl/elsevier-vancouver.csl`, change:
 
@@ -541,7 +544,7 @@ to:
 <layout prefix="[" suffix="]" delimiter=", ">
 ```
 
-This changes citations such as `[1,3]` to `[1, 3]`. It does not control collapsed ranges such as `[1-3]`, which are handled by `citation-number-range-delimiter`.
+This changes citations such as `[1,3]` to `[1, 3]`. It does not control collapsed ranges such as `[1-3]`, which are handled by `citationNumberRangeDelimiter`.
 
 When SVG files reference local child images with paths, enable DOCX-only
 child-image embedding in `style.yml`. This writes cached self-contained SVG

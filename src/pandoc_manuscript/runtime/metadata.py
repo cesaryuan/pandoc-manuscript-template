@@ -56,7 +56,19 @@ PMT_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "docxSvgToPngWidth": ("docxSvgToPngWidth", "docx-svg-to-png-width", "docx_svg_to_png_width"),
     "docxSvgToPngDpi": ("docxSvgToPngDpi", "docx-svg-to-png-dpi", "docx_svg_to_png_dpi"),
     "docxSvgToPngScale": ("docxSvgToPngScale", "docx-svg-to-png-scale", "docx_svg_to_png_scale"),
-    "show-line-numbers": ("show-line-numbers", "showLineNumbers", "show_line_numbers"),
+    "citationNumberRangeDelimiter": (
+        "citationNumberRangeDelimiter",
+        "citation-number-range-delimiter",
+        "citation_number_range_delimiter",
+    ),
+    "docxShowLineNumbers": (
+        "docxShowLineNumbers",
+        "docx-show-line-numbers",
+        "docx_show_line_numbers",
+        "show-line-numbers",
+        "showLineNumbers",
+        "show_line_numbers",
+    ),
     "docxPageMargins": ("docxPageMargins", "docx-page-margins", "docx_page_margins"),
     "docxPageWidth": ("docxPageWidth", "docx-page-width", "docx_page_width"),
     "docxStyle": ("docxStyle", "docx-style", "docx_style"),
@@ -82,6 +94,8 @@ def _split_style_mapping(
     explicit_pandoc = raw.get("pandocMetadata", {})
     if not isinstance(explicit_pandoc, dict):
         raise ValueError(f"`pandocMetadata` in {source} ({section}) must be a YAML mapping")
+    explicit_pandoc = dict(explicit_pandoc)
+    legacy_delimiter = explicit_pandoc.pop("citation-number-range-delimiter", None)
 
     reply = raw.get("reply")
     if reply is not None and not isinstance(reply, dict):
@@ -106,6 +120,13 @@ def _split_style_mapping(
         pmt_values["docxStyle"] = merge_metadata(
             {"正文文本": legacy_body_text},
             explicit_styles,
+        )
+    if legacy_delimiter is not None:
+        if "citationNumberRangeDelimiter" not in pmt_values:
+            pmt_values["citationNumberRangeDelimiter"] = legacy_delimiter
+        log_warning(
+            f"[WARN] Deprecated pandocMetadata.citation-number-range-delimiter in {source} ({section}). "
+            "Move it to top-level citationNumberRangeDelimiter."
         )
 
     if legacy_pandoc:
@@ -200,10 +221,26 @@ class PmtSettings(BaseSettings):
         validation_alias=AliasChoices("docxSvgToPngScale", "docx-svg-to-png-scale", "docx_svg_to_png_scale"),
         serialization_alias="docxSvgToPngScale",
     )
-    show_line_numbers: bool | str | None = Field(
+    citation_number_range_delimiter: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("show-line-numbers", "showLineNumbers", "show_line_numbers"),
-        serialization_alias="show-line-numbers",
+        validation_alias=AliasChoices(
+            "citationNumberRangeDelimiter",
+            "citation-number-range-delimiter",
+            "citation_number_range_delimiter",
+        ),
+        serialization_alias="citationNumberRangeDelimiter",
+    )
+    docx_show_line_numbers: bool | str = Field(
+        default="continuous",
+        validation_alias=AliasChoices(
+            "docxShowLineNumbers",
+            "docx-show-line-numbers",
+            "docx_show_line_numbers",
+            "show-line-numbers",
+            "showLineNumbers",
+            "show_line_numbers",
+        ),
+        serialization_alias="docxShowLineNumbers",
     )
     docx_page_margins: dict[str, str | int | float] | None = Field(
         default=None,
@@ -376,6 +413,13 @@ def load_effective_metadata(
             raise
         manuscript_metadata = {}
         has_header = False
+    if "citation-number-range-delimiter" in manuscript_metadata:
+        manuscript_metadata = dict(manuscript_metadata)
+        del manuscript_metadata["citation-number-range-delimiter"]
+        log_warning(
+            f"[WARN] Ignoring deprecated manuscript metadata `citation-number-range-delimiter` in {manuscript_path}. "
+            "Configure top-level style.yml `citationNumberRangeDelimiter` instead."
+        )
     return EffectiveMetadata(
         pmt_settings=settings,
         pandoc_metadata=merge_metadata(settings.pandoc_metadata, manuscript_metadata),

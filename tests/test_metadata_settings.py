@@ -199,3 +199,55 @@ def test_legacy_body_text_is_migrated_at_the_settings_boundary(tmp_path: Path) -
         "正文文本": {"firstLineIndentChars": 2}
     }
     assert "bodyText" not in settings.pandoc_metadata
+
+
+def test_docx_line_numbers_default_to_continuous_and_serialize_with_new_key() -> None:
+    """Enable continuous DOCX line numbers by default under the renamed setting."""
+    settings = PmtSettings.model_validate({})
+    legacy = PmtSettings.model_validate({"show-line-numbers": "每页重编"})
+
+    assert settings.docx_show_line_numbers == "continuous"
+    assert settings.to_mapping()["docxShowLineNumbers"] == "continuous"
+    assert legacy.docx_show_line_numbers == "每页重编"
+    assert legacy.to_mapping()["docxShowLineNumbers"] == "每页重编"
+
+
+def test_legacy_pandoc_citation_delimiter_moves_to_pmt_settings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Remove the old custom-filter option from generated Pandoc metadata."""
+    style = tmp_path / "style.yml"
+    style.write_text(
+        "pandocMetadata:\n  citation-number-range-delimiter: '-'\n  figureTitle: Figure\n",
+        encoding="utf-8",
+    )
+    warnings: list[str] = []
+    monkeypatch.setattr(metadata_module, "log_warning", warnings.append)
+
+    settings = PmtSettings.load(style)
+
+    assert settings.citation_number_range_delimiter == "-"
+    assert settings.pandoc_metadata == {"figureTitle": "Figure"}
+    assert len(warnings) == 1
+    assert "citationNumberRangeDelimiter" in warnings[0]
+
+
+def test_manuscript_citation_delimiter_no_longer_enters_pandoc_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep the retired manuscript override out of generated Pandoc metadata."""
+    manuscript = tmp_path / "paper.md"
+    manuscript.write_text(
+        "---\ncitation-number-range-delimiter: '-'\ntitle: Example\n---\nBody\n",
+        encoding="utf-8",
+    )
+    warnings: list[str] = []
+    monkeypatch.setattr(metadata_module, "log_warning", warnings.append)
+
+    effective = load_effective_metadata(manuscript, style_path=None)
+
+    assert effective.pandoc_metadata == {"title": "Example"}
+    assert len(warnings) == 1
+    assert "citationNumberRangeDelimiter" in warnings[0]

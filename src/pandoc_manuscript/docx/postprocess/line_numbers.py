@@ -57,9 +57,9 @@ DISABLED_VALUES = {"false", "off", "no", "0", "none", "disable", "disabled", "�
 
 
 def normalize_line_number_setting(value: Any) -> str | None:
-    """Normalize show-line-numbers metadata to a Word restart mode.
+    """Normalize docxShowLineNumbers to a Word restart mode.
 
-    This handles the common shorthand `show-line-numbers: true` as continuous
+    This handles the common shorthand `docxShowLineNumbers: true` as continuous
     numbering, while string values select Word's line-number restart behavior.
     """
     if value is None:
@@ -69,7 +69,7 @@ def normalize_line_number_setting(value: Any) -> str | None:
     if isinstance(value, (int, float)):
         return DEFAULT_RESTART if bool(value) else None
     if not isinstance(value, str):
-        raise ValueError("show-line-numbers must be a boolean or string")
+        raise ValueError("docxShowLineNumbers must be a boolean or string")
 
     cleaned = value.strip()
     if not cleaned:
@@ -84,12 +84,12 @@ def normalize_line_number_setting(value: Any) -> str | None:
         return RESTART_ALIASES[lookup_key]
 
     valid = "continuous, restart-page/newPage, restart-section/newSection, 连续, 每页重编, 每节重编"
-    raise ValueError(f"Unsupported show-line-numbers value: {value!r}. Expected one of: {valid}")
+    raise ValueError(f"Unsupported docxShowLineNumbers value: {value!r}. Expected one of: {valid}")
 
 
 def line_number_setting_from_settings(settings: PmtSettings) -> str | None:
     """Return the normalized line-number mode from typed PMT settings."""
-    return normalize_line_number_setting(settings.show_line_numbers)
+    return normalize_line_number_setting(settings.docx_show_line_numbers)
 
 
 def get_or_add_line_number_type(sect_pr):
@@ -136,7 +136,7 @@ def process_file(
     save: bool = True,
     metadata_files: list[str | Path] | None = None,
 ) -> dict[str, Any] | None:
-    """Process a DOCX file using merged show-line-numbers metadata."""
+    """Process a DOCX file using typed docxShowLineNumbers settings."""
     doc, docx_file = open_docx(docx_path)
     if doc is None or docx_file is None:
         return None
@@ -147,7 +147,7 @@ def process_file(
     settings = load_pmt_settings_files(metadata_files)
     result = apply_line_number_settings(doc, settings)
     if result is None:
-        print_debug("No enabled show-line-numbers metadata found, skipping")
+        print_debug("No enabled docxShowLineNumbers setting found, skipping")
         return None
 
     if save:

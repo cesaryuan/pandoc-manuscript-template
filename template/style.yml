@@ -32,9 +32,13 @@ docxConvertSvgToPng: false
 # docxSvgToPngDpi: 300
 # docxSvgToPngScale: 1
 
+# 设置 citeproc 折叠数字引文范围的分隔符。
+# 设置为 "-" 可生成 [1-3]，设置为 "–" 可保留 CSL 默认值。
+citationNumberRangeDelimiter: "–"
+
 # 设置为 true 可启用连续的 DOCX 行号；也可以使用以下字符串：
 # '连续'、'每页重编'、'每节重编'、'continuous'、'restart-page' 或 'restart-section'。
-show-line-numbers: '连续'
+docxShowLineNumbers: '连续'
 
 # 在 Pandoc 转换前写入参考 DOCX 的页面边距。
 docxPageMargins:
@@ -63,12 +67,10 @@ reply:
         after: 6pt
   pandocMetadata: {}
 
-# 只有本节会作为 metadata 传给 Pandoc、pandoc-crossref 和 citeproc。
+# 本节会作为 metadata 传给 Pandoc、pandoc-crossref 和 citeproc。
+# 可用值参考 https://pandoc.org/MANUAL.html
+# 
 pandocMetadata:
-  # 覆盖 citeproc 在折叠的数字引文范围中固定使用的短破折号。
-  # 设置为 "-" 可生成 [1-3] 这样的连字符范围；设置为 "–" 则保留 CSL 默认值。
-  citation-number-range-delimiter: "–"
-
   # Pandoc-crossref 交叉引用设置
   ## 项目标题前缀格式：{figureTitle} {number}{titleDelim} {caption}
   figureTitle: "Figure "

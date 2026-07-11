@@ -6,133 +6,51 @@ import os
 import stat
 import sys
 from pathlib import Path
-from typing import Any
-
 from .. import runtime_cache_version
+from ..runtime.metadata import PmtSettings
 from ..runtime.paths import PMT_FILTER_WORK_DIR, PMT_SVG_EMBED_CACHE_DIR, PMT_SVG_PNG_CACHE_DIR
 from ..runtime.resources import template_root
-
-SVG_TO_PNG_DPI_KEYS = ("docxSvgToPngDpi", "docx-svg-to-png-dpi")
-SVG_TO_PNG_SCALE_KEYS = ("docxSvgToPngScale", "docx-svg-to-png-scale")
-SVG_TO_PNG_WIDTH_KEYS = ("docxSvgToPngWidth", "docx-svg-to-png-width")
-DOCX_SVG_EMBED_IMAGE_KEYS = (
-    "docxEmbedSvgImages",
-    "docx-embed-svg-images",
-    "embedSvgImages",
-    "embed-svg-images",
-)
-DOCX_SVG_TO_PNG_KEYS = (
-    "docxConvertSvgToPng",
-    "docx-convert-svg-to-png",
-    "convertSvgToPng",
-    "convert-svg-to-png",
-)
-
 
 def to_pandoc_path(path: Path) -> str:
     """Return a Pandoc-friendly path string."""
     return path.as_posix()
 
 
-def metadata_bool(value: Any) -> bool:
-    """Normalize YAML feature flags such as true, yes, or on."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    if isinstance(value, (int, float)):
-        return bool(value)
-    return False
-
-
-def metadata_first(metadata: dict[str, Any], keys: tuple[str, ...], default: Any = None) -> Any:
-    """Return the first configured metadata value from a list of aliases."""
-    for key in keys:
-        if key in metadata:
-            return metadata[key]
-    return default
-
-
-def metadata_float(metadata: dict[str, Any], keys: tuple[str, ...], default: float) -> float:
-    """Read a positive float metadata option with a clear validation error."""
-    value = metadata_first(metadata, keys, default)
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{keys[0]} must be a number, got: {value!r}") from exc
-    if parsed <= 0:
-        raise ValueError(f"{keys[0]} must be positive, got: {value!r}")
-    return parsed
-
-
-def metadata_int(metadata: dict[str, Any], keys: tuple[str, ...]) -> int:
-    """Read a positive integer metadata option with a clear validation error."""
-    value = metadata_first(metadata, keys)
-    if isinstance(value, bool):
-        raise ValueError(f"{keys[0]} must be a positive integer, got: {value!r}")
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{keys[0]} must be a positive integer, got: {value!r}") from exc
-    if str(parsed) != str(value).strip():
-        raise ValueError(f"{keys[0]} must be a positive integer, got: {value!r}")
-    if parsed <= 0:
-        raise ValueError(f"{keys[0]} must be positive, got: {value!r}")
-    return parsed
-
-
-def metadata_has_any(metadata: dict[str, Any], keys: tuple[str, ...]) -> bool:
-    """Return True when any alias is explicitly present in metadata."""
-    return any(key in metadata for key in keys)
-
-
-def configured_svg_to_png_controls(metadata: dict[str, Any]) -> list[str]:
+def configured_svg_to_png_controls(settings: PmtSettings) -> list[str]:
     """Return explicitly enabled SVG rasterization size controls."""
     controls: list[str] = []
-    if metadata_has_any(metadata, SVG_TO_PNG_WIDTH_KEYS):
+    if settings.docx_svg_to_png_width is not None:
         controls.append("docxSvgToPngWidth")
-    if metadata_has_any(metadata, SVG_TO_PNG_SCALE_KEYS):
+    if settings.docx_svg_to_png_scale is not None:
         controls.append("docxSvgToPngScale")
-    if metadata_has_any(metadata, SVG_TO_PNG_DPI_KEYS):
+    if settings.docx_svg_to_png_dpi is not None:
         controls.append("docxSvgToPngDpi")
     return controls
 
 
-def validate_svg_to_png_controls(metadata: dict[str, Any]) -> None:
+def validate_svg_to_png_controls(settings: PmtSettings) -> None:
     """Reject ambiguous SVG rasterization controls before Pandoc runs."""
-    controls = configured_svg_to_png_controls(metadata)
+    controls = configured_svg_to_png_controls(settings)
     if len(controls) > 1:
         options = ", ".join(controls)
         raise ValueError(f"Only one of docxSvgToPngWidth, docxSvgToPngScale, docxSvgToPngDpi can be set; got: {options}")
 
 
-def requested_docx_svg_image_embedding(metadata: dict[str, Any]) -> bool:
+def requested_docx_svg_image_embedding(settings: PmtSettings) -> bool:
     """Return the raw SVG child-image embedding flag before PNG conversion overrides it."""
-    return metadata_bool(
-        metadata_first(
-            metadata,
-            DOCX_SVG_EMBED_IMAGE_KEYS,
-            True,
-        )
-    )
+    return settings.docx_embed_svg_images
 
 
-def should_convert_docx_svg_to_png(metadata: dict[str, Any]) -> bool:
+def should_convert_docx_svg_to_png(settings: PmtSettings) -> bool:
     """Return True when DOCX builds should rasterize all SVG images."""
-    return metadata_bool(
-        metadata_first(
-            metadata,
-            DOCX_SVG_TO_PNG_KEYS,
-            False,
-        )
-    )
+    return settings.docx_convert_svg_to_png
 
 
-def should_embed_docx_svg_images(metadata: dict[str, Any]) -> bool:
+def should_embed_docx_svg_images(settings: PmtSettings) -> bool:
     """Return True when DOCX builds should inline child images inside SVG files."""
-    if should_convert_docx_svg_to_png(metadata):
+    if should_convert_docx_svg_to_png(settings):
         return False
-    return requested_docx_svg_image_embedding(metadata)
+    return requested_docx_svg_image_embedding(settings)
 
 
 def python_filter_wrapper(filter_path: Path, name: str) -> Path:
@@ -206,12 +124,12 @@ def unique_resolved_dirs(candidates: list[Path]) -> list[Path]:
 
 def svg_embed_images_filter_env(
     base_dirs: list[Path],
-    metadata: dict[str, Any],
+    settings: PmtSettings,
     embed_images: bool | None = None,
 ) -> dict[str, str]:
     """Return environment settings consumed by the SVG child-image embedding filter."""
     if embed_images is None:
-        embed_images = should_embed_docx_svg_images(metadata)
+        embed_images = should_embed_docx_svg_images(settings)
     return {
         "PMT_SVG_EMBED_DIR": str(PMT_SVG_EMBED_CACHE_DIR.resolve()),
         "PMT_SVG_EMBED_BASE_DIRS": os.pathsep.join(str(path) for path in unique_resolved_dirs(base_dirs)),
@@ -222,25 +140,21 @@ def svg_embed_images_filter_env(
 
 def svg_to_png_filter_env(
     base_dirs: list[Path],
-    metadata: dict[str, Any],
+    settings: PmtSettings,
     convert_all: bool | None = None,
 ) -> dict[str, str]:
     """Return environment settings consumed by the SVG-to-PNG filter."""
     if convert_all is None:
-        convert_all = should_convert_docx_svg_to_png(metadata)
-    validate_svg_to_png_controls(metadata)
+        convert_all = should_convert_docx_svg_to_png(settings)
+    validate_svg_to_png_controls(settings)
     env = {
         "PMT_SVG_TO_PNG_DIR": str(PMT_SVG_PNG_CACHE_DIR.resolve()),
         "PMT_SVG_TO_PNG_BASE_DIRS": os.pathsep.join(str(path) for path in unique_resolved_dirs(base_dirs)),
-        "PMT_SVG_TO_PNG_DPI": str(
-            metadata_float(metadata, SVG_TO_PNG_DPI_KEYS, 300)
-        ),
-        "PMT_SVG_TO_PNG_SCALE": str(
-            metadata_float(metadata, SVG_TO_PNG_SCALE_KEYS, 1)
-        ),
+        "PMT_SVG_TO_PNG_DPI": str(settings.docx_svg_to_png_dpi or 300),
+        "PMT_SVG_TO_PNG_SCALE": str(settings.docx_svg_to_png_scale or 1),
         "PMT_SVG_TO_PNG_PMT_VERSION": runtime_cache_version(),
         "PMT_SVG_TO_PNG_CONVERT_ALL": "true" if convert_all else "false",
     }
-    if metadata_has_any(metadata, SVG_TO_PNG_WIDTH_KEYS):
-        env["PMT_SVG_TO_PNG_WIDTH"] = str(metadata_int(metadata, SVG_TO_PNG_WIDTH_KEYS))
+    if settings.docx_svg_to_png_width is not None:
+        env["PMT_SVG_TO_PNG_WIDTH"] = str(settings.docx_svg_to_png_width)
     return env

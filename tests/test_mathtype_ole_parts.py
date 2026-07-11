@@ -12,6 +12,7 @@ from pandoc_manuscript.mathtype import marked_docx
 from pandoc_manuscript.mathtype import docx_ole
 from pandoc_manuscript.mathtype import convert_marked_docx as convert_marked_docx_module
 from pandoc_manuscript.mathtype.ole_parts import decode_process_output
+from pandoc_manuscript.runtime.metadata import PmtSettings
 
 
 def test_missing_helper_is_not_built_during_conversion(monkeypatch, tmp_path) -> None:
@@ -652,10 +653,12 @@ def test_convert_marked_docx_passes_style_conversion_method(monkeypatch, tmp_pat
         tmp_path / "source.docx",
         tmp_path / "target.docx",
         tmp_path / "work",
-        metadata={
-            "mathtypeConversionMethod": "set-data",
-            "mathtypeSvgBackend": "typst",
-        },
+        pmt_settings=PmtSettings.model_validate(
+            {
+                "mathtypeConversionMethod": "set-data",
+                "mathtypeSvgBackend": "typst",
+            }
+        ),
     )
 
     assert replaced == 1

@@ -1,7 +1,7 @@
 This template converts Pandoc Markdown manuscripts to DOCX, with optional LaTeX source generation for advanced users.
 
 - Main file: `manuscript.md` — edit this to write the paper
-- Style file: `style.yml` — edit this for style-related metadata, including citation style, cross-reference wording/numbering, subfigure behavior, and DOCX body text settings
+- Style file: `style.yml` — keep PMT build settings at the top level and Pandoc/cross-reference defaults under `pandocMetadata`
 - Images: place in `images/` directory
 - References: `.bib` file specified in YAML header
 
@@ -9,7 +9,7 @@ For any syntax, formatting pattern, or writing fragment not covered in this file
 
 ## Style Metadata
 
-If the user wants to change style-related content, update `style.yml` rather than the YAML header in `manuscript.md`. The build loads `style.yml` first and then overlays the manuscript YAML metadata, so any field explicitly present in `manuscript.md` still takes precedence for that manuscript.
+If the user wants to change reusable style behavior, update `style.yml`. PMT-owned settings such as `mathtype`, `docxStyle`, and `docxPageMargins` stay at the top level. Pandoc, citeproc, and pandoc-crossref defaults belong under `pandocMetadata`. The YAML header in `manuscript.md` overrides only `pandocMetadata`, not PMT-owned settings.
 
 ## Pandoc Markdown Syntax
 
@@ -33,7 +33,7 @@ If the user wants to change style-related content, update `style.yml` rather tha
 - Alignment: `:--` left, `:--:` center, `--:` right
 - For advanced DOCX table formatting (cell merging, metadata), see README.md
 
-**Subfigures** (requires `subfigGrid: true` in `style.yml` or merged YAML metadata):
+**Subfigures** (requires `pandocMetadata.subfigGrid: true` in `style.yml` or `subfigGrid: true` in manuscript YAML):
 ```markdown
 <div id="fig:results">
 ![caption of a](a.png){#fig:a width=50%} # Only percent allowed in subfigure width
@@ -65,7 +65,8 @@ Write pseudocode as a one-column pipe table. Use bold control words such as `**f
 2. Download CSL file and save to `pandoc/` directory
 3. **Update `style.yml`**:
    ```yaml
-   csl: pandoc/csl-style-downloaded.csl
+   pandocMetadata:
+     csl: pandoc/csl-style-downloaded.csl
    ```
 ## Academic Writing Rules
 

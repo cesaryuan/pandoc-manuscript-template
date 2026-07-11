@@ -11,8 +11,8 @@ from docx import Document
 from docx.document import Document as DocumentObject
 from docx.shared import Cm, Inches, Mm, Pt
 
+from ..runtime.metadata import PmtSettings
 
-PAGE_MARGIN_METADATA_KEYS = ("docxPageMargins", "docx-page-margins", "docx_page_margins")
 MARGIN_SIDE_ALIASES = {
     "top": ("top",),
     "bottom": ("bottom",),
@@ -55,34 +55,19 @@ def parse_margin_length(value: Any, field_name: str):
     return Inches(amount)
 
 
-def get_page_margin_metadata(metadata: dict[str, Any]) -> tuple[dict[str, Any], str] | None:
-    """Return configured docxPageMargins metadata and the key that supplied it."""
-    for key in PAGE_MARGIN_METADATA_KEYS:
-        if key not in metadata:
-            continue
-        raw_margins = metadata[key]
-        if raw_margins is None:
-            return None
-        if not isinstance(raw_margins, dict):
-            raise ValueError(f"{key} metadata must be a mapping")
-        return raw_margins, key
-    return None
-
-
-def normalize_page_margins(metadata: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]] | None:
+def normalize_page_margins(settings: PmtSettings) -> tuple[dict[str, Any], dict[str, str]] | None:
     """Normalize docxPageMargins into section attributes without defaulting missing sides."""
-    metadata_item = get_page_margin_metadata(metadata)
-    if metadata_item is None:
+    raw_margins = settings.docx_page_margins
+    if raw_margins is None:
         return None
 
-    raw_margins, metadata_key = metadata_item
     margins: dict[str, Any] = {}
     display_values: dict[str, str] = {}
     for side, aliases in MARGIN_SIDE_ALIASES.items():
         value = first_present(raw_margins, aliases)
         if value is None:
             continue
-        margins[side] = parse_margin_length(value, f"{metadata_key}.{side}")
+        margins[side] = parse_margin_length(value, f"docxPageMargins.{side}")
         display_values[side] = str(value)
 
     return margins, display_values
@@ -104,9 +89,9 @@ def apply_page_margins(doc: DocumentObject, margins: dict[str, Any]) -> int:
     return updated
 
 
-def apply_page_margin_metadata(doc: DocumentObject, metadata: dict[str, Any]) -> dict[str, Any] | None:
-    """Apply docxPageMargins metadata to a DOCX document object."""
-    normalized = normalize_page_margins(metadata)
+def apply_page_margin_settings(doc: DocumentObject, settings: PmtSettings) -> dict[str, Any] | None:
+    """Apply typed DOCX page-margin settings to a document object."""
+    normalized = normalize_page_margins(settings)
     if normalized is None:
         return None
 
@@ -123,7 +108,7 @@ def apply_page_margin_metadata(doc: DocumentObject, metadata: dict[str, Any]) ->
 def write_reference_doc_with_page_margins(
     source_docx: Path,
     target_docx: Path,
-    metadata: dict[str, Any],
+    settings: PmtSettings,
 ) -> dict[str, Any] | None:
     """Copy a reference DOCX and apply docxPageMargins before Pandoc reads it.
 
@@ -131,7 +116,7 @@ def write_reference_doc_with_page_margins(
     so page margins must be present in the reference DOCX instead of applied
     after conversion.
     """
-    normalized = normalize_page_margins(metadata)
+    normalized = normalize_page_margins(settings)
     if normalized is None:
         return None
 

@@ -150,6 +150,10 @@ The output is scripted, reproducible, and version-controlled, but the source pro
 - [`template/manuscript.md`](template/manuscript.md): example manuscript content
 - [`AGENTS.md`](AGENTS.md): repository-specific guidance for coding agents
 
+In generated projects, `style.yml` keeps PMT-owned build settings at the top
+level and places metadata sent to Pandoc under `pandocMetadata`. Manuscript YAML
+overrides only the Pandoc metadata domain.
+
 ## When PMT Is a Good Fit
 
 PMT is especially useful if:

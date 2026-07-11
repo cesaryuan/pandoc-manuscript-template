@@ -9,27 +9,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from pandoc_manuscript.commands import build
 from pandoc_manuscript.commands.build_reply import output as reply_output
 from pandoc_manuscript.docx.page_margins import (
-    apply_page_margin_metadata,
+    apply_page_margin_settings,
     normalize_page_margins,
     write_reference_doc_with_page_margins,
 )
+from pandoc_manuscript.runtime.metadata import PmtSettings
 
 
-def test_apply_page_margin_metadata_updates_all_docx_sections() -> None:
+def test_apply_page_margin_settings_updates_all_docx_sections() -> None:
     """Apply docxPageMargins values to every generated DOCX section."""
     doc = Document()
     doc.add_section()
 
-    result = apply_page_margin_metadata(
+    result = apply_page_margin_settings(
         doc,
-        {
+        PmtSettings.model_validate({
             "docxPageMargins": {
                 "top": "2.54cm",
                 "bottom": "2.54cm",
                 "left": "3.17cm",
                 "right": "3.17cm",
             }
-        },
+        }),
     )
 
     assert result == {
@@ -50,7 +51,9 @@ def test_apply_page_margin_metadata_updates_all_docx_sections() -> None:
 
 def test_docx_page_margins_partial_config_leaves_other_sides_unset() -> None:
     """Do not invent margin defaults when only some sides are configured."""
-    normalized = normalize_page_margins({"docxPageMargins": {"top": "72pt"}})
+    normalized = normalize_page_margins(
+        PmtSettings.model_validate({"docxPageMargins": {"top": "72pt"}})
+    )
 
     assert normalized is not None
     margins, display_values = normalized
@@ -67,14 +70,14 @@ def test_write_reference_doc_with_page_margins_updates_copy(tmp_path: Path) -> N
     result = write_reference_doc_with_page_margins(
         source,
         target,
-        {
+        PmtSettings.model_validate({
             "docxPageMargins": {
                 "top": "2.54cm",
                 "bottom": "2.54cm",
                 "left": "3.17cm",
                 "right": "3.17cm",
             }
-        },
+        }),
     )
 
     assert result is not None
@@ -94,7 +97,11 @@ def test_build_reference_doc_args_uses_margin_adjusted_reference(tmp_path: Path,
     monkeypatch.setattr(build.SETTINGS, "reference_doc", str(source))
     monkeypatch.setattr(build.SETTINGS, "project_name", "paper")
 
-    args = build.docx_reference_doc_args({"docxPageMargins": {"left": "3.17cm", "right": "3.17cm"}})
+    args = build.docx_reference_doc_args(
+        PmtSettings.model_validate(
+            {"docxPageMargins": {"left": "3.17cm", "right": "3.17cm"}}
+        )
+    )
 
     assert args[0] == "--reference-doc"
     assert Path(args[1]).parts[:3] == (".pmt", "work", "reference-doc")
@@ -113,7 +120,9 @@ def test_reply_reference_doc_for_pandoc_uses_margin_adjusted_reference(tmp_path:
     reference = reply_output.reply_reference_doc_for_pandoc(
         source,
         output,
-        {"docxPageMargins": {"left": "3.17cm", "right": "3.17cm"}},
+        PmtSettings.model_validate(
+            {"docxPageMargins": {"left": "3.17cm", "right": "3.17cm"}}
+        ),
     )
 
     assert reference.parts[:4] == (".pmt", "work", "reply", "reference-doc")

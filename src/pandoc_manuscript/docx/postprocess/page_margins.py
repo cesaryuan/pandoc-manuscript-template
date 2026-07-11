@@ -6,15 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ...runtime.metadata import load_merged_metadata
-from ..page_margins import (
-    apply_page_margin_metadata,
-    apply_page_margins,
-    first_present,
-    get_page_margin_metadata,
-    normalize_page_margins,
-    parse_margin_length,
-)
+from ...runtime.metadata import load_pmt_settings_files
+from ..page_margins import apply_page_margin_settings
 from .common import open_docx, print_debug, print_debug_success, save_docx, validate_existing_file
 
 
@@ -32,8 +25,8 @@ def process_file(
     if md_file is None:
         return None
 
-    metadata = load_merged_metadata(md_file, metadata_files)
-    result = apply_page_margin_metadata(doc, metadata)
+    settings = load_pmt_settings_files(metadata_files)
+    result = apply_page_margin_settings(doc, settings)
     if result is None:
         print_debug("No docxPageMargins metadata found, skipping")
         return None

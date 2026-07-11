@@ -22,11 +22,10 @@ except ImportError as e:
     print("Install with: pip install python-docx pyyaml")
     sys.exit(1)
 
-from ...runtime.metadata import load_merged_metadata
+from ...runtime.metadata import PmtSettings, load_pmt_settings_files
 from .common import open_docx, print_debug, print_debug_success, print_warning, save_docx, validate_existing_file
 
 
-LINE_NUMBER_METADATA_KEYS = ("show-line-numbers", "showLineNumbers", "show_line_numbers")
 DEFAULT_RESTART = "continuous"
 RESTART_ALIASES = {
     "continuous": "continuous",
@@ -55,14 +54,6 @@ RESTART_ALIASES = {
     "按节重启": "newSection",
 }
 DISABLED_VALUES = {"false", "off", "no", "0", "none", "disable", "disabled", "不显示", "关闭", "无"}
-
-
-def first_present(mapping: dict[str, Any], keys: tuple[str, ...]) -> Any:
-    """Return the first configured metadata value for a group of alias keys."""
-    for key in keys:
-        if key in mapping:
-            return mapping[key]
-    return None
 
 
 def normalize_line_number_setting(value: Any) -> str | None:
@@ -96,9 +87,9 @@ def normalize_line_number_setting(value: Any) -> str | None:
     raise ValueError(f"Unsupported show-line-numbers value: {value!r}. Expected one of: {valid}")
 
 
-def line_number_setting_from_metadata(metadata: dict[str, Any]) -> str | None:
-    """Return the normalized line-number setting from merged metadata."""
-    return normalize_line_number_setting(first_present(metadata, LINE_NUMBER_METADATA_KEYS))
+def line_number_setting_from_settings(settings: PmtSettings) -> str | None:
+    """Return the normalized line-number mode from typed PMT settings."""
+    return normalize_line_number_setting(settings.show_line_numbers)
 
 
 def get_or_add_line_number_type(sect_pr):
@@ -128,9 +119,9 @@ def apply_line_numbers(doc: DocumentObject, restart: str) -> int:
     return updated
 
 
-def apply_line_number_metadata(doc: DocumentObject, metadata: dict[str, Any]) -> dict[str, Any] | None:
-    """Apply show-line-numbers metadata to a DOCX document."""
-    restart = line_number_setting_from_metadata(metadata)
+def apply_line_number_settings(doc: DocumentObject, settings: PmtSettings) -> dict[str, Any] | None:
+    """Apply typed line-number settings to a DOCX document."""
+    restart = line_number_setting_from_settings(settings)
     if restart is None:
         return None
     return {
@@ -153,8 +144,8 @@ def process_file(
     if md_file is None:
         return None
 
-    metadata = load_merged_metadata(md_file, metadata_files)
-    result = apply_line_number_metadata(doc, metadata)
+    settings = load_pmt_settings_files(metadata_files)
+    result = apply_line_number_settings(doc, settings)
     if result is None:
         print_debug("No enabled show-line-numbers metadata found, skipping")
         return None

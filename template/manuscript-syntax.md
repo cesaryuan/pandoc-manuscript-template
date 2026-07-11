@@ -502,18 +502,31 @@ formatting, citation, cross-reference, and DOCX style defaults here.
 
 ## Output Style Metadata
 
-Style-oriented metadata lives in `style.yml` so the manuscript YAML header can stay focused on the paper itself. During `pmt build docx`, `pmt build latex`, the build loads `style.yml` before `manuscript.md`; any field already defined in the manuscript YAML header overrides the style default.
+`style.yml` separates two configuration domains. Its top-level PMT settings control
+build behavior such as MathType conversion, SVG handling, page margins, line
+numbers, and DOCX styles. Metadata consumed by Pandoc, citeproc, or
+pandoc-crossref belongs under `pandocMetadata`, including CSL, reference titles,
+cross-reference labels and prefixes, numbering, and subfigure layout.
 
-If you want to change style-related content in a generated manuscript project, edit `style.yml`. The top-level keys cover the normal manuscript build, while the optional `reply:` section stores reply-specific overrides used by `pmt build-reply`. This includes the CSL citation style, reference title, citation-link behavior, cross-reference labels and prefixes, section/equation numbering behavior, subfigure layout options, and DOCX body text formatting.
+The YAML header in `manuscript.md` is manuscript/Pandoc metadata. It recursively
+overrides `style.yml:pandocMetadata`, but it does not override PMT-owned top-level
+settings. The optional `reply:` section can override both PMT settings and its own
+`reply.pandocMetadata` for `pmt build-reply`.
+
+Older projects may still keep Pandoc keys at the top level of `style.yml`. PMT
+continues to load those keys and prints a deprecation warning, but new and updated
+projects should move them under `pandocMetadata`. PMT never rewrites the source
+`style.yml`; generated Pandoc-only metadata is written under `.pmt/work/`.
 
 In reviewer replies, `pmt build-reply` resolves `@fig:...`, `@tbl:...`, `@sec:...`, and `@eq:...` references from the manuscript before writing the reply output. DOCX output is selected with an `.docx` output path. A labeled display equation copied into the reply, for example `$$ ... $$ {#eq:model}`, is assigned the matching manuscript equation number and rewritten to the DOCX tab-stop equation layout. If the label cannot be resolved from the manuscript, the original Markdown block is left unchanged so the missing label remains visible.
 
 TXT reply output is selected with an `.txt` output path, for example `pmt build-reply reply.md -o output/txt/reply.txt`. It keeps Markdown syntax for `**bold**`, `_emphasis_`, tables, and formulas, replaces images with `[Image: ...]` placeholders, resolves ``(Line `regex`)`` placeholders and manuscript cross-references, removes trailing `{#eq:...}`, `{#fig:...}`, and `{#tbl:...}` label attributes from formulas, images, and tables, strips reply-only `::: {custom-style="Reply to Reviewers"}` wrappers plus `<br>` tags, collapses the resulting extra blank lines to at most one blank line, and restores escaped ordered-list markers such as `1\.` to `1.`.
 
-Collapsed numeric citation ranges can use a journal-specific delimiter after Pandoc citeproc renders them. Set `citation-number-range-delimiter` in `style.yml`, or override it in the manuscript YAML header:
+Collapsed numeric citation ranges can use a journal-specific delimiter after Pandoc citeproc renders them. Set it under `pandocMetadata` in `style.yml`, or set it at the top level of the manuscript YAML header:
 
 ```yaml
-citation-number-range-delimiter: "-"  # [1-3]
+pandocMetadata:
+  citation-number-range-delimiter: "-"  # [1-3]
 ```
 
 To add a space after commas between non-consecutive numeric citations, edit the active CSL file's citation layout delimiter. For example, in `pandoc/csl/elsevier-vancouver.csl`, change:
@@ -556,7 +569,7 @@ During `pmt build docx`, self-contained SVG cache files are written under
 `.pmt/cache/svg-png/`. The original Markdown and SVG files are not rewritten.
 The PNG converter uses the Python `resvg-py` dependency.
 
-The DOCX post-processing step can update paragraph styles from the merged YAML metadata. Add style names under `docxStyle`; each key is matched against an existing DOCX style name, and missing styles are reported as warnings without stopping the build. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
+The DOCX post-processing step can update paragraph styles from PMT settings. Add style names under the top-level `docxStyle`; each key is matched against an existing DOCX style name, and missing styles are reported as warnings without stopping the build. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
 
 Set DOCX page margins under `docxPageMargins`. The values are written into the
 reference DOCX before Pandoc conversion, so Pandoc calculates image widths from
@@ -604,7 +617,8 @@ Common style fields under `docxStyle` include:
 2. **Download CSL file**: Save to `pandoc/` directory
 3. **Update `style.yml`**:
    ```yaml
-   csl: pandoc/your-style.csl
+   pandocMetadata:
+     csl: pandoc/your-style.csl
    ```
 
 Common styles included:

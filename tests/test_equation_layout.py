@@ -8,9 +8,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from pandoc_manuscript.commands import build
 from pandoc_manuscript.commands.build_reply import resolve as reply_resolve
 from pandoc_manuscript.docx.equation_layout import (
-    equation_tab_stops_from_metadata,
+    equation_tab_stops_from_settings,
     sync_eqn_block_template_with_page_margins,
 )
+from pandoc_manuscript.runtime.metadata import EffectiveMetadata, PmtSettings
 
 
 EQN_TEMPLATE = (
@@ -23,26 +24,23 @@ EQN_TEMPLATE = (
 
 def test_equation_tab_stops_follow_docx_page_margins() -> None:
     """Derive equation tab stops from the DOCX writable text width."""
-    metadata = {
+    settings = PmtSettings.model_validate({
         "docxPageMargins": {
             "left": "3.17cm",
             "right": "3.17cm",
         }
-    }
+    })
 
-    assert equation_tab_stops_from_metadata(metadata) == (4156, 8312)
+    assert equation_tab_stops_from_settings(settings) == (4156, 8312)
 
 
 def test_eqn_block_template_sync_updates_openxml_positions() -> None:
     """Rewrite center/right w:pos values while preserving the surrounding template."""
     synced, tab_stops = sync_eqn_block_template_with_page_margins(
-        {
-            "docxPageMargins": {
-                "left": "3.17cm",
-                "right": "3.17cm",
-            },
-            "eqnBlockTemplate": EQN_TEMPLATE,
-        }
+        {"eqnBlockTemplate": EQN_TEMPLATE},
+        PmtSettings.model_validate(
+            {"docxPageMargins": {"left": "3.17cm", "right": "3.17cm"}}
+        ),
     )
 
     assert tab_stops == (4156, 8312)
@@ -55,12 +53,14 @@ def test_build_writes_adjusted_docx_metadata_file(tmp_path, monkeypatch) -> None
     monkeypatch.chdir(tmp_path)
     Path("style.yml").write_text("placeholder: true\n", encoding="utf-8")
 
-    args = build.style_metadata_args(
-        {
-            "docxPageMargins": {"left": "3.17cm", "right": "3.17cm"},
-            "eqnBlockTemplate": EQN_TEMPLATE,
-        }
+    effective = EffectiveMetadata(
+        pmt_settings=PmtSettings.model_validate(
+            {"docxPageMargins": {"left": "3.17cm", "right": "3.17cm"}}
+        ),
+        pandoc_metadata={"eqnBlockTemplate": EQN_TEMPLATE},
+        has_yaml_header=True,
     )
+    args = build.style_metadata_args(effective, sync_docx_layout=True)
 
     metadata = yaml.safe_load(Path(args[1]).read_text(encoding="utf-8"))
     assert args[0] == "--metadata-file"
@@ -76,7 +76,10 @@ def test_reply_labeled_equation_tabs_follow_metadata_margins() -> None:
     resolved = reply_resolve.replace_labeled_equation_blocks(
         markdown,
         {"eq:sum": "Equation 7"},
-        {"docxPageMargins": {"left": "3.17cm", "right": "3.17cm"}},
+        {},
+        PmtSettings.model_validate(
+            {"docxPageMargins": {"left": "3.17cm", "right": "3.17cm"}}
+        ),
     )
 
     assert 'w:pos="4156"' in resolved

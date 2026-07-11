@@ -463,7 +463,7 @@ requires-dist = [
     { name = "lxml", specifier = ">=4.9.0" },
     { name = "panflute", specifier = ">=2.3.0" },
     { name = "py7zr", specifier = ">=0.22.0" },
-    { name = "pydantic-settings", specifier = ">=2.0.0" },
+    { name = "pydantic-settings", specifier = ">=2.2.1" },
     { name = "pymupdf", specifier = ">=1.26.0" },
     { name = "python-docx", specifier = ">=1.1.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },

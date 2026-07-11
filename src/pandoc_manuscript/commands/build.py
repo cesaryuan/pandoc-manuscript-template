@@ -8,18 +8,12 @@ import subprocess
 from pathlib import Path
 from typing import Any, Literal, Tuple
 
-import yaml
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, CliPositionalArg, CliSuppress, SettingsConfigDict
 
 from ..runtime.logging import log_error, log_info, log_success, log_warning, log_debug
 from ..mathtype.preflight import warn_mathtype_hat_style_order
-from ..runtime.metadata import (
-    MissingYamlFrontMatterError,
-    load_merged_metadata_with_status,
-    parse_yaml_file,
-    parse_yaml_header,
-)
+from ..runtime.metadata import EffectiveMetadata, PmtSettings, load_effective_metadata, write_pandoc_metadata
 from ..mathtype.convert_marked_docx import convert_marked_docx
 from ..mathtype.ole_parts import check_mathtype_availability, normalize_conversion_method
 from ..runtime.paths import (
@@ -295,34 +289,17 @@ def ensure_docx_target_writable(target: Path) -> None:
         raise
 
 
-def load_build_metadata() -> dict[str, Any]:
-    """Load style defaults plus manuscript metadata for build-time feature flags."""
-    metadata_files = style_metadata_files()
-    metadata, has_yaml_header = load_merged_metadata_with_status(
+def load_build_metadata() -> EffectiveMetadata:
+    """Load separated PMT settings and effective Pandoc metadata once."""
+    effective = load_effective_metadata(
         SETTINGS.manuscript_file,
-        metadata_files,
+        SETTINGS.style_file if should_use_style_metadata_file() else None,
         allow_missing_header=True,
     )
-    if not has_yaml_header:
+    if not effective.has_yaml_header:
         # Reply-style documents may omit manuscript YAML; keep style.yml defaults.
         log_warning(f"[WARN] No YAML front matter found in {SETTINGS.manuscript_file}; using metadata files only")
-    return metadata
-
-
-def metadata_bool(value: Any) -> bool:
-    """Normalize YAML feature flags such as mathtype: true or mathtype: yes."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {'1', 'true', 'yes', 'on'}
-    if isinstance(value, (int, float)):
-        return bool(value)
-    return False
-
-
-def should_use_mathtype(metadata: dict[str, Any]) -> bool:
-    """Return True when merged metadata requests MathType DOCX equations."""
-    return metadata_bool(metadata.get('mathtype'))
+    return effective
 
 
 def docx_svg_to_png_filter_args() -> list[str]:
@@ -342,22 +319,22 @@ def docx_svg_base_dirs() -> list[Path]:
 
 
 def docx_svg_embed_images_filter_env(
-    metadata: dict[str, Any],
+    settings: PmtSettings,
     embed_images: bool | None = None,
 ) -> dict[str, str]:
     """Return environment settings consumed by the SVG child-image embedding filter."""
     return svg_filter_helpers.svg_embed_images_filter_env(
         docx_svg_base_dirs(),
-        metadata,
+        settings,
         embed_images=embed_images,
     )
 
 
-def docx_svg_to_png_filter_env(metadata: dict[str, Any], convert_all: bool | None = None) -> dict[str, str]:
+def docx_svg_to_png_filter_env(settings: PmtSettings, convert_all: bool | None = None) -> dict[str, str]:
     """Return environment settings consumed by the SVG-to-PNG Pandoc filter."""
     return svg_filter_helpers.svg_to_png_filter_env(
         docx_svg_base_dirs(),
-        metadata,
+        settings,
         convert_all=convert_all,
     )
 
@@ -403,26 +380,35 @@ def resolve_mathtype_build_enabled(requested: bool, conversion_method: object | 
     return False
 
 
-def run_mathtype_conversion(marked_docx: Path, target_docx: Path, metadata: dict[str, Any]) -> None:
+def run_mathtype_conversion(marked_docx: Path, target_docx: Path, pmt_settings: PmtSettings) -> None:
     """Convert a marked DOCX's OMML equations into MathType OLE equations."""
     log_info("\n[DOCX] Converting equations to MathType OLE objects...\n")
     convert_marked_docx(
         source=marked_docx,
         target=target_docx,
         work_dir=Path(SETTINGS.mathtype_work_dir) / SETTINGS.project_name,
-        metadata=metadata,
+        pmt_settings=pmt_settings,
     )
 
 
-def adjusted_docx_metadata_file(metadata: dict[str, Any]) -> Path:
-    """Write build metadata with equation tab stops synced to docxPageMargins."""
-    synced_metadata, tab_stops = sync_eqn_block_template_with_page_margins(metadata)
+def generated_pandoc_metadata_file(
+    effective: EffectiveMetadata,
+    *,
+    sync_docx_layout: bool,
+) -> Path:
+    """Write only Pandoc-facing metadata, optionally syncing DOCX equation tabs."""
+    metadata = effective.pandoc_metadata
+    tab_stops = None
+    if sync_docx_layout:
+        metadata, tab_stops = sync_eqn_block_template_with_page_margins(
+            metadata,
+            effective.pmt_settings,
+        )
     metadata_dir = PMT_WORK_DIR / "metadata"
-    metadata_dir.mkdir(parents=True, exist_ok=True)
-    metadata_file = metadata_dir / "style.docx.generated.yml"
-    metadata_file.write_text(
-        yaml.safe_dump(synced_metadata, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
+    suffix = "docx" if sync_docx_layout else "pandoc"
+    metadata_file = write_pandoc_metadata(
+        metadata,
+        metadata_dir / f"pandoc.{suffix}.generated.yml",
     )
     if tab_stops is not None:
         center_tab, right_tab = tab_stops
@@ -441,9 +427,10 @@ def default_docx_csl() -> Path:
 def run_pandoc(
     defaults_file: Path,
     output_file: Path,
+    effective: EffectiveMetadata,
     extra_args: list[str] | None = None,
     extra_env: dict[str, str] | None = None,
-    metadata: dict[str, Any] | None = None,
+    sync_docx_layout: bool = False,
 ) -> None:
     """Run Pandoc with original defaults so ${.} resolves beside that file."""
     extra_args = extra_args or []
@@ -451,8 +438,8 @@ def run_pandoc(
         pandoc_command(),
         '--defaults',
         str(defaults_file),
-        *style_metadata_args(metadata),
-        *csl_args(defaults_file),
+        *style_metadata_args(effective, sync_docx_layout=sync_docx_layout),
+        *csl_args(effective.pandoc_metadata),
         '--output',
         to_pandoc_path(output_file),
         *extra_args,
@@ -481,11 +468,11 @@ def generated_reference_doc_path() -> Path:
     return reference_dir / f"{SETTINGS.project_name}.reference.docx"
 
 
-def docx_reference_doc_args(metadata: dict[str, Any]) -> list[str]:
+def docx_reference_doc_args(settings: PmtSettings) -> list[str]:
     """Return the reference-doc argument, applying docxPageMargins before Pandoc."""
     source = active_reference_doc()
     target = generated_reference_doc_path()
-    result = write_reference_doc_with_page_margins(source, target, metadata)
+    result = write_reference_doc_with_page_margins(source, target, settings)
     if result is None:
         return reference_doc_args()
 
@@ -496,18 +483,20 @@ def docx_reference_doc_args(metadata: dict[str, Any]) -> list[str]:
     return ['--reference-doc', to_pandoc_path(target)]
 
 
-def style_metadata_args(metadata: dict[str, Any] | None = None) -> list[str]:
-    """Return Pandoc CLI args for project style metadata when style.yml exists."""
-    if metadata is not None and should_use_style_metadata_file():
-        return ["--metadata-file", to_pandoc_path(adjusted_docx_metadata_file(metadata))]
-    return [
-        arg
-        for metadata_file in style_metadata_files()
-        for arg in ('--metadata-file', metadata_file)
-    ]
+def style_metadata_args(
+    effective: EffectiveMetadata,
+    *,
+    sync_docx_layout: bool = False,
+) -> list[str]:
+    """Return a generated metadata file containing no PMT-owned settings."""
+    metadata_file = generated_pandoc_metadata_file(
+        effective,
+        sync_docx_layout=sync_docx_layout,
+    )
+    return ["--metadata-file", to_pandoc_path(metadata_file)]
 
 
-def csl_args(defaults_file: Path) -> list[str]:
+def csl_args(pandoc_metadata: dict[str, Any]) -> list[str]:
     """Return the effective --csl argument for the selected Pandoc defaults file.
 
     Pandoc 3.10 gives a defaults-file `csl` higher precedence than later
@@ -515,24 +504,10 @@ def csl_args(defaults_file: Path) -> list[str]:
     `pandoc-docx.yml` and inject it here so manuscript/style metadata can still
     override it.
     """
-    csl = project_metadata_csl()
+    csl = pandoc_metadata.get("csl")
     if csl:
         return ['--csl', str(csl)]
     return ['--csl', to_pandoc_path(default_docx_csl())]
-
-
-def project_metadata_csl() -> Any:
-    """Return CSL configured by style.yml or manuscript YAML, if present."""
-    csl: Any = None
-    for metadata_file in style_metadata_files():
-        csl = parse_yaml_file(metadata_file).get('csl', csl)
-
-    try:
-        csl = parse_yaml_header(SETTINGS.manuscript_file).get('csl', csl)
-    except MissingYamlFrontMatterError:
-        pass
-    return csl
-
 
 def build_docx(*, warn_hat_order: bool = True):
     """Generate DOCX file with optional post-processing."""
@@ -542,32 +517,33 @@ def build_docx(*, warn_hat_order: bool = True):
     ensure_output_parent(docx_file)
     ensure_docx_target_writable(docx_file)
     extra_args = []
-    metadata = load_build_metadata()
-    conversion_method = normalize_conversion_method(metadata.get("mathtypeConversionMethod"))
+    effective = load_build_metadata()
+    pmt_settings = effective.pmt_settings
+    conversion_method = normalize_conversion_method(pmt_settings.mathtype_conversion_method)
     use_mathtype = resolve_mathtype_build_enabled(
-        should_use_mathtype(metadata),
+        pmt_settings.mathtype,
         conversion_method,
     )
     if use_mathtype and warn_hat_order:
         warn_mathtype_hat_style_order(Path(SETTINGS.manuscript_file))
     pandoc_output = docx_file
     pandoc_env = {}
-    extra_args.extend(docx_reference_doc_args(metadata))
+    extra_args.extend(docx_reference_doc_args(pmt_settings))
     extra_args.extend(docx_metadata_filter_args())
 
-    embed_svg_images = should_embed_docx_svg_images(metadata)
-    convert_all_svg = should_convert_docx_svg_to_png(metadata)
-    if convert_all_svg and svg_filter_helpers.requested_docx_svg_image_embedding(metadata):
+    embed_svg_images = should_embed_docx_svg_images(pmt_settings)
+    convert_all_svg = should_convert_docx_svg_to_png(pmt_settings)
+    if convert_all_svg and svg_filter_helpers.requested_docx_svg_image_embedding(pmt_settings):
         log_info("[INFO] Skipping SVG child-image embedding because docxConvertSvgToPng is enabled")
     elif embed_svg_images:
         log_info("[INFO] Embedding linked child images inside SVG files for DOCX")
     extra_args.extend(docx_svg_embed_images_filter_args())
-    pandoc_env.update(docx_svg_embed_images_filter_env(metadata, embed_images=embed_svg_images))
+    pandoc_env.update(docx_svg_embed_images_filter_env(pmt_settings, embed_images=embed_svg_images))
 
     if convert_all_svg:
         log_info("[INFO] Converting referenced SVG images to PNG for DOCX")
     extra_args.extend(docx_svg_to_png_filter_args())
-    pandoc_env.update(docx_svg_to_png_filter_env(metadata, convert_all=convert_all_svg))
+    pandoc_env.update(docx_svg_to_png_filter_env(pmt_settings, convert_all=convert_all_svg))
 
     # Add filter for older Pandoc versions
     if should_use_mathbfit_filter():
@@ -582,9 +558,10 @@ def build_docx(*, warn_hat_order: bool = True):
     run_pandoc(
         resource_path('pandoc/pandoc-docx.yml'),
         pandoc_output,
+        effective,
         extra_args=extra_args,
         extra_env=pandoc_env,
-        metadata=metadata,
+        sync_docx_layout=True,
     )
 
     # Post-process DOCX if enabled
@@ -594,11 +571,15 @@ def build_docx(*, warn_hat_order: bool = True):
         # When MathType is enabled, post-process the marker DOCX before
         # replacing OMML. Several DOCX fixes detect equation layout tables from
         # OMML, which is gone after OLE conversion.
-        if not run_docx_postprocess(str(postprocess_target), metadata):
+        if not run_docx_postprocess(
+            str(postprocess_target),
+            pmt_settings=pmt_settings,
+            pandoc_metadata=effective.pandoc_metadata,
+        ):
             raise RuntimeError("DOCX post-processing failed")
 
     if use_mathtype:
-        run_mathtype_conversion(pandoc_output, docx_file, metadata)
+        run_mathtype_conversion(pandoc_output, docx_file, pmt_settings)
 
     # Final output validation should inspect the real shipped DOCX rather than
     # an intermediate pre-MathType file, so syntax residue cannot slip through.
@@ -617,7 +598,8 @@ def build_latex():
     ensure_output_parent(latex_file)
 
     # Run pandoc
-    run_pandoc(resource_path('pandoc/pandoc-latex.yml'), latex_file)
+    effective = load_build_metadata()
+    run_pandoc(resource_path('pandoc/pandoc-latex.yml'), latex_file, effective)
 
     log_success(f"\n[OK] LaTeX created: {latex_file}")
 
@@ -631,9 +613,11 @@ def build_json():
 
     # Reuse the DOCX defaults because they carry the normal crossref/citeproc
     # pipeline users most often need to inspect when debugging manuscript builds.
+    effective = load_build_metadata()
     run_pandoc(
         resource_path('pandoc/pandoc-docx.yml'),
         json_file,
+        effective,
         extra_args=['--to', 'json'],
     )
 

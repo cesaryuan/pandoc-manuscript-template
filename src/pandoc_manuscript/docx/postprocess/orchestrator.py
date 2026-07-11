@@ -12,7 +12,11 @@ This script calls individual processing scripts in sequence.
 
 Usage:
     from pandoc_manuscript.docx import postprocess
-    postprocess.postprocess_docx("path/to/file.docx", metadata)
+    postprocess.postprocess_docx(
+        "path/to/file.docx",
+        pmt_settings=pmt_settings,
+        pandoc_metadata=pandoc_metadata,
+    )
 """
 
 import argparse
@@ -22,6 +26,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ...runtime.logging import log_debug, log_info, log_success
+from ...runtime.metadata import PmtSettings
 
 try:
     from docx import Document
@@ -41,9 +46,9 @@ try:
     from .insert_author_info import insert_author_info_to_doc
     from .clear_subfigure_table_format import clear_subfigure_table_format
     from .format_equation_layout_tables import format_equation_layout_tables
-    from .docx_style import apply_docx_style_metadata, format_applied_style_summary
+    from .docx_style import apply_docx_style_settings, format_applied_style_summary
     from .inline_math_spacing import add_space_after_standalone_inline_math
-    from .line_numbers import apply_line_number_metadata
+    from .line_numbers import apply_line_number_settings
     from .where_paragraph_style import process_where_paragraph_styles
     from .reply_blue_italic_style import apply_reply_blue_italic_style
 except ImportError as e:
@@ -85,7 +90,9 @@ def log_skip(label: str, reason: str) -> None:
 
 def postprocess_docx(
     docx_path: str,
-    metadata: dict[str, Any] | None = None,
+    *,
+    pmt_settings: PmtSettings | None = None,
+    pandoc_metadata: dict[str, Any] | None = None,
     skip_author_info: bool = False,
     reply_style_formatting: bool = False,
 ) -> bool:
@@ -94,7 +101,8 @@ def postprocess_docx(
 
     Args:
         docx_path: Path to the DOCX file to process
-        metadata: Merged style and manuscript metadata from the build layer
+        pmt_settings: Typed PMT-owned DOCX and build settings
+        pandoc_metadata: Manuscript metadata such as authors and affiliations
         skip_author_info: Skip author insertion for non-manuscript outputs
         reply_style_formatting: Apply reply-only blue formatting
 
@@ -104,7 +112,8 @@ def postprocess_docx(
     # Validate inputs
     log_debug("[postprocess] Validating inputs...")
     docx_file = Path(docx_path)
-    metadata = metadata or {}
+    pmt_settings = pmt_settings or PmtSettings.model_validate({})
+    pandoc_metadata = pandoc_metadata or {}
 
     if not docx_file.exists():
         print_error(f"DOCX file not found: {docx_path}")
@@ -113,7 +122,10 @@ def postprocess_docx(
     docx_path_abs = docx_file.resolve()
     log_info("[postprocess] Starting DOCX post-processing pipeline")
     log_info(f"[postprocess] Target file: {docx_path_abs}")
-    log_debug(f"[postprocess] Metadata keys: {len(metadata)}")
+    log_debug(
+        f"[postprocess] PMT settings: {len(pmt_settings.model_fields_set)}, "
+        f"Pandoc metadata: {len(pandoc_metadata)}"
+    )
 
     try:
         # Open document (shared across all steps)
@@ -126,7 +138,7 @@ def postprocess_docx(
         else:
             def insert_author_info_step() -> None:
                 """Insert author metadata and log the number of inserted records."""
-                authors, affiliations, has_footnote = insert_author_info_to_doc(doc, metadata)
+                authors, affiliations, has_footnote = insert_author_info_to_doc(doc, pandoc_metadata)
                 if authors > 0:
                     print_debug_success(
                         f"Authors: {authors}, Affiliations: {affiliations}, "
@@ -139,7 +151,7 @@ def postprocess_docx(
 
         def apply_docx_style_step() -> None:
             """Apply merged YAML docxStyle metadata to configured DOCX paragraph styles."""
-            result = apply_docx_style_metadata(doc, metadata)
+            result = apply_docx_style_settings(doc, pmt_settings)
             if result is None:
                 print_warning("No docxStyle metadata found, skipping")
                 return
@@ -148,7 +160,7 @@ def postprocess_docx(
 
         def apply_line_number_step() -> None:
             """Apply merged YAML line-number metadata to all DOCX sections."""
-            result = apply_line_number_metadata(doc, metadata)
+            result = apply_line_number_settings(doc, pmt_settings)
             if result is None:
                 return
             print_debug_success(
@@ -270,13 +282,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  Prefer calling postprocess_docx(docx_path, metadata) from the build command.
-  For standalone debugging, pass a pre-merged metadata JSON file with --metadata-json.
+  Prefer calling postprocess_docx with typed PMT settings and Pandoc metadata.
+  For standalone debugging, pass the corresponding JSON files explicitly.
 
 Processing steps:
-  - Insert author information from merged metadata (if metadata provided)
-  - Apply DOCX paragraph style settings from merged metadata (if metadata provided)
-  - Apply line numbers from show-line-numbers metadata (if metadata provided)
+  - Insert author information from Pandoc metadata (if provided)
+  - Apply DOCX paragraph styles from PMT settings (if configured)
+  - Apply line numbers from PMT settings (if configured)
   - Merge table cells based on markers (!<! and !^!)
   - Clear formatting for tables above 'Image Caption' paragraphs
   - Convert table text style from 'Compact' to 'Table Text'
@@ -293,8 +305,12 @@ This script applies all post-processing steps in sequence.
     )
     parser.add_argument("docx_path", help="Path to the DOCX file to process")
     parser.add_argument(
-        "--metadata-json",
-        help="Path to a pre-merged metadata JSON file produced by the build layer",
+        "--pmt-settings-json",
+        help="Path to a JSON object containing PMT-owned settings",
+    )
+    parser.add_argument(
+        "--pandoc-metadata-json",
+        help="Path to a JSON object containing manuscript/Pandoc metadata",
     )
     parser.add_argument(
         "--skip-author-info",
@@ -308,16 +324,24 @@ This script applies all post-processing steps in sequence.
     )
 
     args = parser.parse_args()
-    metadata = None
-    if args.metadata_json:
-        with Path(args.metadata_json).open("r", encoding="utf-8") as f:
-            metadata = json.load(f)
-        if not isinstance(metadata, dict):
-            parser.error("--metadata-json must contain a JSON object")
+    def load_json_mapping(path: str | None, option: str) -> dict[str, Any] | None:
+        """Load one optional JSON mapping for standalone postprocess debugging."""
+        if path is None:
+            return None
+        with Path(path).open("r", encoding="utf-8") as file:
+            value = json.load(file)
+        if not isinstance(value, dict):
+            parser.error(f"{option} must contain a JSON object")
+        return value
+
+    raw_pmt_settings = load_json_mapping(args.pmt_settings_json, "--pmt-settings-json")
+    pmt_settings = PmtSettings.model_validate(raw_pmt_settings or {})
+    pandoc_metadata = load_json_mapping(args.pandoc_metadata_json, "--pandoc-metadata-json")
 
     success = postprocess_docx(
         args.docx_path,
-        metadata,
+        pmt_settings=pmt_settings,
+        pandoc_metadata=pandoc_metadata,
         skip_author_info=args.skip_author_info,
         reply_style_formatting=args.reply_style_formatting,
     )

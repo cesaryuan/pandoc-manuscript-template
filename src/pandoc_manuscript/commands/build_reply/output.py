@@ -8,9 +8,8 @@ import shutil
 import time
 import uuid
 from pathlib import Path
-from typing import Any
-
 from ...runtime.logging import log_info, log_success, log_warning
+from ...runtime.metadata import PmtSettings
 from ...runtime.paths import PMT_MATHTYPE_WORK_DIR, PMT_REPLY_PROBE_DIR, PMT_REPLY_WORK_DIR
 from ...runtime.resources import template_root
 from ...mathtype.convert_marked_docx import convert_marked_docx
@@ -37,17 +36,6 @@ from .settings import (
 
 
 REPLY_PROBE_DIR = PMT_REPLY_PROBE_DIR
-
-
-def metadata_bool(value: Any) -> bool:
-    """Normalize YAML feature flags such as mathtype: true or mathtype: yes."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    if isinstance(value, (int, float)):
-        return bool(value)
-    return False
 
 
 def resolve_mathtype_enabled(requested: bool, conversion_method: object | None = None) -> bool:
@@ -91,31 +79,31 @@ def reply_svg_base_dirs(reply: Path) -> list[Path]:
 
 def svg_embed_images_filter_env(
     reply: Path,
-    metadata: dict[str, Any],
+    settings: PmtSettings,
     embed_images: bool | None = None,
 ) -> dict[str, str]:
     """Return environment settings consumed by the reply SVG embedding filter."""
     return svg_filter_helpers.svg_embed_images_filter_env(
         reply_svg_base_dirs(reply),
-        metadata,
+        settings,
         embed_images=embed_images,
     )
 
 
 def svg_to_png_filter_env(
     reply: Path,
-    metadata: dict[str, Any],
+    settings: PmtSettings,
     convert_all: bool | None = None,
 ) -> dict[str, str]:
     """Return environment settings consumed by the reply SVG-to-PNG filter."""
     return svg_filter_helpers.svg_to_png_filter_env(
         reply_svg_base_dirs(reply),
-        metadata,
+        settings,
         convert_all=convert_all,
     )
 
 
-def run_mathtype_conversion(marked_docx: Path, target_docx: Path, metadata: dict[str, Any]) -> None:
+def run_mathtype_conversion(marked_docx: Path, target_docx: Path, pmt_settings: PmtSettings) -> None:
     """Convert a marked reply DOCX's OMML equations into MathType OLE equations."""
     if not extract_marked_equation_requests(marked_docx):
         log_info("[INFO] No MathType equation markers found; keeping Pandoc DOCX equations unchanged.")
@@ -128,7 +116,7 @@ def run_mathtype_conversion(marked_docx: Path, target_docx: Path, metadata: dict
         source=marked_docx,
         target=target_docx,
         work_dir=PMT_MATHTYPE_WORK_DIR / "reply" / target_docx.stem,
-        metadata=metadata,
+        pmt_settings=pmt_settings,
     )
 
 
@@ -183,10 +171,10 @@ def cleanup_resolved_reply_path(path: Path) -> None:
             log_warning(f"[WARN] Could not remove temporary reply file because it is still locked: {path}")
 
 
-def reply_reference_doc_for_pandoc(reference_doc: Path, output: Path, metadata: dict[str, Any]) -> Path:
+def reply_reference_doc_for_pandoc(reference_doc: Path, output: Path, pmt_settings: PmtSettings) -> Path:
     """Return a reference DOCX with docxPageMargins already applied for Pandoc."""
     target = PMT_REPLY_WORK_DIR / "reference-doc" / f"{output.stem}.reference.docx"
-    result = write_reference_doc_with_page_margins(reference_doc, target, metadata)
+    result = write_reference_doc_with_page_margins(reference_doc, target, pmt_settings)
     if result is None:
         return reference_doc
 
@@ -211,12 +199,13 @@ def build_reply_docx(
     """Build a reviewer-reply DOCX with manuscript references resolved first."""
     ensure_output_writable(output)
     reply_text = reply.read_text(encoding="utf-8")
-    flattened_style = reply_resolve.write_reply_style_metadata_file(style)
-    metadata = reply_resolve.load_reply_metadata(reply, flattened_style)
-    pandoc_reference_doc = reply_reference_doc_for_pandoc(reference_doc, output, metadata)
-    conversion_method = normalize_conversion_method(metadata.get("mathtypeConversionMethod"))
+    effective = reply_resolve.load_reply_metadata(reply, style)
+    pmt_settings = effective.pmt_settings
+    flattened_style = reply_resolve.write_reply_style_metadata_file(effective)
+    pandoc_reference_doc = reply_reference_doc_for_pandoc(reference_doc, output, pmt_settings)
+    conversion_method = normalize_conversion_method(pmt_settings.mathtype_conversion_method)
     use_mathtype = resolve_mathtype_enabled(
-        metadata_bool(metadata.get("mathtype")),
+        pmt_settings.mathtype,
         conversion_method,
     )
     if use_mathtype and warn_hat_order:
@@ -232,6 +221,7 @@ def build_reply_docx(
         manuscript,
         manuscript_line_source,
         flattened_style,
+        effective,
         from_format,
         format_labeled_equations=True,
     )
@@ -241,9 +231,9 @@ def build_reply_docx(
     temp_reply_path.write_text(resolved_text, encoding="utf-8")
 
     try:
-        embed_svg_images = should_embed_docx_svg_images(metadata)
-        convert_all_svg = should_convert_docx_svg_to_png(metadata)
-        if convert_all_svg and svg_filter_helpers.requested_docx_svg_image_embedding(metadata):
+        embed_svg_images = should_embed_docx_svg_images(pmt_settings)
+        convert_all_svg = should_convert_docx_svg_to_png(pmt_settings)
+        if convert_all_svg and svg_filter_helpers.requested_docx_svg_image_embedding(pmt_settings):
             log_info("[INFO] Skipping reply SVG child-image embedding because docxConvertSvgToPng is enabled")
         elif embed_svg_images:
             log_info("[INFO] Embedding linked child images inside reply SVG files for DOCX")
@@ -254,8 +244,8 @@ def build_reply_docx(
             *svg_to_png_filter_args(),
         ]
         svg_filter_env = {
-            **svg_embed_images_filter_env(reply, metadata, embed_images=embed_svg_images),
-            **svg_to_png_filter_env(reply, metadata, convert_all=convert_all_svg),
+            **svg_embed_images_filter_env(reply, pmt_settings, embed_images=embed_svg_images),
+            **svg_to_png_filter_env(reply, pmt_settings, convert_all=convert_all_svg),
         }
         if use_mathtype:
             svg_filter_env["PMT_ENABLE_MATHTYPE_MARKERS"] = "true"
@@ -270,6 +260,8 @@ def build_reply_docx(
             str(pandoc_reference_doc),
             "--resource-path",
             reply_resource_path(reply),
+            "--metadata-file",
+            str(flattened_style),
             *docx_metadata_filter_args(),
             *svg_filter_args,
         ]
@@ -278,14 +270,15 @@ def build_reply_docx(
         log_info("[INFO] Running reply DOCX post-processing...")
         if not postprocess_docx(
             str(pandoc_output),
-            metadata,
+            pmt_settings=pmt_settings,
+            pandoc_metadata=effective.pandoc_metadata,
             skip_author_info=True,
             reply_style_formatting=True,
         ):
             raise RuntimeError(f"Reply DOCX post-processing failed: {pandoc_output}")
 
         if use_mathtype:
-            run_mathtype_conversion(pandoc_output, output, metadata)
+            run_mathtype_conversion(pandoc_output, output, pmt_settings)
 
         syntax_findings = validate_final_docx_syntax(output)
         if syntax_findings:
@@ -307,12 +300,14 @@ def build_reply_txt(
     """Build a reviewer-reply TXT file with resolved manuscript placeholders."""
     ensure_output_writable(output)
     reply_text = reply.read_text(encoding="utf-8")
-    flattened_style = reply_resolve.write_reply_style_metadata_file(style)
+    effective = reply_resolve.load_reply_metadata(reply, style)
+    flattened_style = reply_resolve.write_reply_style_metadata_file(effective)
     resolved_text = reply_resolve.resolve_reply_markdown(
         reply_text,
         manuscript,
         manuscript_line_source,
         flattened_style,
+        effective,
         from_format,
         format_labeled_equations=False,
     )

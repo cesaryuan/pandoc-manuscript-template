@@ -8,11 +8,9 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from ...docx.equation_layout import sync_eqn_block_template_with_page_margins
 from ...runtime.logging import log_info, log_warning
-from ...runtime.metadata import load_merged_metadata_with_status, merge_metadata, parse_yaml_file
+from ...runtime.metadata import EffectiveMetadata, PmtSettings, load_effective_metadata, write_pandoc_metadata
 from ...runtime.paths import PMT_REPLY_PROBE_DIR
 from ..setup import pandoc_command, pandoc_tools_env
 from . import line_source as reply_line_source
@@ -68,44 +66,33 @@ def to_pandoc_path(path: Path) -> str:
     return path.as_posix()
 
 
-def load_reply_style_metadata(style: Path) -> dict[str, Any]:
-    """Load style.yml and apply its optional reply-specific metadata section."""
-    metadata = parse_yaml_file(style)
-    reply_metadata = metadata.pop("reply", None)
-    if reply_metadata is None:
-        return metadata
-    if not isinstance(reply_metadata, dict):
-        raise ValueError(f"The `reply` section in {style} must be a YAML mapping")
-    return merge_metadata(metadata, reply_metadata)
+def load_reply_metadata(reply: Path, style: Path) -> EffectiveMetadata:
+    """Load reply-specific PMT settings and effective Pandoc metadata once."""
+    return load_effective_metadata(
+        reply,
+        style,
+        allow_missing_header=True,
+        reply=True,
+    )
 
 
-def write_reply_style_metadata_file(style: Path) -> Path:
-    """Write flattened reply metadata for filters that need top-level keys."""
-    REPLY_PROBE_DIR.mkdir(parents=True, exist_ok=True)
-    metadata = load_reply_style_metadata(style)
-    metadata, tab_stops = sync_eqn_block_template_with_page_margins(metadata)
+def write_reply_style_metadata_file(effective: EffectiveMetadata) -> Path:
+    """Write reply Pandoc metadata without leaking PMT-owned settings."""
+    metadata, tab_stops = sync_eqn_block_template_with_page_margins(
+        effective.pandoc_metadata,
+        effective.pmt_settings,
+    )
     if tab_stops is not None:
         center_tab, right_tab = tab_stops
         log_info(
             "[INFO] Synced reply eqnBlockTemplate tab stops from docxPageMargins: "
             f"center={center_tab}, right={right_tab}"
         )
-    flattened_style = REPLY_PROBE_DIR / "style.reply.flat.yml"
-    flattened_style.write_text(
-        yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
+    flattened_style = write_pandoc_metadata(
+        metadata,
+        REPLY_PROBE_DIR / "pandoc.reply.generated.yml",
     )
     return flattened_style
-
-
-def load_reply_metadata(reply: Path, flattened_style: Path) -> dict[str, Any]:
-    """Load flattened reply style metadata, allowing reply markdown without YAML."""
-    metadata, _ = load_merged_metadata_with_status(
-        reply,
-        [flattened_style],
-        allow_missing_header=True,
-    )
-    return metadata
 
 
 def run_command(cmd: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -456,10 +443,14 @@ def raw_openxml_inline(xml: str) -> str:
     return f"`{xml}`{{=openxml}}"
 
 
-def equation_openxml_prefix_from_metadata(metadata: dict[str, Any]) -> str:
+def equation_openxml_prefix_from_metadata(
+    pandoc_metadata: dict[str, Any],
+    pmt_settings: PmtSettings | None = None,
+) -> str:
     """Return the reply equation OpenXML prefix aligned with current metadata."""
     synced_metadata, _ = sync_eqn_block_template_with_page_margins(
-        {**metadata, "eqnBlockTemplate": REPLY_EQUATION_OPENXML_PREFIX}
+        {**pandoc_metadata, "eqnBlockTemplate": REPLY_EQUATION_OPENXML_PREFIX},
+        pmt_settings or PmtSettings.model_validate({}),
     )
     template = synced_metadata.get("eqnBlockTemplate")
     return template if isinstance(template, str) else REPLY_EQUATION_OPENXML_PREFIX
@@ -468,11 +459,12 @@ def equation_openxml_prefix_from_metadata(metadata: dict[str, Any]) -> str:
 def replace_labeled_equation_blocks(
     markdown: str,
     reference_map: dict[str, str],
-    metadata: dict[str, Any] | None = None,
+    pandoc_metadata: dict[str, Any] | None = None,
+    pmt_settings: PmtSettings | None = None,
 ) -> str:
     """Render labeled reply equations with manuscript numbers and Word tab stops."""
     replacements = 0
-    openxml_prefix = equation_openxml_prefix_from_metadata(metadata or {})
+    openxml_prefix = equation_openxml_prefix_from_metadata(pandoc_metadata or {}, pmt_settings)
 
     def replace_match(match: re.Match[str]) -> str:
         """Return a tab-layout equation paragraph or keep unresolved syntax unchanged."""
@@ -610,6 +602,7 @@ def resolve_reply_markdown(
     manuscript: Path,
     manuscript_line_source: Path,
     flattened_style: Path,
+    effective: EffectiveMetadata,
     from_format: str,
     *,
     format_labeled_equations: bool,
@@ -624,10 +617,13 @@ def resolve_reply_markdown(
     reference_map = resolve_reference_map(manuscript, flattened_style, labels, from_format)
     citation_map = resolve_citation_map(manuscript, flattened_style, citations, from_format)
     citation_cluster_map = resolve_citation_cluster_map(manuscript, flattened_style, citation_clusters, from_format)
-    metadata = parse_yaml_file(flattened_style)
-
     resolved_text = reply_line_source.resolve_line_regexes(reply_text, manuscript_line_source)
     if format_labeled_equations:
-        resolved_text = replace_labeled_equation_blocks(resolved_text, reference_map, metadata)
+        resolved_text = replace_labeled_equation_blocks(
+            resolved_text,
+            reference_map,
+            effective.pandoc_metadata,
+            effective.pmt_settings,
+        )
     resolved_text = replace_references(resolved_text, reference_map)
     return replace_citations(resolved_text, citation_map, citation_cluster_map)

@@ -8,11 +8,10 @@ from typing import Any
 
 from docx.shared import Cm, Inches, Mm, Pt
 
+from ..runtime.metadata import PmtSettings
 
 DEFAULT_A4_PAGE_WIDTH_TWIPS = Mm(210).twips
 DEFAULT_REFERENCE_MARGIN_TWIPS = Inches(0.75).twips
-PAGE_MARGIN_METADATA_KEYS = ("docxPageMargins", "docx-page-margins", "docx_page_margins")
-PAGE_WIDTH_METADATA_KEYS = ("docxPageWidth", "docx-page-width", "docx_page_width")
 EQN_BLOCK_TEMPLATE_KEY = "eqnBlockTemplate"
 TAB_STOP_PATTERN_TEMPLATE = r'(<w:tab\b(?=[^>]*\bw:val="{val}")(?=[^>]*\bw:pos=")[^>]*\bw:pos=")\d+(")'
 
@@ -51,17 +50,17 @@ def parse_docx_length_twips(value: Any, field_name: str) -> int:
     return Inches(amount).twips
 
 
-def page_width_twips_from_metadata(metadata: dict[str, Any]) -> int:
+def page_width_twips_from_settings(settings: PmtSettings) -> int:
     """Return configured DOCX page width, defaulting to the template's A4 width."""
-    value = first_present(metadata, PAGE_WIDTH_METADATA_KEYS)
+    value = settings.docx_page_width
     if value is None:
         return DEFAULT_A4_PAGE_WIDTH_TWIPS
     return parse_docx_length_twips(value, "docxPageWidth")
 
 
-def margin_twips_from_metadata(metadata: dict[str, Any], side: str) -> int:
+def margin_twips_from_settings(settings: PmtSettings, side: str) -> int:
     """Return a horizontal DOCX margin, using the reference-doc default when absent."""
-    raw_margins = first_present(metadata, PAGE_MARGIN_METADATA_KEYS)
+    raw_margins = settings.docx_page_margins
     if raw_margins is None:
         return DEFAULT_REFERENCE_MARGIN_TWIPS
     if not isinstance(raw_margins, dict):
@@ -73,14 +72,14 @@ def margin_twips_from_metadata(metadata: dict[str, Any], side: str) -> int:
     return parse_docx_length_twips(value, f"docxPageMargins.{side}")
 
 
-def equation_tab_stops_from_metadata(metadata: dict[str, Any]) -> tuple[int, int] | None:
+def equation_tab_stops_from_settings(settings: PmtSettings) -> tuple[int, int] | None:
     """Return center/right tab stops when docxPageMargins should drive equations."""
-    if first_present(metadata, PAGE_MARGIN_METADATA_KEYS) is None:
+    if settings.docx_page_margins is None:
         return None
 
-    page_width = page_width_twips_from_metadata(metadata)
-    left_margin = margin_twips_from_metadata(metadata, "left")
-    right_margin = margin_twips_from_metadata(metadata, "right")
+    page_width = page_width_twips_from_settings(settings)
+    left_margin = margin_twips_from_settings(settings, "left")
+    right_margin = margin_twips_from_settings(settings, "right")
     right_tab = page_width - left_margin - right_margin
     if right_tab <= 0:
         raise ValueError("docxPageMargins left/right values leave no positive DOCX text width")
@@ -93,15 +92,18 @@ def replace_tab_stop_position(template: str, tab_value: str, position: int) -> s
     return pattern.sub(rf"\g<1>{position}\2", template)
 
 
-def sync_eqn_block_template_with_page_margins(metadata: dict[str, Any]) -> tuple[dict[str, Any], tuple[int, int] | None]:
-    """Return metadata with eqnBlockTemplate tab stops updated for docxPageMargins."""
-    tab_stops = equation_tab_stops_from_metadata(metadata)
-    template = metadata.get(EQN_BLOCK_TEMPLATE_KEY)
+def sync_eqn_block_template_with_page_margins(
+    pandoc_metadata: dict[str, Any],
+    pmt_settings: PmtSettings,
+) -> tuple[dict[str, Any], tuple[int, int] | None]:
+    """Sync Pandoc's equation template from the separately owned PMT margins."""
+    tab_stops = equation_tab_stops_from_settings(pmt_settings)
+    template = pandoc_metadata.get(EQN_BLOCK_TEMPLATE_KEY)
     if tab_stops is None or not isinstance(template, str) or "w:pos=" not in template:
-        return metadata, None
+        return pandoc_metadata, None
 
     center_tab, right_tab = tab_stops
-    synced_metadata = deepcopy(metadata)
+    synced_metadata = deepcopy(pandoc_metadata)
     synced_template = replace_tab_stop_position(template, "center", center_tab)
     synced_template = replace_tab_stop_position(synced_template, "right", right_tab)
     synced_metadata[EQN_BLOCK_TEMPLATE_KEY] = synced_template

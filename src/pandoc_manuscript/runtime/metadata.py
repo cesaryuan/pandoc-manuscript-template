@@ -1,47 +1,26 @@
-"""Shared helpers for reading and merging Pandoc YAML metadata."""
+"""Centralized loading and merging for PMT settings and Pandoc metadata."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Literal
 
 import yaml
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
+)
+
+from .logging import log_warning
 
 
 class MissingYamlFrontMatterError(ValueError):
     """Raised when a markdown file does not start with a YAML front matter block."""
-
-
-def parse_yaml_header(md_path: str | Path) -> dict[str, Any]:
-    """Parse YAML front matter from a markdown manuscript file."""
-    path = Path(md_path)
-    content = path.read_text(encoding='utf-8')
-    match = re.match(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
-    if not match:
-        raise MissingYamlFrontMatterError(f"No YAML front matter found in markdown file: {path}")
-
-    metadata = yaml.safe_load(match.group(1)) or {}
-    if not isinstance(metadata, dict):
-        raise ValueError("YAML front matter must be a mapping")
-    return metadata
-
-
-def parse_yaml_file(yaml_path: str | Path) -> dict[str, Any]:
-    """Parse a standalone YAML metadata file."""
-    metadata = yaml.safe_load(Path(yaml_path).read_text(encoding='utf-8')) or {}
-    if not isinstance(metadata, dict):
-        raise ValueError(f"YAML metadata file must be a mapping: {yaml_path}")
-    return metadata
-
-
-def load_metadata_files(metadata_files: list[str | Path] | None = None) -> dict[str, Any]:
-    """Load standalone metadata files and merge them in the given order."""
-    metadata: dict[str, Any] = {}
-    for metadata_file in metadata_files or []:
-        path = Path(metadata_file)
-        if not path.exists():
-            raise FileNotFoundError(f"Metadata file not found: {path}")
-        metadata = merge_metadata(metadata, parse_yaml_file(path))
-    return metadata
 
 
 def merge_metadata(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -56,13 +35,384 @@ def merge_metadata(base: dict[str, Any], override: dict[str, Any]) -> dict[str, 
     return merged
 
 
+PMT_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "mathtype": ("mathtype",),
+    "mathtypeConversionMethod": ("mathtypeConversionMethod", "mathtype-conversion-method", "mathtype_conversion_method"),
+    "mathtypeSvgBackend": ("mathtypeSvgBackend", "mathtype-svg-backend", "mathtype_svg_backend"),
+    "docxEmbedSvgImages": (
+        "docxEmbedSvgImages",
+        "docx-embed-svg-images",
+        "docx_embed_svg_images",
+        "embedSvgImages",
+        "embed-svg-images",
+    ),
+    "docxConvertSvgToPng": (
+        "docxConvertSvgToPng",
+        "docx-convert-svg-to-png",
+        "docx_convert_svg_to_png",
+        "convertSvgToPng",
+        "convert-svg-to-png",
+    ),
+    "docxSvgToPngWidth": ("docxSvgToPngWidth", "docx-svg-to-png-width", "docx_svg_to_png_width"),
+    "docxSvgToPngDpi": ("docxSvgToPngDpi", "docx-svg-to-png-dpi", "docx_svg_to_png_dpi"),
+    "docxSvgToPngScale": ("docxSvgToPngScale", "docx-svg-to-png-scale", "docx_svg_to_png_scale"),
+    "show-line-numbers": ("show-line-numbers", "showLineNumbers", "show_line_numbers"),
+    "docxPageMargins": ("docxPageMargins", "docx-page-margins", "docx_page_margins"),
+    "docxPageWidth": ("docxPageWidth", "docx-page-width", "docx_page_width"),
+    "docxStyle": ("docxStyle", "docx-style", "docx_style"),
+}
+LEGACY_BODY_TEXT_ALIASES = ("bodyText", "body-text", "body_text", "docxBodyText", "docx-body-text")
+PMT_ALIAS_TO_CANONICAL = {
+    alias: canonical
+    for canonical, aliases in PMT_FIELD_ALIASES.items()
+    for alias in aliases
+}
+
+
+def _split_style_mapping(
+    raw: dict[str, Any],
+    *,
+    source: Path,
+    section: str = "style.yml",
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
+    """Split one style mapping into PMT fields, Pandoc metadata, and reply overrides."""
+    pmt_values: dict[str, Any] = {}
+    legacy_pandoc: dict[str, Any] = {}
+    legacy_body_text: dict[str, Any] | None = None
+    explicit_pandoc = raw.get("pandocMetadata", {})
+    if not isinstance(explicit_pandoc, dict):
+        raise ValueError(f"`pandocMetadata` in {source} ({section}) must be a YAML mapping")
+
+    reply = raw.get("reply")
+    if reply is not None and not isinstance(reply, dict):
+        raise ValueError(f"`reply` in {source} ({section}) must be a YAML mapping")
+
+    for key, value in raw.items():
+        if key in {"pandocMetadata", "reply"}:
+            continue
+        canonical = PMT_ALIAS_TO_CANONICAL.get(key)
+        if key in LEGACY_BODY_TEXT_ALIASES:
+            if not isinstance(value, dict):
+                raise ValueError(f"`{key}` in {source} ({section}) must be a YAML mapping")
+            legacy_body_text = value
+            continue
+        if canonical is None:
+            legacy_pandoc[key] = value
+        else:
+            pmt_values[canonical] = value
+
+    if legacy_body_text is not None:
+        explicit_styles = pmt_values.get("docxStyle", {})
+        pmt_values["docxStyle"] = merge_metadata(
+            {"正文文本": legacy_body_text},
+            explicit_styles,
+        )
+
+    if legacy_pandoc:
+        keys = ", ".join(sorted(legacy_pandoc))
+        conflicts = sorted(set(legacy_pandoc) & set(explicit_pandoc))
+        conflict_note = ""
+        if conflicts:
+            conflict_note = f" Conflicts use pandocMetadata values: {', '.join(conflicts)}."
+        log_warning(
+            f"[WARN] Deprecated flat Pandoc metadata in {source} ({section}): {keys}. "
+            f"Move these keys under pandocMetadata.{conflict_note}"
+        )
+
+    pmt_values["pandocMetadata"] = merge_metadata(legacy_pandoc, explicit_pandoc)
+    pmt_values["reply"] = reply
+    return pmt_values, pmt_values["pandocMetadata"], reply
+
+
+class ReplySettings(BaseModel):
+    """Validated reply-specific overrides for both configuration domains."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pmt_overrides: dict[str, Any] = Field(default_factory=dict)
+    pandoc_metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, raw: dict[str, Any], source: Path) -> "ReplySettings":
+        """Split and validate one reply override mapping."""
+        values, pandoc_metadata, _ = _split_style_mapping(
+            raw,
+            source=source,
+            section="reply",
+        )
+        pmt_values = {
+            key: value
+            for key, value in values.items()
+            if key not in {"pandocMetadata", "reply"}
+        }
+        validated = PmtSettings.model_validate(pmt_values)
+        return cls(
+            pmt_overrides=validated.to_mapping(exclude_unset=True),
+            pandoc_metadata=pandoc_metadata,
+        )
+
+
+class PmtSettings(BaseSettings):
+    """Typed PMT-owned settings loaded from the top level of style.yml."""
+
+    model_config = SettingsConfigDict(extra="forbid", populate_by_name=True)
+
+    mathtype: bool = False
+    mathtype_conversion_method: str = Field(
+        default="auto",
+        validation_alias=AliasChoices("mathtypeConversionMethod", "mathtype-conversion-method", "mathtype_conversion_method"),
+        serialization_alias="mathtypeConversionMethod",
+    )
+    mathtype_svg_backend: Literal["ratex", "typst"] = Field(
+        default="typst",
+        validation_alias=AliasChoices("mathtypeSvgBackend", "mathtype-svg-backend", "mathtype_svg_backend"),
+        serialization_alias="mathtypeSvgBackend",
+    )
+    docx_embed_svg_images: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "docxEmbedSvgImages", "docx-embed-svg-images", "docx_embed_svg_images", "embedSvgImages", "embed-svg-images"
+        ),
+        serialization_alias="docxEmbedSvgImages",
+    )
+    docx_convert_svg_to_png: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "docxConvertSvgToPng", "docx-convert-svg-to-png", "docx_convert_svg_to_png", "convertSvgToPng", "convert-svg-to-png"
+        ),
+        serialization_alias="docxConvertSvgToPng",
+    )
+    docx_svg_to_png_width: int | None = Field(
+        default=None,
+        gt=0,
+        validation_alias=AliasChoices("docxSvgToPngWidth", "docx-svg-to-png-width", "docx_svg_to_png_width"),
+        serialization_alias="docxSvgToPngWidth",
+    )
+    docx_svg_to_png_dpi: float | None = Field(
+        default=None,
+        gt=0,
+        validation_alias=AliasChoices("docxSvgToPngDpi", "docx-svg-to-png-dpi", "docx_svg_to_png_dpi"),
+        serialization_alias="docxSvgToPngDpi",
+    )
+    docx_svg_to_png_scale: float | None = Field(
+        default=None,
+        gt=0,
+        validation_alias=AliasChoices("docxSvgToPngScale", "docx-svg-to-png-scale", "docx_svg_to_png_scale"),
+        serialization_alias="docxSvgToPngScale",
+    )
+    show_line_numbers: bool | str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("show-line-numbers", "showLineNumbers", "show_line_numbers"),
+        serialization_alias="show-line-numbers",
+    )
+    docx_page_margins: dict[str, str | int | float] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("docxPageMargins", "docx-page-margins", "docx_page_margins"),
+        serialization_alias="docxPageMargins",
+    )
+    docx_page_width: str | int | float | None = Field(
+        default=None,
+        validation_alias=AliasChoices("docxPageWidth", "docx-page-width", "docx_page_width"),
+        serialization_alias="docxPageWidth",
+    )
+    docx_style: dict[str, dict[str, Any]] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("docxStyle", "docx-style", "docx_style"),
+        serialization_alias="docxStyle",
+    )
+    pandoc_metadata: dict[str, Any] = Field(default_factory=dict, alias="pandocMetadata")
+    reply: ReplySettings | None = None
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Disable implicit sources because manuscript builds must be deterministic."""
+        return (init_settings,)
+
+    @field_validator("mathtype_conversion_method")
+    @classmethod
+    def validate_conversion_method(cls, value: str) -> str:
+        """Normalize supported MathType method aliases at the settings boundary."""
+        normalized = value.strip().casefold().replace("_", "-")
+        aliases = {
+            "rust": "rust",
+            "mathtype-rust": "rust",
+            "mtef": "rust",
+            "rust-sdk": "rust-sdk",
+            "sdk": "rust-sdk",
+            "sdk-xform-ole": "rust-sdk",
+            "set-data": "set-data",
+            "setdata": "set-data",
+            "auto": "auto",
+            "both": "both",
+        }
+        if normalized not in aliases:
+            supported = ", ".join(("rust", "rust-sdk", "set-data", "auto", "both"))
+            raise ValueError(f"unsupported MathType conversion method; expected one of: {supported}")
+        return aliases[normalized]
+
+    @model_validator(mode="after")
+    def validate_svg_size_control(self) -> "PmtSettings":
+        """Reject ambiguous global SVG rasterization size controls."""
+        configured = [
+            name
+            for name, value in (
+                ("docxSvgToPngWidth", self.docx_svg_to_png_width),
+                ("docxSvgToPngScale", self.docx_svg_to_png_scale),
+                ("docxSvgToPngDpi", self.docx_svg_to_png_dpi),
+            )
+            if value is not None
+        ]
+        if len(configured) > 1:
+            raise ValueError(
+                "Only one of docxSvgToPngWidth, docxSvgToPngScale, "
+                f"docxSvgToPngDpi can be set; got: {', '.join(configured)}"
+            )
+        return self
+
+    @classmethod
+    def load(cls, style_path: str | Path) -> "PmtSettings":
+        """Load one style file without enabling BaseSettings environment sources."""
+        path = Path(style_path)
+        try:
+            source = YamlConfigSettingsSource(cls, yaml_file=path, yaml_file_encoding="utf-8")
+            raw = source()
+            if not isinstance(raw, dict):
+                raise ValueError("YAML root must be a mapping")
+            pmt_values, _, reply = _split_style_mapping(raw, source=path)
+            pmt_values["reply"] = ReplySettings.from_mapping(reply, path) if reply is not None else None
+            return cls.model_validate(pmt_values)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid style settings in {path}: {exc}") from exc
+
+    def to_mapping(self, *, exclude_unset: bool = False) -> dict[str, Any]:
+        """Return canonical PMT fields for existing dictionary-based consumers."""
+        return self.model_dump(
+            by_alias=True,
+            exclude={"pandoc_metadata", "reply"},
+            exclude_none=True,
+            exclude_unset=exclude_unset,
+        )
+
+    def for_reply(self, source: str | Path = "style.yml") -> "PmtSettings":
+        """Return settings with the optional reply section applied recursively."""
+        if not self.reply:
+            return self.model_copy(deep=True)
+        base = self.to_mapping()
+        merged = merge_metadata(base, self.reply.pmt_overrides)
+        merged["pandocMetadata"] = merge_metadata(
+            self.pandoc_metadata,
+            self.reply.pandoc_metadata,
+        )
+        merged["reply"] = None
+        return type(self).model_validate(merged)
+
+
+@dataclass(frozen=True)
+class EffectiveMetadata:
+    """Keep PMT settings separate from the metadata supplied to Pandoc."""
+
+    pmt_settings: PmtSettings
+    pandoc_metadata: dict[str, Any]
+    has_yaml_header: bool
+
+
+def parse_yaml_header(md_path: str | Path) -> dict[str, Any]:
+    """Parse YAML front matter from a markdown manuscript file."""
+    path = Path(md_path)
+    content = path.read_text(encoding="utf-8")
+    match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
+    if not match:
+        raise MissingYamlFrontMatterError(f"No YAML front matter found in markdown file: {path}")
+    metadata = yaml.safe_load(match.group(1)) or {}
+    if not isinstance(metadata, dict):
+        raise ValueError(f"YAML front matter must be a mapping: {path}")
+    return metadata
+
+
+def parse_yaml_file(yaml_path: str | Path) -> dict[str, Any]:
+    """Parse a standalone YAML metadata file."""
+    path = Path(yaml_path)
+    metadata = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(metadata, dict):
+        raise ValueError(f"YAML metadata file must be a mapping: {path}")
+    return metadata
+
+
+def write_pandoc_metadata(metadata: dict[str, Any], output_path: str | Path) -> Path:
+    """Write a generated YAML file containing only Pandoc-facing metadata."""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    return path
+
+
+def load_effective_metadata(
+    manuscript_path: str | Path,
+    style_path: str | Path | None = "style.yml",
+    *,
+    allow_missing_header: bool = False,
+    reply: bool = False,
+) -> EffectiveMetadata:
+    """Load separated PMT settings and effective Pandoc metadata once."""
+    style = Path(style_path) if style_path is not None else None
+    settings = PmtSettings.load(style) if style is not None and style.exists() else PmtSettings.model_validate({})
+    if reply:
+        settings = settings.for_reply(style or "style.yml")
+    try:
+        manuscript_metadata = parse_yaml_header(manuscript_path)
+        has_header = True
+    except MissingYamlFrontMatterError:
+        if not allow_missing_header:
+            raise
+        manuscript_metadata = {}
+        has_header = False
+    return EffectiveMetadata(
+        pmt_settings=settings,
+        pandoc_metadata=merge_metadata(settings.pandoc_metadata, manuscript_metadata),
+        has_yaml_header=has_header,
+    )
+
+
+def load_pmt_settings_files(style_files: list[str | Path] | None = None) -> PmtSettings:
+    """Load and recursively overlay PMT settings from standalone style files."""
+    merged: dict[str, Any] = {}
+    for style_file in style_files or []:
+        path = Path(style_file)
+        if not path.exists():
+            raise FileNotFoundError(f"Style file not found: {path}")
+        settings = PmtSettings.load(path)
+        merged = merge_metadata(merged, settings.to_mapping(exclude_unset=True))
+    return PmtSettings.model_validate(merged)
+
+
+def load_metadata_files(metadata_files: list[str | Path] | None = None) -> dict[str, Any]:
+    """Load standalone metadata files and merge them in the given order."""
+    metadata: dict[str, Any] = {}
+    for metadata_file in metadata_files or []:
+        path = Path(metadata_file)
+        if not path.exists():
+            raise FileNotFoundError(f"Metadata file not found: {path}")
+        metadata = merge_metadata(metadata, parse_yaml_file(path))
+    return metadata
+
+
 def load_merged_metadata(
     md_path: str | Path,
     metadata_files: list[str | Path] | None = None,
     *,
     allow_missing_header: bool = False,
 ) -> dict[str, Any]:
-    """Load metadata files first, then overlay manuscript YAML metadata."""
+    """Compatibility wrapper for standalone tools that merge generic metadata files."""
     metadata, _ = load_merged_metadata_with_status(
         md_path,
         metadata_files,
@@ -77,12 +427,7 @@ def load_merged_metadata_with_status(
     *,
     allow_missing_header: bool = False,
 ) -> tuple[dict[str, Any], bool]:
-    """Load merged metadata and report whether markdown YAML was present.
-
-    Reviewer replies and a few post-processing paths can validly omit YAML
-    front matter, so callers can opt into metadata-file-only fallback without
-    repeating string-based exception checks.
-    """
+    """Compatibility wrapper returning generic merged metadata and header status."""
     metadata = load_metadata_files(metadata_files)
     try:
         return merge_metadata(metadata, parse_yaml_header(md_path)), True

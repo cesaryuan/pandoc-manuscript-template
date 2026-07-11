@@ -286,11 +286,6 @@ def test_build_reply_docx_uses_svg_filters(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr(reply_resolve, "write_reply_style_metadata_file", lambda _: style)
     monkeypatch.setattr(
-        reply_resolve,
-        "load_reply_metadata",
-        lambda *_: {"docxEmbedSvgImages": True, "docxConvertSvgToPng": False},
-    )
-    monkeypatch.setattr(
         reply_output,
         "resolve_mathtype_enabled",
         lambda requested, conversion_method=None: False,

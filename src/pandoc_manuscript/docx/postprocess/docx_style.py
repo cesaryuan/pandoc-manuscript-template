@@ -47,7 +47,6 @@ except ImportError as e:
     sys.exit(1)
 
 from .common import (
-    BODY_TEXT_STYLE_NAMES,
     get_or_add_child,
     open_docx,
     print_debug_success,
@@ -57,7 +56,7 @@ from .common import (
     validate_existing_file,
 )
 
-from ...runtime.metadata import load_merged_metadata
+from ...runtime.metadata import PmtSettings, load_pmt_settings_files
 
 
 ALIGNMENT_VALUES = {
@@ -119,25 +118,11 @@ for level in range(1, 10):
     BUILTIN_STYLE_NAME_ALIASES[f"标题 {level}"] = f"Heading {level}"
     BUILTIN_STYLE_NAME_ALIASES[f"目录{level}"] = f"TOC {level}"
     BUILTIN_STYLE_NAME_ALIASES[f"目录 {level}"] = f"TOC {level}"
-DOCX_STYLE_METADATA_KEYS = ("docxStyle", "docx-style", "docx_style")
-# Keep legacy aliases so existing manuscripts with bodyText metadata continue to build.
-BODY_TEXT_METADATA_KEYS = ("bodyText", "body-text", "body_text", "docxBodyText", "docx-body-text")
-LEGACY_BODY_TEXT_STYLE_NAME = "正文文本"
-
-
 def first_present(mapping: dict[str, Any], keys: tuple[str, ...]) -> Any:
     """Return the first present value from a mapping for a group of alias keys."""
     for key in keys:
         if key in mapping:
             return mapping[key]
-    return None
-
-
-def first_present_item(mapping: dict[str, Any], keys: tuple[str, ...]) -> tuple[str, Any] | None:
-    """Return the first present key/value pair from a mapping for alias-aware lookup."""
-    for key in keys:
-        if key in mapping:
-            return key, mapping[key]
     return None
 
 
@@ -301,26 +286,6 @@ def parse_alignment(value: Any, field_name: str):
     return ALIGNMENT_VALUES[normalized], normalized
 
 
-def get_docx_style_metadata(metadata: dict[str, Any]) -> tuple[dict[str, Any], str, bool] | None:
-    """Return preferred docxStyle metadata or legacy bodyText metadata mapped to 正文文本."""
-    docx_style_item = first_present_item(metadata, DOCX_STYLE_METADATA_KEYS)
-    if docx_style_item is not None:
-        docx_style_key, docx_style = docx_style_item
-        if not isinstance(docx_style, dict):
-            raise ValueError(f"{docx_style_key} metadata must be a mapping")
-        return docx_style, docx_style_key, False
-
-    legacy_item = first_present_item(metadata, BODY_TEXT_METADATA_KEYS)
-    if legacy_item is None:
-        return None
-
-    legacy_key, raw_settings = legacy_item
-    if not isinstance(raw_settings, dict):
-        raise ValueError(f"{legacy_key} metadata must be a mapping")
-    # Legacy bodyText always targeted the body paragraph style; expose it through the new style map.
-    return {LEGACY_BODY_TEXT_STYLE_NAME: raw_settings}, legacy_key, True
-
-
 def normalize_paragraph_style_settings(
     raw_settings: dict[str, Any],
     field_prefix: str,
@@ -412,13 +377,13 @@ def normalize_paragraph_style_settings(
     return normalized
 
 
-def normalize_docx_style_settings(metadata: dict[str, Any]) -> list[dict[str, Any]] | None:
+def normalize_docx_style_settings(settings: PmtSettings) -> list[dict[str, Any]] | None:
     """Normalize all configured docxStyle entries into style application records."""
-    metadata_item = get_docx_style_metadata(metadata)
-    if metadata_item is None:
+    style_map = settings.docx_style
+    if style_map is None:
         return None
 
-    style_map, metadata_key, uses_legacy_body_text = metadata_item
+    metadata_key = "docxStyle"
     normalized_styles: list[dict[str, Any]] = []
     for style_name, raw_settings in style_map.items():
         field_prefix = f"{metadata_key}.{style_name}"
@@ -429,7 +394,7 @@ def normalize_docx_style_settings(metadata: dict[str, Any]) -> list[dict[str, An
         normalized_styles.append(
             {
                 "style_name": style_name,
-                "candidate_style_names": BODY_TEXT_STYLE_NAMES if uses_legacy_body_text else candidate_style_names_for(style_name),
+                "candidate_style_names": candidate_style_names_for(style_name),
                 **normalize_paragraph_style_settings(raw_settings, field_prefix),
             }
         )
@@ -549,9 +514,9 @@ def format_applied_style_summary(applied: dict[str, Any]) -> str:
     return f"Applied style '{applied['applied_style_name']}': {detail_text}"
 
 
-def apply_docx_style_metadata(doc: DocumentObject, metadata: dict[str, Any]) -> dict[str, Any] | None:
-    """Apply all paragraph style settings from already-loaded docxStyle metadata."""
-    normalized_styles = normalize_docx_style_settings(metadata)
+def apply_docx_style_settings(doc: DocumentObject, settings: PmtSettings) -> dict[str, Any] | None:
+    """Apply all paragraph styles configured in typed PMT settings."""
+    normalized_styles = normalize_docx_style_settings(settings)
     if normalized_styles is None:
         return None
 
@@ -584,8 +549,8 @@ def process_file(
     if md_file is None:
         return None
 
-    metadata = load_merged_metadata(md_file, metadata_files)
-    result = apply_docx_style_metadata(doc, metadata)
+    settings = load_pmt_settings_files(metadata_files)
+    result = apply_docx_style_settings(doc, settings)
     if result is None:
         print_warning("No docxStyle metadata found, skipping")
         return None

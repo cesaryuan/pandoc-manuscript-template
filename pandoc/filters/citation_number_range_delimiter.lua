@@ -106,7 +106,7 @@ local function rewrite_citation_ranges(inlines)
 end
 
 function Pandoc(doc)
-  -- Manuscript YAML overrides style.yml through the build script's metadata merge.
+  -- Manuscript YAML overrides style.yml:pandocMetadata in the build layer.
   delimiter = metadata_string(doc.meta["citation-number-range-delimiter"])
   if delimiter == nil then
     return nil

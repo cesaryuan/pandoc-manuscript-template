@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from pandoc_manuscript.commands import build, build_reply as reply_build
 from pandoc_manuscript.mathtype import ole_parts
 from pandoc_manuscript.runtime import resources
+from pandoc_manuscript.runtime.metadata import PmtSettings
 from pandoc_manuscript.runtime.paths import (
     PMT_CACHE_DIR,
     PMT_DIR,
@@ -37,7 +38,7 @@ def test_svg_to_png_cache_uses_pmt_cache(monkeypatch) -> None:
     """Route SVG rasterization artifacts away from final output directories."""
     monkeypatch.setattr(build.SETTINGS, "manuscript_file", "manuscript.md")
 
-    env = build.docx_svg_to_png_filter_env({})
+    env = build.docx_svg_to_png_filter_env(PmtSettings.model_validate({}))
 
     assert Path(env["PMT_SVG_TO_PNG_DIR"]) == (Path.cwd() / PMT_CACHE_DIR / "svg-png").resolve()
     assert env["PMT_SVG_TO_PNG_CONVERT_ALL"] == "false"
@@ -47,7 +48,7 @@ def test_svg_embed_cache_uses_pmt_cache(monkeypatch) -> None:
     """Route self-contained SVG cache files away from final output directories."""
     monkeypatch.setattr(build.SETTINGS, "manuscript_file", "manuscript.md")
 
-    env = build.docx_svg_embed_images_filter_env({})
+    env = build.docx_svg_embed_images_filter_env(PmtSettings.model_validate({}))
 
     assert Path(env["PMT_SVG_EMBED_DIR"]) == (Path.cwd() / PMT_SVG_EMBED_CACHE_DIR).resolve()
     assert env["PMT_SVG_EMBED_IMAGES"] == "true"
@@ -57,7 +58,9 @@ def test_svg_embed_env_keeps_global_embedding_switch(monkeypatch) -> None:
     """Pass the global SVG child-image embedding switch to the DOCX filter."""
     monkeypatch.setattr(build.SETTINGS, "manuscript_file", "manuscript.md")
 
-    env = build.docx_svg_embed_images_filter_env({"docxEmbedSvgImages": True})
+    env = build.docx_svg_embed_images_filter_env(
+        PmtSettings.model_validate({"docxEmbedSvgImages": True})
+    )
 
     assert env["PMT_SVG_EMBED_IMAGES"] == "true"
 
@@ -67,7 +70,9 @@ def test_svg_embed_env_disables_embedding_when_global_png_conversion_is_enabled(
     monkeypatch.setattr(build.SETTINGS, "manuscript_file", "manuscript.md")
 
     env = build.docx_svg_embed_images_filter_env(
-        {"docxEmbedSvgImages": True, "docxConvertSvgToPng": True}
+        PmtSettings.model_validate(
+            {"docxEmbedSvgImages": True, "docxConvertSvgToPng": True}
+        )
     )
 
     assert env["PMT_SVG_EMBED_IMAGES"] == "false"
@@ -77,7 +82,10 @@ def test_reply_svg_embed_env_uses_shared_cache(tmp_path) -> None:
     """Route reply self-contained SVG cache files through the shared pmt cache."""
     reply = tmp_path / "reply.md"
 
-    env = reply_build.svg_embed_images_filter_env(reply, {"docxEmbedSvgImages": True})
+    env = reply_build.svg_embed_images_filter_env(
+        reply,
+        PmtSettings.model_validate({"docxEmbedSvgImages": True}),
+    )
 
     assert Path(env["PMT_SVG_EMBED_DIR"]) == (Path.cwd() / PMT_SVG_EMBED_CACHE_DIR).resolve()
     assert env["PMT_SVG_EMBED_IMAGES"] == "true"
@@ -88,7 +96,10 @@ def test_reply_svg_to_png_env_uses_shared_cache(tmp_path) -> None:
     """Route reply SVG rasterization cache files through the shared pmt cache."""
     reply = tmp_path / "reply.md"
 
-    env = reply_build.svg_to_png_filter_env(reply, {"docxConvertSvgToPng": True})
+    env = reply_build.svg_to_png_filter_env(
+        reply,
+        PmtSettings.model_validate({"docxConvertSvgToPng": True}),
+    )
 
     assert Path(env["PMT_SVG_TO_PNG_DIR"]) == (Path.cwd() / PMT_SVG_PNG_CACHE_DIR).resolve()
     assert env["PMT_SVG_TO_PNG_CONVERT_ALL"] == "true"
@@ -99,7 +110,9 @@ def test_svg_to_png_env_keeps_global_conversion_switch(monkeypatch) -> None:
     """Pass the global SVG rasterization switch to the shared DOCX filter."""
     monkeypatch.setattr(build.SETTINGS, "manuscript_file", "manuscript.md")
 
-    env = build.docx_svg_to_png_filter_env({"docxConvertSvgToPng": True})
+    env = build.docx_svg_to_png_filter_env(
+        PmtSettings.model_validate({"docxConvertSvgToPng": True})
+    )
 
     assert env["PMT_SVG_TO_PNG_CONVERT_ALL"] == "true"
 
@@ -108,7 +121,9 @@ def test_svg_to_png_env_passes_width_control(monkeypatch) -> None:
     """Pass the optional SVG-to-PNG output width to the shared DOCX filter."""
     monkeypatch.setattr(build.SETTINGS, "manuscript_file", "manuscript.md")
 
-    env = build.docx_svg_to_png_filter_env({"docxSvgToPngWidth": 1600})
+    env = build.docx_svg_to_png_filter_env(
+        PmtSettings.model_validate({"docxSvgToPngWidth": 1600})
+    )
 
     assert env["PMT_SVG_TO_PNG_WIDTH"] == "1600"
 
@@ -126,7 +141,7 @@ def test_svg_to_png_size_controls_are_mutually_exclusive(monkeypatch, metadata: 
     monkeypatch.setattr(build.SETTINGS, "manuscript_file", "manuscript.md")
 
     with pytest.raises(ValueError, match="Only one of docxSvgToPngWidth"):
-        build.docx_svg_to_png_filter_env(metadata)
+        PmtSettings.model_validate(metadata)
 
 
 def test_python_filter_wrapper_uses_pmt_work_dir(monkeypatch, tmp_path) -> None:

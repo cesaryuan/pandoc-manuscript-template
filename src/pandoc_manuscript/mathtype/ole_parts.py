@@ -60,8 +60,8 @@ MathTypeSingleConversionMethod = Literal["rust", "rust-sdk", "set-data"]
 MathTypeConversionMethod = Literal["rust", "rust-sdk", "set-data", "auto", "both"]
 MathTypeSvgBackend = Literal["ratex", "typst"]
 MathTypeMathStyle = Literal["inline", "display"]
-DEFAULT_MATHTYPE_CONVERSION_METHOD: MathTypeConversionMethod = "rust"
-DEFAULT_MATHTYPE_SVG_BACKEND: MathTypeSvgBackend = "ratex"
+DEFAULT_MATHTYPE_CONVERSION_METHOD: MathTypeConversionMethod = "auto"
+DEFAULT_MATHTYPE_SVG_BACKEND: MathTypeSvgBackend = "typst"
 
 
 def source_tree_path(path: str | Path) -> Path | None:

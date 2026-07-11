@@ -9,7 +9,7 @@ citation-number-range-delimiter: "–"
 
 # 设置为 true，可在构建期间将 DOCX 公式转换为 MathType OLE 对象。
 # 默认保持为 false，以便新初始化的项目无需配置本地 MathType/OLE 转换环境即可构建。
-mathtype: true
+mathtype: false
 # MathType 转换后端：rust、rust-sdk、set-data、auto 或 both。
 # rust：跨平台 LaTeX -> mathtype-rust OLE/MTEF + latex2wmf WMF/JSON。
 # rust-sdk：mathtype-rust OLE/MTEF + MathType SDK 辅助程序 WMF/JSON（Windows）。
@@ -31,7 +31,7 @@ docxEmbedSvgImages: true
 # 如果只需栅格化单个 SVG，请为该图像设置 `{to-png=true}`。
 # 可再为该图像添加 `to-png-scale=2`，以覆盖全局 PNG 缩放比例。
 docxConvertSvgToPng: false
-# 以下 SVG 转 PNG 尺寸控制选项最多只能启用一个。
+# 以下 SVG 转 PNG 尺寸控制选项最多只能启用一个，建议都不启用。
 # docxSvgToPngWidth: 1600
 # docxSvgToPngDpi: 300
 # docxSvgToPngScale: 1

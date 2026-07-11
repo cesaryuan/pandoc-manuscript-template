@@ -460,7 +460,7 @@ def test_generate_cached_equation_parts_auto_uses_resolved_order(monkeypatch, tm
 
 def test_normalize_conversion_method_accepts_style_aliases() -> None:
     """Normalize user-facing style metadata values to conversion backends."""
-    assert ole_parts.normalize_conversion_method(None) == "rust"
+    assert ole_parts.normalize_conversion_method(None) == "auto"
     assert ole_parts.normalize_conversion_method("mathtype-rust") == "rust"
     assert ole_parts.normalize_conversion_method("rust-sdk") == "rust-sdk"
     assert ole_parts.normalize_conversion_method("sdk-xform-ole") == "rust-sdk"
@@ -471,7 +471,7 @@ def test_normalize_conversion_method_accepts_style_aliases() -> None:
 
 def test_normalize_svg_backend_accepts_documented_values() -> None:
     """Normalize both cross-platform SVG renderer names from style metadata."""
-    assert ole_parts.normalize_svg_backend(None) == "ratex"
+    assert ole_parts.normalize_svg_backend(None) == "typst"
     assert ole_parts.normalize_svg_backend("RaTeX") == "ratex"
     assert ole_parts.normalize_svg_backend("typst-as-lib") == "typst"
 
@@ -671,7 +671,7 @@ def test_mathtype_cache_key_includes_rust_converter_and_method_digests() -> None
     changed_exe = ole_parts.mathtype_cache_key("x", None, None, "helper", "rust-src-a", "changed-rust-exe", "rust")
     changed_method = ole_parts.mathtype_cache_key("x", None, None, "helper", "rust-src-a", "rust-exe", "set-data")
     changed_svg_backend = ole_parts.mathtype_cache_key(
-        "x", None, None, "helper", "rust-src-a", "rust-exe", "rust", "typst"
+            "x", None, None, "helper", "rust-src-a", "rust-exe", "rust", "ratex"
     )
     changed_math_style = ole_parts.mathtype_cache_key(
         "x", None, None, "helper", "rust-src-a", "rust-exe", "rust", "ratex", "inline"

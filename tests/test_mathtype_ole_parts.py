@@ -325,15 +325,26 @@ def test_generate_uncached_equation_parts_uses_set_data_method(monkeypatch, tmp_
     assert calls == ["set-data"]
 
 
-def test_generate_uncached_equation_parts_auto_falls_back_to_rust(monkeypatch, tmp_path) -> None:
-    """Use mathtype-rust only after the set-data path fails in auto mode."""
+def test_generate_uncached_equation_parts_auto_uses_windows_fallback_order(monkeypatch, tmp_path) -> None:
+    """Try both MathType paths before Rust when MathType is usable on Windows."""
     calls = []
 
     def fail_set_data(*args, **kwargs):
         calls.append("set-data")
         raise RuntimeError("set-data failed")
 
+    def fail_rust_sdk(*args, **kwargs):
+        calls.append("rust-sdk")
+        raise RuntimeError("rust-sdk failed")
+
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(
+        ole_parts,
+        "check_mathtype_availability",
+        lambda method: ole_parts.MathTypeAvailability((), ()),
+    )
     monkeypatch.setattr(ole_parts, "make_ole_wmf_metadata_with_mathtype_set_data", fail_set_data)
+    monkeypatch.setattr(ole_parts, "make_ole_wmf_metadata_with_mathtype_rust_sdk", fail_rust_sdk)
     monkeypatch.setattr(
         ole_parts,
         "make_ole_wmf_metadata_with_mathtype_rust",
@@ -350,7 +361,101 @@ def test_generate_uncached_equation_parts_auto_falls_back_to_rust(monkeypatch, t
         conversion_method="auto",
     )
 
-    assert calls == ["set-data", "rust"]
+    assert calls == ["set-data", "rust-sdk", "rust"]
+
+
+def test_generate_uncached_equation_parts_auto_uses_rust_when_mathtype_unavailable(
+    monkeypatch, tmp_path
+) -> None:
+    """Skip both COM-backed methods when Windows MathType is unavailable."""
+    calls = []
+
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(
+        ole_parts,
+        "check_mathtype_availability",
+        lambda method: ole_parts.MathTypeAvailability(("missing",), ()),
+    )
+    monkeypatch.setattr(
+        ole_parts,
+        "make_ole_wmf_metadata_with_mathtype_rust",
+        lambda *args, **kwargs: calls.append("rust"),
+    )
+
+    ole_parts.generate_uncached_equation_parts(
+        1,
+        tmp_path / "eq.tex",
+        tmp_path / "eq.ole.bin",
+        tmp_path / "eq.wmf",
+        tmp_path / "eq.json",
+        tmp_path / "eq.mtef.bin",
+        conversion_method="auto",
+    )
+
+    assert calls == ["rust"]
+
+
+def test_generate_uncached_equation_parts_auto_uses_rust_on_non_windows(monkeypatch, tmp_path) -> None:
+    """Keep auto mode fully cross-platform by using Rust directly off Windows."""
+    calls = []
+
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(
+        ole_parts,
+        "check_mathtype_availability",
+        lambda method: pytest.fail("MathType availability must not be probed off Windows"),
+    )
+    monkeypatch.setattr(
+        ole_parts,
+        "make_ole_wmf_metadata_with_mathtype_rust",
+        lambda *args, **kwargs: calls.append("rust"),
+    )
+
+    ole_parts.generate_uncached_equation_parts(
+        1,
+        tmp_path / "eq.tex",
+        tmp_path / "eq.ole.bin",
+        tmp_path / "eq.wmf",
+        tmp_path / "eq.json",
+        tmp_path / "eq.mtef.bin",
+        conversion_method="auto",
+    )
+
+    assert calls == ["rust"]
+
+
+def test_generate_cached_equation_parts_auto_uses_resolved_order(monkeypatch, tmp_path) -> None:
+    """Apply the resolved set-data, rust-sdk, Rust order at the cache boundary."""
+    calls = []
+
+    def fake_generate(*args, **kwargs):
+        method = args[13]
+        calls.append(method)
+        if method != "rust":
+            raise RuntimeError(f"{method} failed")
+        return False
+
+    monkeypatch.setattr(ole_parts, "generate_cached_equation_parts_for_method", fake_generate)
+
+    hits, misses = ole_parts.generate_cached_equation_parts_auto(
+        1,
+        "x",
+        None,
+        None,
+        None,
+        None,
+        None,
+        tmp_path / "eq.tex",
+        tmp_path / "eq.ole.bin",
+        tmp_path / "eq.wmf",
+        tmp_path / "eq.json",
+        tmp_path / "eq.mtef.bin",
+        None,
+        ("set-data", "rust-sdk", "rust"),
+    )
+
+    assert calls == ["set-data", "rust-sdk", "rust"]
+    assert (hits, misses) == (0, 3)
 
 
 def test_normalize_conversion_method_accepts_style_aliases() -> None:
@@ -376,6 +481,7 @@ def test_generate_equation_parts_both_uses_independent_backend_caches(monkeypatc
     calls = []
     warnings = []
 
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
     monkeypatch.setattr(ole_parts, "iter_equation_requests_with_progress", lambda requests: enumerate(requests, start=1))
     monkeypatch.setattr(ole_parts, "mathtype_ole_mtef_sha256", lambda path: f"mtef:{Path(path).name}")
     monkeypatch.setattr(ole_parts, "json_result_sha256", lambda path: f"json:{Path(path).name}")
@@ -405,6 +511,14 @@ def test_generate_equation_parts_both_uses_independent_backend_caches(monkeypatc
     assert (tmp_path / "eq_001.ole.bin").read_bytes() == b"ole-set-data"
     assert (tmp_path / "eq_001.rust.ole.bin").read_bytes() == b"ole-rust"
     assert any("rust and set-data outputs differ" in message for message in warnings)
+
+
+def test_generate_equation_parts_both_rejects_non_windows(monkeypatch, tmp_path) -> None:
+    """Reject the Windows-only comparison mode at the conversion boundary."""
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Linux")
+
+    with pytest.raises(ValueError, match="only supported on Windows"):
+        ole_parts.generate_equation_parts([], tmp_path, conversion_method="both")
 
 
 def test_warn_if_conversion_outputs_differ_ignores_wmf(monkeypatch, tmp_path) -> None:

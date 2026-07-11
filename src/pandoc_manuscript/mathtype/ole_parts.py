@@ -390,6 +390,18 @@ def check_mathtype_availability(
     return MathTypeAvailability(tuple(reasons), tuple(details))
 
 
+def resolve_auto_conversion_methods() -> tuple[MathTypeSingleConversionMethod, ...]:
+    """Resolve the platform-specific backend order used by auto mode."""
+    if platform.system() != "Windows":
+        return ("rust",)
+
+    # Only try COM-backed methods when the lightweight preflight confirms that
+    # MathType and the helper are available; otherwise auto must remain portable.
+    if check_mathtype_availability("set-data").usable:
+        return ("set-data", "rust-sdk", "rust")
+    return ("rust",)
+
+
 def decode_process_output(data: bytes) -> str:
     """Decode helper output without corrupting localized Windows diagnostics.
 
@@ -942,54 +954,45 @@ def generate_cached_equation_parts_auto(
     metadata_path: Path,
     mtef_path: Path,
     prefs_file: Path | None,
+    methods: tuple[MathTypeSingleConversionMethod, ...],
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
     math_style: MathTypeMathStyle = "display",
 ) -> tuple[int, int]:
-    """Try the preferred set-data cache/generator first, then rust fallback."""
-    try:
-        hit = generate_cached_equation_parts_for_method(
-            index,
-            latex,
-            font_size_key,
-            prefs_digest,
-            helper_digest,
-            rust_source_digest,
-            rust_exe_digest,
-            input_path,
-            ole_path,
-            wmf_path,
-            metadata_path,
-            mtef_path,
-            prefs_file,
-            "set-data",
-            svg_backend,
-            math_style,
-        )
-        return int(hit), int(not hit)
-    except (RuntimeError, FileNotFoundError):
-        log_warning(
-            f"[mathtype] MathType TeX input auto path failed for equation {index}; "
-            "trying mathtype-rust fallback"
-        )
-        hit = generate_cached_equation_parts_for_method(
-            index,
-            latex,
-            font_size_key,
-            prefs_digest,
-            helper_digest,
-            rust_source_digest,
-            rust_exe_digest,
-            input_path,
-            ole_path,
-            wmf_path,
-            metadata_path,
-            mtef_path,
-            prefs_file,
-            "rust",
-            svg_backend,
-            math_style,
-        )
-        return int(hit), 1 + int(not hit)
+    """Try the resolved auto backends in order until one succeeds."""
+    misses = 0
+    for position, method in enumerate(methods):
+        try:
+            hit = generate_cached_equation_parts_for_method(
+                index,
+                latex,
+                font_size_key,
+                prefs_digest,
+                helper_digest,
+                rust_source_digest,
+                rust_exe_digest,
+                input_path,
+                ole_path,
+                wmf_path,
+                metadata_path,
+                mtef_path,
+                prefs_file,
+                method,
+                svg_backend,
+                math_style,
+            )
+            return int(hit), misses + int(not hit)
+        except (RuntimeError, FileNotFoundError) as exc:
+            misses += 1
+            if position + 1 == len(methods):
+                raise RuntimeError(
+                    f"All MathType auto backends failed for equation {index}: {', '.join(methods)}"
+                ) from exc
+            log_warning(
+                f"[mathtype] auto backend {method} failed for equation {index}; "
+                f"trying {methods[position + 1]}"
+            )
+
+    raise RuntimeError(f"No MathType auto backend is available for equation {index}")
 
 
 def warn_if_conversion_outputs_differ(
@@ -1249,37 +1252,34 @@ def generate_uncached_equation_parts(
         log_debug(f"[mathtype] MathType TeX input conversion succeeded for equation {index}")
         return
 
-    try:
-        make_ole_wmf_metadata_with_mathtype_set_data(
-            input_path,
-            ole_path,
-            wmf_path,
-            metadata_path,
-            prefs_file=prefs_file,
-        )
-        log_debug(f"[mathtype] MathType TeX input auto path succeeded for equation {index}")
-    except (RuntimeError, FileNotFoundError):
-        log_warning(
-            f"[mathtype] MathType TeX input auto path failed for equation {index}; "
-            "trying mathtype-rust fallback"
-        )
+    methods = resolve_auto_conversion_methods()
+    for position, method in enumerate(methods):
         try:
-            make_ole_wmf_metadata_with_mathtype_rust(
+            generate_uncached_equation_parts(
+                index,
                 input_path,
                 ole_path,
                 wmf_path,
                 metadata_path,
                 mtef_path,
                 prefs_file=prefs_file,
+                conversion_method=method,
                 svg_backend=svg_backend,
                 font_size_pt=font_size_pt,
                 math_style=math_style,
             )
-        except (RuntimeError, FileNotFoundError) as fallback_exc:
-            raise RuntimeError(
-                f"MathType TeX input auto path and mathtype-rust fallback both failed for equation {index}"
-            ) from fallback_exc
-        log_debug(f"[mathtype] mathtype-rust fallback succeeded for equation {index}")
+            return
+        except (RuntimeError, FileNotFoundError) as exc:
+            if position + 1 == len(methods):
+                raise RuntimeError(
+                    f"All MathType auto backends failed for equation {index}: {', '.join(methods)}"
+                ) from exc
+            log_warning(
+                f"[mathtype] auto backend {method} failed for equation {index}; "
+                f"trying {methods[position + 1]}"
+            )
+
+    raise RuntimeError(f"No MathType auto backend is available for equation {index}")
 
 
 def inspect_ole(path: Path) -> CompoundFile:
@@ -1315,6 +1315,9 @@ def generate_equation_parts(
     """Generate OLE bins and WMF previews for all marker-bound formulas."""
     conversion_method = normalize_conversion_method(conversion_method)
     svg_backend = normalize_svg_backend(svg_backend)
+    if conversion_method == "both" and platform.system() != "Windows":
+        raise ValueError("mathtypeConversionMethod=both is only supported on Windows")
+    auto_methods = resolve_auto_conversion_methods() if conversion_method == "auto" else ()
     output_dir.mkdir(parents=True, exist_ok=True)
     equations: list[GeneratedEquation] = []
     prefs_template = MATHTYPE_DEFAULT_PREFS_TEMPLATE if MATHTYPE_DEFAULT_PREFS_TEMPLATE.exists() else None
@@ -1322,9 +1325,12 @@ def generate_equation_parts(
     needs_variable_sizes = any(request.font_size_pt is not None for request in requests)
     cache_hits = 0
     cache_misses = 0
+    needs_helper = conversion_method in {"rust-sdk", "set-data", "both"} or any(
+        method in {"set-data", "rust-sdk"} for method in auto_methods
+    )
     helper_digest = (
         file_sha256(HELPER_EXE)
-        if conversion_method in {"rust-sdk", "set-data", "auto", "both"}
+        if needs_helper
         else None
     )
     rust_source_digest = native_source_digest_for_method(conversion_method)
@@ -1420,6 +1426,7 @@ def generate_equation_parts(
                 metadata_path,
                 mtef_path,
                 prefs_path,
+                auto_methods,
                 svg_backend,
                 math_style,
             )

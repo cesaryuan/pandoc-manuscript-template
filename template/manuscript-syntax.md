@@ -165,9 +165,11 @@ Set `mathtypeConversionMethod` in `style.yml` to choose the MathType backend:
 with LaTeX -> SVG -> `latex2wmf` -> WMF/JSON. `set-data` uses MathType's
 Windows-only TeX input OLE path. `rust-sdk` preserves the older two-stage path:
 `mathtype-rust` generates OLE/MTEF, then the prebuilt MathType helper runs
-`sdk-xform-ole` to generate WMF/JSON. `auto` tries `set-data` before falling
-back to `rust`. Use `both` on Windows to generate both backends, warn when their
-OLE/JSON results differ, and keep the `set-data` output in the DOCX. Runtime
+`sdk-xform-ole` to generate WMF/JSON. On Windows, when MathType is available,
+`auto` tries `set-data`, then `rust-sdk`, then `rust`; if MathType is unavailable,
+it uses `rust` directly. On non-Windows systems, `auto` always uses `rust`. The
+`both` mode is Windows-only: it generates the `rust` and `set-data` backends,
+warns when their OLE/JSON results differ, and keeps the `set-data` output in the DOCX. Runtime
 conversion never builds the .NET helper; Windows wheels contain its executable.
 
 Set `mathtypeSvgBackend` to choose how the cross-platform `rust` path produces

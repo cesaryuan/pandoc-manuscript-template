@@ -49,7 +49,15 @@ jobs:
         shell: pwsh
         run: |
           $wheel = (Get-ChildItem dist/*.whl | Select-Object -First 1).FullName
-          $entries = tar -tf $wheel
+          # Wheels are ZIP archives. GNU tar on Ubuntu cannot read them, unlike
+          # the BSD tar implementations currently available on macOS and Windows.
+          $entries = python -c @'
+          import sys
+          from zipfile import ZipFile
+
+          with ZipFile(sys.argv[1]) as wheel:
+              print("\n".join(wheel.namelist()))
+          '@ $wheel
           $suffix = if ($IsWindows) { '.exe' } else { '' }
           foreach ($name in @("mathtype-rust$suffix", "latex2wmf$suffix")) {
             if (-not ($entries -match "pandoc_manuscript/mathtype/bin/$name")) {

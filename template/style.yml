@@ -68,7 +68,7 @@ reply:
 # 可用值参考 https://pandoc.org/MANUAL.html https://lierdakil.github.io/pandoc-crossref/
 pandocMetadata:
   # Pandoc-crossref 交叉引用设置
-  ## 项目标题前缀格式：{figureTitle} {number}{titleDelim} {caption}
+  ## 题注前缀格式：{figureTitle} {number}{titleDelim} {caption}
   figureTitle: "Figure "
   tableTitle: "Table "
   titleDelim: ""

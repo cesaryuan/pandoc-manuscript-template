@@ -55,6 +55,10 @@ jobs:
           import sys
           from zipfile import ZipFile
 
+          # Windows CI can redirect Python output through cp1252 even when a
+          # wheel contains Unicode paths. Escaping keeps the archive listing
+          # readable by PowerShell without changing its ASCII runtime entries.
+          sys.stdout.reconfigure(errors="backslashreplace")
           with ZipFile(sys.argv[1]) as wheel:
               print("\n".join(wheel.namelist()))
           '@ $wheel

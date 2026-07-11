@@ -40,10 +40,12 @@ JSON 分别把 `baseline_source` 标记为 `ratex-layout-depth` 或
 下伸或侧向越界轮廓在 WMF 中被裁掉。
 
 MiTeX 的转换结果会调用 `mitexmathbf`、`mitexarray`、`mitexsqrt` 等其标准数学
-scope 中的辅助函数。`latex2wmf` 内嵌与 MiTeX 0.2.4 输出契约对应的精简数学 prelude，
-因此不需要在运行时下载 MiTeX Typst 包、WASM 插件或其他 `@preview` 包。纯间距公式
-（例如 `\quad`）没有可见路径，但仍会用 XITS 的隐藏 strut 取得真实字体高度，并
-生成保留排版宽度的合法空白 WMF。
+scope 中的辅助函数。`latex2wmf` 将 Rust 转换器和官方完整 Typst runtime scope 一并
+固定在 MiTeX `0.2.7`，官方 `prelude.typ` / `standard.typ` 通过内存文件解析器直接
+编入可执行文件。因此不需要在运行时下载 MiTeX Typst 包或执行重复的 WASM 转换器，
+也不会因只手写少数 helper 而遗漏 MiTeX 已支持的公式语法。纯间距公式（例如
+`\quad`）没有可见路径，但仍会用 XITS 的隐藏 strut 取得真实字体高度，并生成保留
+排版宽度的合法空白 WMF。
 这类结果的 JSON `baseline_source` 为 `typst-font-strut-baseline`；有可见内容的 Typst
 公式仍使用 `typst-frame-baseline+svg-ink-bounds`。
 
@@ -80,7 +82,9 @@ WMF/JSON 快照，Typst 目录不再包含错误快照。
 `snapshots/ratex-inline` 另外保留一个含分式的行内 RaTeX WMF/JSON 快照，用来检查
 `Text` 样式和 `Display` 样式之间的实际渲染差异。`snapshots/typst-inline` 保留
 XITS 斜体 `f` 的 WMF/JSON 快照，直接检查超出零 descent frame 的下伸 ink 没有被
-WMF 画布裁掉。
+WMF 画布裁掉。Typst 目录还包含 `mitex_scope_*` WMF/JSON 快照，覆盖样式切换、
+带 limits 的 operator、overbrace、颜色、boxed、smallmatrix 和 extensible arrow，
+避免完整 MiTeX scope 被误删或退化为少量手写 helper。
 
 普通回归测试：
 

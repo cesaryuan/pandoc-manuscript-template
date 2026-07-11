@@ -55,6 +55,13 @@ class CustomBuildHook(BuildHookInterface):
                 raise FileNotFoundError(f"XITS Math notice is missing: {source}")
             force_include[str(source)] = f"pandoc_manuscript/mathtype/bin/{notice}"
 
+        # MiTeX's Typst sources are compiled into latex2wmf rather than shipped
+        # as source files; retain the upstream Apache-2.0 notice beside it.
+        mitex_license = root / "scripts" / "latex2wmf" / "assets" / "mitex" / "MITEX-APACHE-2.0.txt"
+        if not mitex_license.exists():
+            raise FileNotFoundError(f"MiTeX license is missing: {mitex_license}")
+        force_include[str(mitex_license)] = "pandoc_manuscript/mathtype/bin/MITEX-APACHE-2.0.txt"
+
         # Native helpers make this a platform wheel even though the Python
         # package itself has no extension module or CPython ABI dependency.
         platform_tag = next(iter(sys_tags())).platform

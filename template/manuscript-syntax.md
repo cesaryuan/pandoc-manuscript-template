@@ -173,7 +173,9 @@ conversion never builds the .NET helper; Windows wheels contain its executable.
 Set `mathtypeSvgBackend` to choose how the cross-platform `rust` path produces
 formula SVG. `ratex` (the default) parses LaTeX directly, embeds glyph outlines,
 and reports its exact layout depth for Word baseline placement. `typst` converts
-LaTeX math to Typst with MiTeX, renders it with the bundled XITS Math font,
+LaTeX math with the pinned MiTeX 0.2.7 Rust converter and evaluates it against
+the matching complete official MiTeX Typst scope embedded in the executable.
+It renders the result with the bundled XITS Math font,
 reads the labelled formula frame's actual descent before page composition drops
 child baselines, and expands the transparent canvas to include glyph ink that
 overhangs that frame. Both backends reject SVG features outside the formula vector

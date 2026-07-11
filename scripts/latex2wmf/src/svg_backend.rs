@@ -15,6 +15,7 @@ const TYPST_MATH_FONT_NAME: &str = "XITS Math";
 const TYPST_BASELINE_SOURCE: &str = "typst-frame-baseline+svg-ink-bounds";
 const TYPST_STRUT_BASELINE_SOURCE: &str = "typst-font-strut-baseline";
 const XITS_MATH_FONT: &[u8] = include_bytes!("../assets/fonts/XITSMath-Regular.otf");
+// Keep the official MiTeX 0.2.7 runtime scope aligned with the pinned Rust converter.
 const MITEX_SCOPE_SOURCE: &str = include_str!("../assets/mitex/mod.typ");
 const MITEX_PRELUDE_SOURCE: &str = include_str!("../assets/mitex/prelude.typ");
 const MITEX_STANDARD_SOURCE: &str = include_str!("../assets/mitex/standard.typ");

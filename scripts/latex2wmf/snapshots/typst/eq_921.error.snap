@@ -1,5 +1,0 @@
----
-source: src/snapshot_tests.rs
-expression: error
----
-typst-as-lib compilation failed: Typst source error: [SourceDiagnostic { severity: Error, span: DiagSpan { span: Span(334205268265443), extra: 0 }, message: "unknown variable: mitexmathbf", trace: [], hints: ["if you meant to display multiple letters as is, try adding spaces between each letter: `m i t e x m a t h b f`", "or if you meant to display this as text, try placing it in quotes: `\"mitexmathbf\"`"] }]; warnings=[]

@@ -1,5 +1,0 @@
----
-source: src/snapshot_tests.rs
-expression: error
----
-Typst produced an empty formula frame

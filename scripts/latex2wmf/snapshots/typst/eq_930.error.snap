@@ -1,5 +1,0 @@
----
-source: src/snapshot_tests.rs
-expression: error
----
-typst-as-lib compilation failed: Typst source error: [SourceDiagnostic { severity: Error, span: DiagSpan { span: Span(299485379772486), extra: 0 }, message: "unknown variable: dfrac", trace: [], hints: ["if you meant to display multiple letters as is, try adding spaces between each letter: `d f r a c`", "or if you meant to display this as text, try placing it in quotes: `\"dfrac\"`"] }]; warnings=[]

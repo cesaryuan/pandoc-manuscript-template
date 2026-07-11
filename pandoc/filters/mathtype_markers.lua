@@ -38,13 +38,27 @@ local function mark_math(math)
   return { marker_run(math.text, kind), math }
 end
 
--- Walk document blocks without interpreting math-like crossref metadata.
+-- Mark formulas in the user-facing abstract without walking crossref templates.
+local function mark_abstract(meta)
+  local abstract = meta.abstract
+  local abstract_type = pandoc.utils.type(abstract)
+  if abstract_type == "Blocks" or abstract_type == "Inlines" then
+    meta.abstract = abstract:walk({ Math = mark_math })
+  end
+  return meta
+end
+
+-- Walk document content without interpreting math-like crossref metadata.
 function Pandoc(document)
   if FORMAT ~= "docx" or not markers_enabled then
     return nil
   end
 
-  -- Walk document blocks only. Walking metadata would interpret the
+  -- Do not walk all metadata: pandoc-crossref's templates contain math-like
+  -- placeholders that would become bogus formula markers.
+  document.meta = mark_abstract(document.meta)
+
+  -- Walk document blocks separately. Walking all metadata would interpret the
   -- pandoc-crossref `eqnBlockTemplate` placeholders as real formulas and emit
   -- bogus `display:t` / `display:nmi` markers into the generated equation row.
   local body = pandoc.Div(document.blocks):walk({ Math = mark_math })

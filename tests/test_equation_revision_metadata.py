@@ -69,14 +69,26 @@ $$
 
 
 def test_mathtype_marker_filter_preserves_inline_and_display_context(tmp_path, monkeypatch) -> None:
-    """Record math style before DOCX equation layout can flatten it to InlineMath."""
+    """Mark abstract and body math without interpreting crossref metadata templates."""
     pandoc = shutil.which("pandoc")
     if pandoc is None:
         pytest.skip("pandoc is not installed")
 
     filter_path = Path(__file__).resolve().parents[1] / "pandoc" / "filters" / "mathtype_markers.lua"
     output_path = tmp_path / "mathtype-markers.docx"
-    markdown = "Inline $x_i$.\n\n$$\n\\frac{1}{2}\n$$\n"
+    markdown = """\
+---
+abstract: |
+  Abstract equation $E=mc^2$.
+eqnBlockTemplate: "$$t$$"
+---
+
+Inline $x_i$.
+
+$$
+\\frac{1}{2}
+$$
+"""
     monkeypatch.setenv("PMT_ENABLE_MATHTYPE_MARKERS", "true")
 
     subprocess.run(
@@ -90,8 +102,10 @@ def test_mathtype_marker_filter_preserves_inline_and_display_context(tmp_path, m
     with zipfile.ZipFile(output_path) as archive:
         document_xml = archive.read("word/document.xml").decode("utf-8")
 
+    assert "MTLATEX:inline:E=mc^2" in document_xml
     assert "MTLATEX:inline:x_i" in document_xml
     assert r"MTLATEX:display:\frac{1}{2}" in document_xml
+    assert "MTLATEX:display:t" not in document_xml
 
 
 def test_process_equation_metadata_colors_native_word_display_equations(tmp_path) -> None:

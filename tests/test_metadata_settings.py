@@ -4,7 +4,12 @@ import pytest
 import yaml
 
 from pandoc_manuscript.runtime import metadata as metadata_module
-from pandoc_manuscript.runtime.metadata import PmtSettings, load_effective_metadata, write_pandoc_metadata
+from pandoc_manuscript.runtime.metadata import (
+    DEFAULT_PANDOC_METADATA,
+    PmtSettings,
+    load_effective_metadata,
+    write_pandoc_metadata,
+)
 
 
 def test_new_style_structure_separates_pmt_and_pandoc_metadata(tmp_path: Path) -> None:
@@ -25,7 +30,9 @@ pandocMetadata:
 
     assert settings.mathtype is True
     assert settings.docx_style == {"Body Text": {"firstLineIndentChars": 2}}
-    assert settings.pandoc_metadata == {"figureTitle": "Figure", "custom-list": ["一", "two"]}
+    assert settings.pandoc_metadata["figureTitle"] == "Figure"
+    assert settings.pandoc_metadata["custom-list"] == ["一", "two"]
+    assert settings.pandoc_metadata["linkReferences"] is True
     assert "mathtype" not in settings.pandoc_metadata
     assert "docxStyle" not in settings.pandoc_metadata
 
@@ -59,6 +66,29 @@ Body
     assert effective.pandoc_metadata["mathtype"] is True
     assert effective.pandoc_metadata["figureTitle"] == "Fig."
     assert effective.pandoc_metadata["nested"] == {"left": "manuscript", "right": "keep"}
+
+
+def test_builtin_pandoc_metadata_defaults_apply_without_style_file() -> None:
+    """Keep cross-reference and citation behavior when style metadata is omitted."""
+    settings = PmtSettings.model_validate({})
+
+    assert settings.pandoc_metadata == DEFAULT_PANDOC_METADATA
+    assert settings.pandoc_metadata is not DEFAULT_PANDOC_METADATA
+
+
+def test_empty_style_metadata_keeps_defaults_and_allows_overrides(tmp_path: Path) -> None:
+    """Apply explicit style values after the built-in Pandoc defaults."""
+    style = tmp_path / "style.yml"
+    style.write_text(
+        "pandocMetadata:\n  figureTitle: 'Fig. '\n  sectionsDepth: 2\n",
+        encoding="utf-8",
+    )
+
+    settings = PmtSettings.load(style)
+
+    assert settings.pandoc_metadata["figureTitle"] == "Fig. "
+    assert settings.pandoc_metadata["sectionsDepth"] == 2
+    assert settings.pandoc_metadata["tableTitle"] == "Table "
 
 
 def test_reply_overrides_both_domains_before_reply_header(tmp_path: Path) -> None:
@@ -98,6 +128,22 @@ Reply
     assert effective.pandoc_metadata["nested"] == {"base": True, "reply": True}
 
 
+def test_empty_reply_metadata_does_not_reset_project_overrides(tmp_path: Path) -> None:
+    """Treat reply metadata as an override layer rather than a fresh default set."""
+    style = tmp_path / "style.yml"
+    style.write_text(
+        "pandocMetadata:\n  figureTitle: 'Fig. '\nreply:\n  pandocMetadata: {}\n",
+        encoding="utf-8",
+    )
+    reply = tmp_path / "reply.md"
+    reply.write_text("---\ntitle: Reply\n---\nBody\n", encoding="utf-8")
+
+    effective = load_effective_metadata(reply, style, reply=True)
+
+    assert effective.pandoc_metadata["figureTitle"] == "Fig. "
+    assert effective.pandoc_metadata["tableTitle"] == "Table "
+
+
 def test_legacy_flat_pandoc_metadata_warns_and_nested_value_wins(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -111,7 +157,9 @@ def test_legacy_flat_pandoc_metadata_warns_and_nested_value_wins(
 
     settings = PmtSettings.load(style)
 
-    assert settings.pandoc_metadata == {"figureTitle": "New", "custom": "old"}
+    assert settings.pandoc_metadata["figureTitle"] == "New"
+    assert settings.pandoc_metadata["custom"] == "old"
+    assert settings.pandoc_metadata["linkReferences"] is True
     assert len(warnings) == 1
     assert "custom" in warnings[0]
     assert "figureTitle" in warnings[0]
@@ -228,7 +276,8 @@ def test_legacy_pandoc_citation_delimiter_moves_to_pmt_settings(
     settings = PmtSettings.load(style)
 
     assert settings.citation_number_range_delimiter == "-"
-    assert settings.pandoc_metadata == {"figureTitle": "Figure"}
+    assert settings.pandoc_metadata["figureTitle"] == "Figure"
+    assert "citation-number-range-delimiter" not in settings.pandoc_metadata
     assert len(warnings) == 1
     assert "citationNumberRangeDelimiter" in warnings[0]
 
@@ -248,6 +297,7 @@ def test_manuscript_citation_delimiter_no_longer_enters_pandoc_metadata(
 
     effective = load_effective_metadata(manuscript, style_path=None)
 
-    assert effective.pandoc_metadata == {"title": "Example"}
+    assert effective.pandoc_metadata["title"] == "Example"
+    assert "citation-number-range-delimiter" not in effective.pandoc_metadata
     assert len(warnings) == 1
     assert "citationNumberRangeDelimiter" in warnings[0]

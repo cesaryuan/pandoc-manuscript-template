@@ -35,6 +35,32 @@ def merge_metadata(base: dict[str, Any], override: dict[str, Any]) -> dict[str, 
     return merged
 
 
+DEFAULT_PANDOC_METADATA: dict[str, Any] = {
+    "figureTitle": "Figure ",
+    "tableTitle": "Table ",
+    "titleDelim": "",
+    "figPrefix": "Figure",
+    "tblPrefix": "Table",
+    "secPrefix": "Section",
+    "eqnPrefix": "Equation",
+    "linkReferences": True,
+    "autoSectionLabels": True,
+    "autoEqnLabels": True,
+    "numberSections": True,
+    "sectionsDepth": 3,
+    "subfigGrid": True,
+    "subfigureChildTemplate": "($$i$$) $$t$$",
+    "subfigureTemplate": "$$figureTitle$$ $$i$$$$titleDelim$$ $$t$$",
+    "reference-section-title": "References",
+    "link-citations": True,
+}
+
+
+def default_pandoc_metadata() -> dict[str, Any]:
+    """Return an independent copy of PMT's built-in Pandoc metadata defaults."""
+    return dict(DEFAULT_PANDOC_METADATA)
+
+
 PMT_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "mathtype": ("mathtype",),
     "mathtypeConversionMethod": ("mathtypeConversionMethod", "mathtype-conversion-method", "mathtype_conversion_method"),
@@ -86,6 +112,7 @@ def _split_style_mapping(
     *,
     source: Path,
     section: str = "style.yml",
+    include_pandoc_defaults: bool = True,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
     """Split one style mapping into PMT fields, Pandoc metadata, and reply overrides."""
     pmt_values: dict[str, Any] = {}
@@ -140,7 +167,9 @@ def _split_style_mapping(
             f"Move these keys under pandocMetadata.{conflict_note}"
         )
 
-    pmt_values["pandocMetadata"] = merge_metadata(legacy_pandoc, explicit_pandoc)
+    pandoc_metadata = default_pandoc_metadata() if include_pandoc_defaults else {}
+    pandoc_metadata = merge_metadata(pandoc_metadata, legacy_pandoc)
+    pmt_values["pandocMetadata"] = merge_metadata(pandoc_metadata, explicit_pandoc)
     pmt_values["reply"] = reply
     return pmt_values, pmt_values["pandocMetadata"], reply
 
@@ -160,6 +189,7 @@ class ReplySettings(BaseModel):
             raw,
             source=source,
             section="reply",
+            include_pandoc_defaults=False,
         )
         pmt_values = {
             key: value
@@ -257,7 +287,10 @@ class PmtSettings(BaseSettings):
         validation_alias=AliasChoices("docxStyle", "docx-style", "docx_style"),
         serialization_alias="docxStyle",
     )
-    pandoc_metadata: dict[str, Any] = Field(default_factory=dict, alias="pandocMetadata")
+    pandoc_metadata: dict[str, Any] = Field(
+        default_factory=default_pandoc_metadata,
+        alias="pandocMetadata",
+    )
     reply: ReplySettings | None = None
 
     @classmethod

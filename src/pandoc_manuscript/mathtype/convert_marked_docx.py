@@ -9,7 +9,7 @@ from ..runtime.logging import log_info, log_debug
 from ..runtime.paths import PMT_MATHTYPE_WORK_DIR
 
 from .marked_docx import extract_marked_equation_requests, inspect_docx, replace_marked_omml_with_generated
-from .ole_parts import build_helper, generate_equation_parts, normalize_conversion_method
+from .ole_parts import generate_equation_parts, normalize_conversion_method, normalize_svg_backend
 
 
 def convert_marked_docx(source: Path, target: Path, work_dir: Path, metadata: dict[str, Any] | None = None) -> int:
@@ -26,8 +26,15 @@ def convert_marked_docx(source: Path, target: Path, work_dir: Path, metadata: di
     if size_summary:
         log_debug(f"[mathtype] detected Word font sizes (pt): {', '.join(f'{size:g}' for size in size_summary)}")
     conversion_method = normalize_conversion_method((metadata or {}).get("mathtypeConversionMethod"))
+    svg_backend = normalize_svg_backend((metadata or {}).get("mathtypeSvgBackend"))
     log_debug(f"[mathtype] conversion method: {conversion_method}")
-    equations = generate_equation_parts(requests, work_dir, conversion_method=conversion_method)
+    log_debug(f"[mathtype] SVG backend: {svg_backend}")
+    equations = generate_equation_parts(
+        requests,
+        work_dir,
+        conversion_method=conversion_method,
+        svg_backend=svg_backend,
+    )
     replaced = replace_marked_omml_with_generated(source, target, equations)
     log_debug(f"[mathtype] replaced top-level OMML nodes: {replaced}")
     inspect_docx(target)
@@ -43,7 +50,6 @@ def main() -> int:
     parser.add_argument("--work-dir", default=str(PMT_MATHTYPE_WORK_DIR / "all"), help="Directory for generated OLE and WMF parts")
     args = parser.parse_args()
 
-    build_helper()
     convert_marked_docx(
         source=Path(args.source),
         target=Path(args.target),

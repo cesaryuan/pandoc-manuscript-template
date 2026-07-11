@@ -21,6 +21,18 @@ def load_svg_embed_filter():
     return module
 
 
+def load_svg_to_png_filter():
+    """Load the following SVG-to-PNG filter for pipeline regression tests."""
+    path = Path(__file__).resolve().parents[1] / "pandoc" / "filters" / "svg_to_png.py"
+    spec = importlib.util.spec_from_file_location("svg_to_png_filter_for_embed_tests", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 class DummyDoc:
     """Provide the filter attributes normally attached by panflute prepare()."""
 
@@ -72,6 +84,51 @@ def test_svg_child_image_is_embedded_as_data_uri(tmp_path, monkeypatch) -> None:
     expected = base64.b64encode(b"panel-bytes").decode("ascii")
     assert f"data:image/png;base64,{expected}" in output
     assert "panel.png" not in output
+
+
+def test_svg_child_image_requests_png_fallback(tmp_path, monkeypatch) -> None:
+    """Force PNG fallback because Word cannot render an SVG child data URI."""
+    svg_filter = load_svg_embed_filter()
+    monkeypatch.chdir(tmp_path)
+    figures = tmp_path / "figures"
+    figures.mkdir()
+    child = figures / "panel.svg"
+    child.write_text('<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>\n', encoding="utf-8")
+    source_svg = figures / "layout.svg"
+    write_svg(source_svg, "panel.svg")
+
+    doc = DummyDoc()
+    doc.pmt_svg_embed_base_dirs = [tmp_path]
+    doc.pmt_svg_embed_output_root = tmp_path / ".pmt/cache/svg-embedded"
+    elem = image("figures/layout.svg")
+
+    result = svg_filter.action(elem, doc)
+
+    assert result is elem
+    assert elem.attributes["to-png"] == "true"
+    assert "data:image/svg+xml;base64," in Path(elem.url).read_text(encoding="utf-8")
+
+    png_filter = load_svg_to_png_filter()
+    png_doc = type(
+        "PngDoc",
+        (),
+        {
+            "pmt_svg_base_dirs": [tmp_path],
+            "pmt_svg_output_root": tmp_path / ".pmt/cache/svg-png",
+            "pmt_svg_dpi": 300,
+            "pmt_svg_scale": 1,
+            "pmt_svg_width": None,
+            "pmt_svg_pmt_version": "test",
+            "pmt_svg_convert_all": False,
+        },
+    )()
+
+    png_result = png_filter.action(elem, png_doc)
+
+    assert png_result is elem
+    assert elem.url.endswith(".png")
+    assert Path(elem.url).read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert "to-png" not in elem.attributes
 
 
 def test_svg_without_local_child_images_is_left_unchanged(tmp_path) -> None:

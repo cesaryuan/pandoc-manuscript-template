@@ -21,7 +21,7 @@ from ..runtime.metadata import (
     parse_yaml_header,
 )
 from ..mathtype.convert_marked_docx import convert_marked_docx
-from ..mathtype.ole_parts import build_helper, check_mathtype_availability
+from ..mathtype.ole_parts import check_mathtype_availability, normalize_conversion_method
 from ..runtime.paths import (
     PMT_MATHTYPE_WORK_DIR,
     PMT_WORK_DIR,
@@ -379,7 +379,7 @@ def mathtype_marked_docx_path() -> Path:
     return work_dir / f"{SETTINGS.project_name}.marked.docx"
 
 
-def resolve_mathtype_build_enabled(requested: bool) -> bool:
+def resolve_mathtype_build_enabled(requested: bool, conversion_method: object | None = None) -> bool:
     """Return whether this build should actually run MathType conversion.
 
     Users may keep `mathtype: true` in shared style metadata on machines that
@@ -390,7 +390,7 @@ def resolve_mathtype_build_enabled(requested: bool) -> bool:
         return False
 
     log_info("[INFO] MathType DOCX equations enabled by metadata: mathtype: true")
-    availability = check_mathtype_availability()
+    availability = check_mathtype_availability(conversion_method)
     if availability.usable:
         return True
 
@@ -406,7 +406,6 @@ def resolve_mathtype_build_enabled(requested: bool) -> bool:
 def run_mathtype_conversion(marked_docx: Path, target_docx: Path, metadata: dict[str, Any]) -> None:
     """Convert a marked DOCX's OMML equations into MathType OLE equations."""
     log_info("\n[DOCX] Converting equations to MathType OLE objects...\n")
-    build_helper()
     convert_marked_docx(
         source=marked_docx,
         target=target_docx,
@@ -544,7 +543,11 @@ def build_docx(*, warn_hat_order: bool = True):
     ensure_docx_target_writable(docx_file)
     extra_args = []
     metadata = load_build_metadata()
-    use_mathtype = resolve_mathtype_build_enabled(should_use_mathtype(metadata))
+    conversion_method = normalize_conversion_method(metadata.get("mathtypeConversionMethod"))
+    use_mathtype = resolve_mathtype_build_enabled(
+        should_use_mathtype(metadata),
+        conversion_method,
+    )
     if use_mathtype and warn_hat_order:
         warn_mathtype_hat_style_order(Path(SETTINGS.manuscript_file))
     pandoc_output = docx_file

@@ -16,6 +16,9 @@ MathType OLE `.bin`，并可选生成 WMF 预览和预览尺寸 metadata。
 dotnet build src\pandoc_manuscript\mathtype\ole_helper\MathTypeOleHelper.csproj -c Release
 ```
 
+这是开发或 wheel 打包阶段的显式构建命令。`pmt` 在公式转换时只使用预构建的
+`MathTypeOleHelper.exe`，不会在调用 helper 时自动执行 `dotnet build`。
+
 构建后的程序在：
 
 ```text

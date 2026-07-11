@@ -31,11 +31,13 @@ def resource_path(path: str | Path) -> Path:
     return package_resource_path(path)
 
 
-HELPER_PROJECT = resource_path("mathtype/ole_helper/MathTypeOleHelper.csproj")
 HELPER_EXE = resource_path("mathtype/ole_helper/bin/Release/net48/MathTypeOleHelper.exe")
 MATHTYPE_RUST_SOURCE_EXE_NAME = "mathtype-rust.exe" if os.name == "nt" else "mathtype-rust"
-MATHTYPE_RUST_PACKAGE_EXE_NAME = "mathtype-rust.exe"
+MATHTYPE_RUST_PACKAGE_EXE_NAME = MATHTYPE_RUST_SOURCE_EXE_NAME
 MATHTYPE_RUST_PACKAGE_EXE = resource_path(Path("mathtype/bin") / MATHTYPE_RUST_PACKAGE_EXE_NAME)
+LATEX2WMF_SOURCE_EXE_NAME = "latex2wmf.exe" if os.name == "nt" else "latex2wmf"
+LATEX2WMF_PACKAGE_EXE_NAME = LATEX2WMF_SOURCE_EXE_NAME
+LATEX2WMF_PACKAGE_EXE = resource_path(Path("mathtype/bin") / LATEX2WMF_PACKAGE_EXE_NAME)
 MATHTYPE_PROG_ID = "Equation.DSMT4"
 MATHTYPE_MT6_RELATIVE_PATHS = (
     Path("System/64/MT6.dll"),
@@ -45,7 +47,7 @@ MATHTYPE_MT6_RELATIVE_PATHS = (
 # Keep the sizing template in-repo so builds do not depend on a local MathType preferences path.
 MATHTYPE_DEFAULT_PREFS_TEMPLATE = resource_path("mathtype/Times+Symbol 12.eqp")
 MATHTYPE_CACHE_DIR = PMT_MATHTYPE_CACHE_DIR
-MATHTYPE_CACHE_VERSION = 1
+MATHTYPE_CACHE_VERSION = 4
 PLACEABLE_WMF_KEY_BYTES = bytes.fromhex("d7cdc69a")
 PLACEABLE_WMF_HEADER_SIZE = 22
 WMF_HEADER_SIZE = 18
@@ -54,9 +56,12 @@ WMF_META_SETWINDOWORG = 0x020B
 WMF_META_SETWINDOWEXT = 0x020C
 BEGIN_ALIGNED_RE = re.compile(r"\\begin\s*\{\s*aligned\s*\}")
 END_ALIGNED_RE = re.compile(r"\\end\s*\{\s*aligned\s*\}")
-MathTypeSingleConversionMethod = Literal["rust", "set-data"]
-MathTypeConversionMethod = Literal["rust", "set-data", "auto", "both"]
-DEFAULT_MATHTYPE_CONVERSION_METHOD: MathTypeConversionMethod = "rust"
+MathTypeSingleConversionMethod = Literal["rust", "rust-sdk", "set-data"]
+MathTypeConversionMethod = Literal["rust", "rust-sdk", "set-data", "auto", "both"]
+MathTypeSvgBackend = Literal["ratex", "typst"]
+MathTypeMathStyle = Literal["inline", "display"]
+DEFAULT_MATHTYPE_CONVERSION_METHOD: MathTypeConversionMethod = "auto"
+DEFAULT_MATHTYPE_SVG_BACKEND: MathTypeSvgBackend = "typst"
 
 
 def source_tree_path(path: str | Path) -> Path | None:
@@ -73,7 +78,11 @@ def source_tree_path(path: str | Path) -> Path | None:
 MATHTYPE_RUST_PROJECT = source_tree_path("scripts/mathtype-rust/Cargo.toml")
 MATHTYPE_RUST_SOURCE_EXE = source_tree_path(Path("scripts/mathtype-rust/target/debug") / MATHTYPE_RUST_SOURCE_EXE_NAME)
 MATHTYPE_RUST_EXE = MATHTYPE_RUST_SOURCE_EXE or MATHTYPE_RUST_PACKAGE_EXE
+LATEX2WMF_PROJECT = source_tree_path("scripts/latex2wmf/Cargo.toml")
+LATEX2WMF_SOURCE_EXE = source_tree_path(Path("scripts/latex2wmf/target/debug") / LATEX2WMF_SOURCE_EXE_NAME)
+LATEX2WMF_EXE = LATEX2WMF_SOURCE_EXE or LATEX2WMF_PACKAGE_EXE
 MATHTYPE_RUST_BUILD_CHECKED = False
+LATEX2WMF_BUILD_CHECKED = False
 
 
 def normalize_conversion_method(value: object | None) -> MathTypeConversionMethod:
@@ -85,8 +94,9 @@ def normalize_conversion_method(value: object | None) -> MathTypeConversionMetho
         "rust": "rust",
         "mathtype-rust": "rust",
         "mtef": "rust",
-        "sdk": "rust",
-        "sdk-xform-ole": "rust",
+        "rust-sdk": "rust-sdk",
+        "sdk": "rust-sdk",
+        "sdk-xform-ole": "rust-sdk",
         "set-data": "set-data",
         "setdata": "set-data",
         "tex": "set-data",
@@ -99,9 +109,25 @@ def normalize_conversion_method(value: object | None) -> MathTypeConversionMetho
     }
     method = aliases.get(text)
     if method is None:
-        allowed = "rust, set-data, auto, both"
+        allowed = "rust, rust-sdk, set-data, auto, both"
         raise ValueError(f"mathtypeConversionMethod must be one of: {allowed}; got {value!r}")
     return method
+
+
+def normalize_svg_backend(value: object | None) -> MathTypeSvgBackend:
+    """Normalize the cross-platform LaTeX-to-SVG renderer selection."""
+    if value is None:
+        return DEFAULT_MATHTYPE_SVG_BACKEND
+    text = str(value).strip().casefold().replace("_", "-")
+    aliases: dict[str, MathTypeSvgBackend] = {
+        "ratex": "ratex",
+        "typst": "typst",
+        "typst-as-lib": "typst",
+    }
+    backend = aliases.get(text)
+    if backend is None:
+        raise ValueError(f"mathtypeSvgBackend must be one of: ratex, typst; got {value!r}")
+    return backend
 
 
 @dataclass(frozen=True)
@@ -110,6 +136,7 @@ class EquationRequest:
 
     latex: str
     font_size_pt: float | None = None
+    math_style: MathTypeMathStyle = "display"
 
 
 @dataclass
@@ -120,6 +147,7 @@ class GeneratedEquation:
     ole_path: Path
     wmf_path: Path
     metadata_path: Path | None = None
+    math_style: MathTypeMathStyle = "display"
 
     @property
     def baseline_from_bottom_pt(self) -> float | None:
@@ -131,10 +159,11 @@ class GeneratedEquation:
         if not isinstance(mathtype, dict):
             return None
         value = mathtype.get("baseline_from_bottom_pt")
-        if isinstance(value, (int, float)) and value > 0:
+        # A glyph without descenders can legitimately place its baseline at
+        # the preview bottom; zero is metadata, not a missing-baseline signal.
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
             return float(value)
         return None
-
 
 @dataclass(frozen=True)
 class MathTypeAvailability:
@@ -236,20 +265,71 @@ def find_mathtype_mt6_dll(server_path: Path | None = None) -> Path | None:
     return None
 
 
-def check_mathtype_availability() -> MathTypeAvailability:
-    """Check OS, MathType OLE registration, and helper tooling.
+def check_native_converter_availability(
+    converters: tuple[tuple[str, Path | None, Path], ...],
+) -> MathTypeAvailability:
+    """Check whether the requested native converters can be built or executed."""
+    reasons: list[str] = []
+    details: list[str] = []
+    for name, project, executable in converters:
+        if project is not None and project.exists():
+            details.append(f"{name} source project found: {project}.")
+            if shutil.which("cargo") is None and not executable.exists():
+                reasons.append(
+                    f"{name} requires `cargo`, or a prebuilt executable at {executable}."
+                )
+        elif executable.exists():
+            details.append(f"Packaged {name} executable found: {executable}.")
+        else:
+            reasons.append(
+                f"{name} executable is missing: {executable}. Install a platform wheel that bundles it, "
+                "or run from a source checkout with Cargo available."
+            )
+    return MathTypeAvailability(tuple(reasons), tuple(details))
+
+
+def check_cross_platform_mathtype_availability() -> MathTypeAvailability:
+    """Check the two Rust executables used by the cross-platform backend."""
+    return check_native_converter_availability(
+        (
+            ("mathtype-rust", MATHTYPE_RUST_PROJECT, MATHTYPE_RUST_EXE),
+            ("latex2wmf", LATEX2WMF_PROJECT, LATEX2WMF_EXE),
+        )
+    )
+
+
+def check_mathtype_availability(
+    conversion_method: object | None = None,
+) -> MathTypeAvailability:
+    """Check the native backend and, when required, MathType OLE tooling.
 
     This is intentionally a lightweight preflight for build.py. It catches the
     common hard failures before Pandoc does any work, while the actual converter
     still performs the real OLE generation for each equation.
     """
-    reasons: list[str] = []
-    details: list[str] = []
+    method = normalize_conversion_method(conversion_method)
+    native = check_cross_platform_mathtype_availability()
+    if method == "rust":
+        return native
+    if method == "auto" and native.usable:
+        return MathTypeAvailability(
+            (),
+            (*native.details, "Auto mode can use the cross-platform Rust fallback without MathType."),
+        )
+
+    needs_cross_platform = method == "both"
+    if method == "rust-sdk":
+        native = check_native_converter_availability(
+            (("mathtype-rust", MATHTYPE_RUST_PROJECT, MATHTYPE_RUST_EXE),)
+        )
+        needs_cross_platform = True
+    reasons: list[str] = list(native.reasons) if needs_cross_platform else []
+    details: list[str] = list(native.details) if needs_cross_platform else []
 
     system = platform.system()
     if system != "Windows":
         reasons.append(
-            "MathType OLE conversion requires Windows because it uses COM/OLE "
+            "The selected MathType SDK path requires Windows because it uses COM/OLE "
             f"({MATHTYPE_PROG_ID}); detected system: {system or 'unknown'}."
         )
         return MathTypeAvailability(tuple(reasons), tuple(details))
@@ -287,27 +367,14 @@ def check_mathtype_availability() -> MathTypeAvailability:
                 server_path_for_dll = server_path
                 details.append(f"MathType OLE server found: {server_path}.")
 
-    dotnet_path = shutil.which("dotnet")
     helper_exists = HELPER_EXE.exists()
     if helper_exists:
         details.append(f"MathType OLE helper executable found: {HELPER_EXE}.")
     else:
-        details.append(f"MathType OLE helper executable not found: {HELPER_EXE}.")
-
-    if dotnet_path is not None:
-        details.append("dotnet command found.")
-    else:
-        details.append("dotnet command not found.")
-
-    if dotnet_path is None and not helper_exists:
         reasons.append(
-            f"The `dotnet` command was not found and no prebuilt MathType OLE helper exists at {HELPER_EXE}."
+            f"MathType OLE helper executable is missing: {HELPER_EXE}. "
+            "Install a Windows wheel that bundles it or build it explicitly before running pmt."
         )
-    elif dotnet_path is not None and not helper_exists:
-        if not HELPER_PROJECT.exists():
-            reasons.append(f"MathType OLE helper project is missing: {HELPER_PROJECT}.")
-        else:
-            details.append(f"MathType OLE helper project found: {HELPER_PROJECT}.")
 
     mt6_dll = find_mathtype_mt6_dll(server_path_for_dll)
     if mt6_dll is not None:
@@ -321,6 +388,18 @@ def check_mathtype_availability() -> MathTypeAvailability:
         )
 
     return MathTypeAvailability(tuple(reasons), tuple(details))
+
+
+def resolve_auto_conversion_methods() -> tuple[MathTypeSingleConversionMethod, ...]:
+    """Resolve the platform-specific backend order used by auto mode."""
+    if platform.system() != "Windows":
+        return ("rust",)
+
+    # Only try COM-backed methods when the lightweight preflight confirms that
+    # MathType and the helper are available; otherwise auto must remain portable.
+    if check_mathtype_availability("set-data").usable:
+        return ("set-data", "rust-sdk", "rust")
+    return ("rust",)
 
 
 def decode_process_output(data: bytes) -> str:
@@ -381,21 +460,15 @@ def run(
     return subprocess.CompletedProcess(command, result.returncode, stdout=stdout, stderr=stderr)
 
 
-def build_helper() -> None:
-    """Ensure the small .NET OLE helper exists for MathType conversion."""
+def require_helper_executable() -> Path:
+    """Return the prebuilt MathType helper without compiling during conversion."""
     if HELPER_EXE.exists():
-        log_debug(f"[mathtype] helper executable found, skipping build: {HELPER_EXE}")
-        return
-    if shutil.which("dotnet") is None:
-        raise RuntimeError(
-            f"MathType OLE helper is missing and `dotnet` is unavailable; expected helper at {HELPER_EXE}"
-        )
-    if not HELPER_PROJECT.exists():
-        raise FileNotFoundError(f"MathType OLE helper project is missing: {HELPER_PROJECT}")
-
-    run(["dotnet", "build", str(HELPER_PROJECT), "-c", "Release", "-v:quiet"])
-    if not HELPER_EXE.exists():
-        raise FileNotFoundError(f"Release build did not create expected helper executable: {HELPER_EXE}")
+        log_debug(f"[mathtype] helper executable found: {HELPER_EXE}")
+        return HELPER_EXE
+    raise FileNotFoundError(
+        f"MathType OLE helper executable is missing: {HELPER_EXE}. "
+        "Install a Windows wheel that bundles it or build the helper explicitly before running pmt."
+    )
 
 
 def build_mathtype_rust_converter() -> Path:
@@ -434,16 +507,56 @@ def build_mathtype_rust_converter() -> Path:
     raise FileNotFoundError(f"mathtype-rust executable is missing: {MATHTYPE_RUST_EXE}")
 
 
-def mathtype_rust_exe_digest_for_method(conversion_method: MathTypeConversionMethod) -> str | None:
-    """Build and hash mathtype-rust when the selected backend can use it."""
+def build_latex2wmf_converter() -> Path:
+    """Ensure the cross-platform SVG-to-WMF converter exists."""
+    global LATEX2WMF_BUILD_CHECKED
+    if LATEX2WMF_PROJECT is not None and LATEX2WMF_PROJECT.exists():
+        if shutil.which("cargo") is None:
+            if LATEX2WMF_EXE.exists():
+                log_warning(
+                    "[mathtype] warning: cargo not found; using existing latex2wmf executable "
+                    f"without rebuilding: {LATEX2WMF_EXE}"
+                )
+                return LATEX2WMF_EXE
+            raise RuntimeError(
+                f"latex2wmf requires `cargo`, or a prebuilt executable at {LATEX2WMF_EXE}"
+            )
+        if not LATEX2WMF_BUILD_CHECKED:
+            log_info(f"[mathtype] building latex2wmf converter: {LATEX2WMF_PROJECT}")
+            run(
+                ["cargo", "build", "--manifest-path", str(LATEX2WMF_PROJECT)],
+                stderr_as_warning=False,
+            )
+            LATEX2WMF_BUILD_CHECKED = True
+        if not LATEX2WMF_EXE.exists():
+            raise FileNotFoundError(f"Cargo build did not create expected executable: {LATEX2WMF_EXE}")
+        return LATEX2WMF_EXE
+
+    if LATEX2WMF_EXE.exists():
+        log_debug(f"[mathtype] latex2wmf executable found: {LATEX2WMF_EXE}")
+        return LATEX2WMF_EXE
+    raise FileNotFoundError(
+        f"latex2wmf executable is missing: {LATEX2WMF_EXE}. Install a platform wheel that bundles "
+        "latex2wmf, or run from a source checkout with scripts/latex2wmf."
+    )
+
+
+def native_exe_digest_for_method(conversion_method: MathTypeConversionMethod) -> str | None:
+    """Build and hash the native converters used by the selected backend."""
     if conversion_method == "set-data":
         return None
+    if conversion_method == "rust-sdk":
+        return file_sha256(build_mathtype_rust_converter())
     if conversion_method == "auto":
         try:
-            return file_sha256(build_mathtype_rust_converter())
+            return file_group_sha256(
+                [build_mathtype_rust_converter(), build_latex2wmf_converter()]
+            )
         except (RuntimeError, FileNotFoundError):
             return None
-    return file_sha256(build_mathtype_rust_converter())
+    return file_group_sha256(
+        [build_mathtype_rust_converter(), build_latex2wmf_converter()]
+    )
 
 
 def normalize_mathtype_latex(latex: str) -> str:
@@ -571,15 +684,27 @@ def file_group_sha256(paths: list[Path]) -> str | None:
     return digest.hexdigest()
 
 
-def mathtype_rust_source_digest() -> str | None:
-    """Return a digest for Rust converter sources that affect generated MTEF."""
-    if MATHTYPE_RUST_PROJECT is None:
+def native_source_digest_for_method(
+    conversion_method: MathTypeConversionMethod,
+) -> str | None:
+    """Return a digest for native sources used by the selected backend."""
+    if conversion_method == "set-data":
         return None
-    project_dir = MATHTYPE_RUST_PROJECT.parent
-    paths = [MATHTYPE_RUST_PROJECT, project_dir / "Cargo.lock"]
-    src_dir = project_dir / "src"
-    if src_dir.exists():
-        paths.extend(src_dir.rglob("*.rs"))
+    selected = (
+        (MATHTYPE_RUST_PROJECT,)
+        if conversion_method == "rust-sdk"
+        else (MATHTYPE_RUST_PROJECT, LATEX2WMF_PROJECT)
+    )
+    projects = [project for project in selected if project is not None]
+    if not projects:
+        return None
+    paths: list[Path] = []
+    for project in projects:
+        project_dir = project.parent
+        paths.extend([project, project_dir / "Cargo.lock"])
+        src_dir = project_dir / "src"
+        if src_dir.exists():
+            paths.extend(src_dir.rglob("*.rs"))
     return file_group_sha256(paths)
 
 
@@ -617,8 +742,8 @@ def write_sized_prefs_file(template_path: Path, output_path: Path, full_size_pt:
 
 
 def cache_font_size_key(font_size_pt: float | None, prefs_template: Path | None) -> float | None:
-    """Return the MathType preference size that affects generated object bytes."""
-    if font_size_pt is None or prefs_template is None:
+    """Return the half-point size used by native previews and optional preferences."""
+    if font_size_pt is None:
         return None
     return round(font_size_pt * 2) / 2
 
@@ -631,6 +756,8 @@ def mathtype_cache_key(
     rust_source_digest: str | None,
     rust_exe_digest: str | None,
     conversion_method: MathTypeSingleConversionMethod,
+    svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
+    math_style: MathTypeMathStyle = "display",
 ) -> str:
     """Build a stable cache key from the exact MathType inputs.
 
@@ -639,9 +766,19 @@ def mathtype_cache_key(
     converter digests are included so generated parts do not outlive the
     converter implementation or backend selection that produced them.
     """
+    svg_backend_key: str | None = svg_backend
+    math_style_key: str | None = math_style
     if conversion_method == "set-data":
         rust_source_digest = None
         rust_exe_digest = None
+        svg_backend_key = None
+        math_style_key = None
+    elif conversion_method == "rust-sdk":
+        svg_backend_key = None
+        math_style_key = None
+    else:
+        # The cross-platform Rust path does not execute the MathType helper.
+        helper_digest = None
 
     payload = {
         "version": MATHTYPE_CACHE_VERSION,
@@ -652,6 +789,8 @@ def mathtype_cache_key(
         "mathtype_rust_source_sha256": rust_source_digest,
         "mathtype_rust_exe_sha256": rust_exe_digest,
         "conversion_method": conversion_method,
+        "svg_backend": svg_backend_key,
+        "math_style": math_style_key,
     }
     data = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(data).hexdigest()
@@ -764,6 +903,8 @@ def generate_cached_equation_parts_for_method(
     mtef_path: Path,
     prefs_file: Path | None,
     conversion_method: MathTypeSingleConversionMethod,
+    svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
+    math_style: MathTypeMathStyle = "display",
 ) -> bool:
     """Restore or generate one equation for one cache-isolated backend."""
     cache_key = mathtype_cache_key(
@@ -774,6 +915,8 @@ def generate_cached_equation_parts_for_method(
         rust_source_digest,
         rust_exe_digest,
         conversion_method,
+        svg_backend,
+        math_style,
     )
     if restore_cached_equation(cache_key, ole_path, wmf_path, metadata_path):
         log_debug(f"[mathtype] cache hit eq={index} method={conversion_method} key={cache_key[:12]}")
@@ -789,6 +932,9 @@ def generate_cached_equation_parts_for_method(
         mtef_path,
         prefs_file=prefs_file,
         conversion_method=conversion_method,
+        svg_backend=svg_backend,
+        font_size_pt=font_size_key,
+        math_style=math_style,
     )
     store_cached_equation(cache_key, ole_path, wmf_path, metadata_path)
     return False
@@ -808,48 +954,45 @@ def generate_cached_equation_parts_auto(
     metadata_path: Path,
     mtef_path: Path,
     prefs_file: Path | None,
+    methods: tuple[MathTypeSingleConversionMethod, ...],
+    svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
+    math_style: MathTypeMathStyle = "display",
 ) -> tuple[int, int]:
-    """Try the preferred set-data cache/generator first, then rust fallback."""
-    try:
-        hit = generate_cached_equation_parts_for_method(
-            index,
-            latex,
-            font_size_key,
-            prefs_digest,
-            helper_digest,
-            rust_source_digest,
-            rust_exe_digest,
-            input_path,
-            ole_path,
-            wmf_path,
-            metadata_path,
-            mtef_path,
-            prefs_file,
-            "set-data",
-        )
-        return int(hit), int(not hit)
-    except (RuntimeError, FileNotFoundError):
-        log_warning(
-            f"[mathtype] MathType TeX input auto path failed for equation {index}; "
-            "trying mathtype-rust fallback"
-        )
-        hit = generate_cached_equation_parts_for_method(
-            index,
-            latex,
-            font_size_key,
-            prefs_digest,
-            helper_digest,
-            rust_source_digest,
-            rust_exe_digest,
-            input_path,
-            ole_path,
-            wmf_path,
-            metadata_path,
-            mtef_path,
-            prefs_file,
-            "rust",
-        )
-        return int(hit), 1 + int(not hit)
+    """Try the resolved auto backends in order until one succeeds."""
+    misses = 0
+    for position, method in enumerate(methods):
+        try:
+            hit = generate_cached_equation_parts_for_method(
+                index,
+                latex,
+                font_size_key,
+                prefs_digest,
+                helper_digest,
+                rust_source_digest,
+                rust_exe_digest,
+                input_path,
+                ole_path,
+                wmf_path,
+                metadata_path,
+                mtef_path,
+                prefs_file,
+                method,
+                svg_backend,
+                math_style,
+            )
+            return int(hit), misses + int(not hit)
+        except (RuntimeError, FileNotFoundError) as exc:
+            misses += 1
+            if position + 1 == len(methods):
+                raise RuntimeError(
+                    f"All MathType auto backends failed for equation {index}: {', '.join(methods)}"
+                ) from exc
+            log_warning(
+                f"[mathtype] auto backend {method} failed for equation {index}; "
+                f"trying {methods[position + 1]}"
+            )
+
+    raise RuntimeError(f"No MathType auto backend is available for equation {index}")
 
 
 def warn_if_conversion_outputs_differ(
@@ -891,8 +1034,9 @@ def make_ole_from_format(
     method_name: str = "set-data",
 ) -> None:
     """Ask MathType OLE to create an Equation.DSMT4 compound file without Word."""
+    helper_exe = require_helper_executable()
     command = [
-        str(HELPER_EXE),
+        str(helper_exe),
         "--method",
         method_name,
         "--pre-verb",
@@ -960,6 +1104,34 @@ def make_wmf_metadata_from_mtef(
     )
 
 
+def make_wmf_metadata_cross_platform(
+    input_path: Path,
+    wmf_output: Path,
+    metadata_output: Path,
+    svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
+    font_size_pt: float | None = None,
+    math_style: MathTypeMathStyle = "display",
+) -> None:
+    """Generate formula WMF and placement JSON without MathType or Windows."""
+    executable = build_latex2wmf_converter()
+    command = [
+        str(executable),
+        "--input",
+        str(input_path),
+        "--output",
+        str(wmf_output),
+        "--metadata-output",
+        str(metadata_output),
+        "--svg-backend",
+        svg_backend,
+        "--math-style",
+        math_style,
+        "--font-size",
+        format_font_size_pt(font_size_pt or 12.0),
+    ]
+    run(command, stderr_as_warning=False, stdout_as_debug=True, stderr_as_debug=True)
+
+
 def make_ole_wmf_metadata_with_mathtype_rust(
     input_path: Path,
     ole_path: Path,
@@ -967,19 +1139,44 @@ def make_ole_wmf_metadata_with_mathtype_rust(
     metadata_path: Path,
     mtef_path: Path,
     prefs_file: Path | None = None,
+    svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
+    font_size_pt: float | None = None,
+    math_style: MathTypeMathStyle = "display",
 ) -> None:
-    """Generate OLE, WMF, and metadata through Rust MTEF conversion."""
+    """Generate OLE, WMF, and metadata through cross-platform Rust tools."""
     make_ole_from_mathtype_rust(input_path, ole_path, mtef_path, prefs_file=prefs_file)
-    sdk_ole_path = ole_path.with_name(f"{ole_path.stem}.sdk{ole_path.suffix}")
-    make_wmf_metadata_from_mtef(
-        mtef_path,
-        sdk_ole_path,
+    make_wmf_metadata_cross_platform(
+        input_path,
         wmf_path,
         metadata_path,
-        prefs_file=prefs_file,
+        svg_backend=svg_backend,
+        font_size_pt=font_size_pt,
+        math_style=math_style,
     )
-    if sdk_ole_path.exists():
-        sdk_ole_path.unlink()
+
+
+def make_ole_wmf_metadata_with_mathtype_rust_sdk(
+    input_path: Path,
+    ole_path: Path,
+    wmf_path: Path,
+    metadata_path: Path,
+    mtef_path: Path,
+    prefs_file: Path | None = None,
+) -> None:
+    """Generate Rust OLE/MTEF, then use the MathType SDK for WMF and JSON."""
+    make_ole_from_mathtype_rust(input_path, ole_path, mtef_path, prefs_file=prefs_file)
+    sdk_ole_path = ole_path.with_name(f"{ole_path.stem}.sdk{ole_path.suffix}")
+    try:
+        make_wmf_metadata_from_mtef(
+            mtef_path,
+            sdk_ole_path,
+            wmf_path,
+            metadata_path,
+            prefs_file=prefs_file,
+        )
+    finally:
+        # The helper's OLE wraps the same MTEF only to activate the SDK preview.
+        sdk_ole_path.unlink(missing_ok=True)
 
 
 def make_ole_wmf_metadata_with_mathtype_set_data(
@@ -1009,6 +1206,9 @@ def generate_uncached_equation_parts(
     mtef_path: Path,
     prefs_file: Path | None = None,
     conversion_method: MathTypeConversionMethod = DEFAULT_MATHTYPE_CONVERSION_METHOD,
+    svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
+    font_size_pt: float | None = None,
+    math_style: MathTypeMathStyle = "display",
 ) -> None:
     """Generate MathType parts using the configured conversion backend."""
     if conversion_method == "both":
@@ -1022,8 +1222,23 @@ def generate_uncached_equation_parts(
             metadata_path,
             mtef_path,
             prefs_file=prefs_file,
+            svg_backend=svg_backend,
+            font_size_pt=font_size_pt,
+            math_style=math_style,
         )
         log_debug(f"[mathtype] mathtype-rust conversion succeeded for equation {index}")
+        return
+
+    if conversion_method == "rust-sdk":
+        make_ole_wmf_metadata_with_mathtype_rust_sdk(
+            input_path,
+            ole_path,
+            wmf_path,
+            metadata_path,
+            mtef_path,
+            prefs_file=prefs_file,
+        )
+        log_debug(f"[mathtype] mathtype-rust + SDK conversion succeeded for equation {index}")
         return
 
     if conversion_method == "set-data":
@@ -1037,34 +1252,34 @@ def generate_uncached_equation_parts(
         log_debug(f"[mathtype] MathType TeX input conversion succeeded for equation {index}")
         return
 
-    try:
-        make_ole_wmf_metadata_with_mathtype_set_data(
-            input_path,
-            ole_path,
-            wmf_path,
-            metadata_path,
-            prefs_file=prefs_file,
-        )
-        log_debug(f"[mathtype] MathType TeX input auto path succeeded for equation {index}")
-    except (RuntimeError, FileNotFoundError):
-        log_warning(
-            f"[mathtype] MathType TeX input auto path failed for equation {index}; "
-            "trying mathtype-rust fallback"
-        )
+    methods = resolve_auto_conversion_methods()
+    for position, method in enumerate(methods):
         try:
-            make_ole_wmf_metadata_with_mathtype_rust(
+            generate_uncached_equation_parts(
+                index,
                 input_path,
                 ole_path,
                 wmf_path,
                 metadata_path,
                 mtef_path,
                 prefs_file=prefs_file,
+                conversion_method=method,
+                svg_backend=svg_backend,
+                font_size_pt=font_size_pt,
+                math_style=math_style,
             )
-        except (RuntimeError, FileNotFoundError) as fallback_exc:
-            raise RuntimeError(
-                f"MathType TeX input auto path and mathtype-rust fallback both failed for equation {index}"
-            ) from fallback_exc
-        log_debug(f"[mathtype] mathtype-rust fallback succeeded for equation {index}")
+            return
+        except (RuntimeError, FileNotFoundError) as exc:
+            if position + 1 == len(methods):
+                raise RuntimeError(
+                    f"All MathType auto backends failed for equation {index}: {', '.join(methods)}"
+                ) from exc
+            log_warning(
+                f"[mathtype] auto backend {method} failed for equation {index}; "
+                f"trying {methods[position + 1]}"
+            )
+
+    raise RuntimeError(f"No MathType auto backend is available for equation {index}")
 
 
 def inspect_ole(path: Path) -> CompoundFile:
@@ -1095,9 +1310,14 @@ def generate_equation_parts(
     requests: list[EquationRequest],
     output_dir: Path,
     conversion_method: MathTypeConversionMethod = DEFAULT_MATHTYPE_CONVERSION_METHOD,
+    svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
 ) -> list[GeneratedEquation]:
     """Generate OLE bins and WMF previews for all marker-bound formulas."""
     conversion_method = normalize_conversion_method(conversion_method)
+    svg_backend = normalize_svg_backend(svg_backend)
+    if conversion_method == "both" and platform.system() != "Windows":
+        raise ValueError("mathtypeConversionMethod=both is only supported on Windows")
+    auto_methods = resolve_auto_conversion_methods() if conversion_method == "auto" else ()
     output_dir.mkdir(parents=True, exist_ok=True)
     equations: list[GeneratedEquation] = []
     prefs_template = MATHTYPE_DEFAULT_PREFS_TEMPLATE if MATHTYPE_DEFAULT_PREFS_TEMPLATE.exists() else None
@@ -1105,9 +1325,16 @@ def generate_equation_parts(
     needs_variable_sizes = any(request.font_size_pt is not None for request in requests)
     cache_hits = 0
     cache_misses = 0
-    helper_digest = file_sha256(HELPER_EXE)
-    rust_source_digest = mathtype_rust_source_digest() if conversion_method != "set-data" else None
-    rust_exe_digest = mathtype_rust_exe_digest_for_method(conversion_method)
+    needs_helper = conversion_method in {"rust-sdk", "set-data", "both"} or any(
+        method in {"set-data", "rust-sdk"} for method in auto_methods
+    )
+    helper_digest = (
+        file_sha256(HELPER_EXE)
+        if needs_helper
+        else None
+    )
+    rust_source_digest = native_source_digest_for_method(conversion_method)
+    rust_exe_digest = native_exe_digest_for_method(conversion_method)
     if needs_variable_sizes and prefs_template is None:
         log_warning(
             "[mathtype] warning: MathType preference template not found; "
@@ -1116,6 +1343,7 @@ def generate_equation_parts(
 
     for index, request in iter_equation_requests_with_progress(requests):
         latex = request.latex
+        math_style = request.math_style
         input_path = output_dir / f"eq_{index:03d}.tex"
         ole_path = output_dir / f"eq_{index:03d}.ole.bin"
         wmf_path = output_dir / f"eq_{index:03d}.wmf"
@@ -1153,6 +1381,8 @@ def generate_equation_parts(
                 rust_mtef_path,
                 prefs_path,
                 "rust",
+                svg_backend,
+                math_style,
             )
             set_data_hit = generate_cached_equation_parts_for_method(
                 index,
@@ -1169,6 +1399,8 @@ def generate_equation_parts(
                 mtef_path,
                 prefs_path,
                 "set-data",
+                svg_backend,
+                math_style,
             )
             cache_hits += int(rust_hit) + int(set_data_hit)
             cache_misses += int(not rust_hit) + int(not set_data_hit)
@@ -1194,6 +1426,9 @@ def generate_equation_parts(
                 metadata_path,
                 mtef_path,
                 prefs_path,
+                auto_methods,
+                svg_backend,
+                math_style,
             )
             cache_hits += hits
             cache_misses += misses
@@ -1213,6 +1448,8 @@ def generate_equation_parts(
                 mtef_path,
                 prefs_path,
                 conversion_method=conversion_method,
+                svg_backend=svg_backend,
+                math_style=math_style,
             )
             cache_hits += int(hit)
             cache_misses += int(not hit)
@@ -1224,6 +1461,14 @@ def generate_equation_parts(
             raise ValueError(f"generated WMF preview is missing placeable header: {wmf_path}")
         if not wmf_has_window_mapping(wmf_bytes):
             raise ValueError(f"generated WMF preview is missing window mapping records: {wmf_path}")
-        equations.append(GeneratedEquation(latex=latex, ole_path=ole_path, wmf_path=wmf_path, metadata_path=metadata_path))
+        equations.append(
+            GeneratedEquation(
+                latex=latex,
+                ole_path=ole_path,
+                wmf_path=wmf_path,
+                metadata_path=metadata_path,
+                math_style=math_style,
+            )
+        )
     log_info(f"[mathtype] cache summary: hits={cache_hits}, misses={cache_misses}, dir={MATHTYPE_CACHE_DIR}")
     return equations

@@ -53,7 +53,7 @@ PMT is not just a generic Pandoc wrapper. It is a manuscript workflow with opini
 - Reference DOCX support for Word styling
 - DOCX post-processing for author blocks, table behavior, styles, and line-number-related workflows
 - SVG handling and DOCX fallbacks for figures that Word does not handle well
-- MathType-aware DOCX workflow when needed
+- Cross-platform MathType-compatible OLE/WMF equations, with an optional native MathType comparison path on Windows
 
 ## Quick Start
 
@@ -64,7 +64,7 @@ Install these tools first:
 1. `uv` for running the CLI and Python environment
 2. `pandoc` 3.0+ and `pandoc-crossref`
 3. Optional: Microsoft Word or `soffice` for line-number source workflows
-4. Optional: MathType if you need MathType-based DOCX equations
+4. Optional: MathType on Windows only if you select `rust-sdk`, `set-data`, `auto`, or `both`; the default `rust` path is self-contained
 
 If `pandoc` or `pandoc-crossref` are not on `PATH`, PMT can download managed project-local copies into `.pmt/tools`.
 

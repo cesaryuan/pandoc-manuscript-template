@@ -161,10 +161,35 @@ than `\hat{\mathbf{C}}`. When a DOCX build actually starts MathType conversion,
 MathType-exported PDFs may hide the hat.
 
 Set `mathtypeConversionMethod` in `style.yml` to choose the MathType backend:
-`rust` uses LaTeX -> mathtype-rust -> OLE/MTEF -> SDK WMF/JSON, `set-data`
-uses MathType's TeX input OLE path, and `auto` tries `set-data` before falling
-back to `rust`. Use `both` to generate both backends, warn when their OLE/JSON
-results differ, and keep the `set-data` output in the DOCX.
+`rust` is cross-platform and combines LaTeX -> `mathtype-rust` -> OLE/MTEF
+with LaTeX -> SVG -> `latex2wmf` -> WMF/JSON. `set-data` uses MathType's
+Windows-only TeX input OLE path. `rust-sdk` preserves the older two-stage path:
+`mathtype-rust` generates OLE/MTEF, then the prebuilt MathType helper runs
+`sdk-xform-ole` to generate WMF/JSON. On Windows, when MathType is available,
+`auto` tries `set-data`, then `rust-sdk`, then `rust`; if MathType is unavailable,
+it uses `rust` directly. On non-Windows systems, `auto` always uses `rust`. The
+`both` mode is Windows-only: it generates the `rust` and `set-data` backends,
+warns when their OLE/JSON results differ, and keeps the `set-data` output in the DOCX. Runtime
+conversion never builds the .NET helper; Windows wheels contain its executable.
+
+Set `mathtypeSvgBackend` to choose how the cross-platform `rust` path produces
+formula SVG. `ratex` (the default) parses LaTeX directly, embeds glyph outlines,
+and reports its exact layout depth for Word baseline placement. `typst` converts
+LaTeX math with the pinned MiTeX 0.2.7 Rust converter and evaluates it against
+the matching complete official MiTeX Typst scope embedded in the executable.
+It renders the result with the bundled XITS Math font,
+reads the labelled formula frame's actual descent before page composition drops
+child baselines, and expands the transparent canvas to include glyph ink that
+overhangs that frame. Both backends reject SVG features outside the formula vector
+subset instead of silently rasterizing them.
+`pmt` also preserves whether Pandoc marked each formula as inline or display:
+RaTeX uses text style for inline formulas and display style for display formulas,
+so fractions, large operators, and limits keep the layout expected in prose.
+The RaTeX path treats `0.02em` as the minimum safety margin for glyph overshoot.
+It expands only transparent canvas space until the width and both baseline-side
+extents land on Word's half-point grid; the Typst path uses the same grid rule.
+The formula paths are not rescaled or trimmed, and the resulting baseline depth
+maps directly to Word's run position without a manual offset.
 
 ## Subfigure Layouts
 
@@ -246,7 +271,10 @@ as `figures/model-comparison.svg` to cached self-contained SVG files under
 SVG as data URIs, while SVG text and vector elements remain SVG. The source
 Markdown and SVG files are not rewritten. If `docxConvertSvgToPng: true` is
 enabled, `docxEmbedSvgImages` is automatically disabled because the full SVG is
-rasterized instead.
+rasterized instead. If a linked child image is itself an SVG, the DOCX pipeline
+automatically converts the composed parent SVG to PNG even when
+`docxConvertSvgToPng` is false, because Word cannot render an SVG data URI nested
+inside another SVG.
 
 If one SVG must be rasterized for a specific submission target, add
 `to-png=true` to that image. Add `to-png-scale=2` on the same image when it

@@ -4,9 +4,9 @@
 LaTeX math into MathType-compatible OLE `.bin` files. The generated OLE file
 contains an `Equation Native` stream with MTEF content.
 
-当前实现的目标很明确：先覆盖本仓库 `manuscript.md` 中出现的公式，并让生成的
-MTEF 与 MathType 通过 `TeX Input Language` 转出来的结果逐字节一致。WMF 预览
-暂时不在这个 Rust 程序里生成。
+当前实现的目标很明确：覆盖本仓库公式，并让生成的 MTEF 与 MathType 通过
+`TeX Input Language` 转出来的结果逐字节一致。WMF 预览由相邻的
+`scripts/latex2wmf` 跨平台生成，不属于这个 MTEF/OLE 程序的职责。
 
 ## Build
 
@@ -71,11 +71,10 @@ scripts\mathtype-rust\target\debug\mathtype-rust.exe `
 `--latex` 和 `--input` 必须二选一。PowerShell 中建议用单引号包住 LaTeX，
 避免 `$` 被当成变量展开。
 
-## Generate WMF Preview From MTEF
+## Generate Cross-platform WMF Preview
 
-Rust 程序只负责生成 OLE 和裸 MTEF。若需要 WMF 预览，可以把 `--mtef-output`
-写出的裸 MTEF 交给 `MathTypeOleHelper.exe`，让 MathType SDK 执行
-`MTEF -> PICT/WMF`：
+`mathtype-rust` 只负责生成 OLE 和裸 MTEF。正常 `pmt` 流程会把同一份 LaTeX
+交给 `scripts/latex2wmf`，使用 RaTeX 或 Typst 生成路径化 SVG，再转换为 WMF：
 
 ```powershell
 scripts\mathtype-rust\target\debug\mathtype-rust.exe `
@@ -83,19 +82,18 @@ scripts\mathtype-rust\target\debug\mathtype-rust.exe `
   --output C:\tmp\formula.rust.ole.bin `
   --mtef-output C:\tmp\formula.mtef.bin
 
-src\pandoc_manuscript\mathtype\ole_helper\bin\Release\net48\MathTypeOleHelper.exe `
-  --method sdk-xform-ole `
-  --binary `
-  --format "MathType EF" `
-  --input C:\tmp\formula.mtef.bin `
-  --output C:\tmp\formula.sdk.ole.bin `
-  --preview-output C:\tmp\formula.wmf `
-  --metadata-output C:\tmp\formula.json
+scripts\latex2wmf\target\debug\latex2wmf.exe `
+  --input scripts\mathtype-rust\samples\simple\eq_001.tex `
+  --output C:\tmp\formula.wmf `
+  --metadata-output C:\tmp\formula.json `
+  --svg-backend ratex `
+  --font-size 12
 ```
 
-这里的 `sdk-xform-ole --binary` 只接受裸 MTEF 输入；不要直接把 LaTeX 文本传给
-该方法，因为 MathType 的 `.tdl` 文件是输出 translator，不会把 LaTeX 解析成
-公式结构。
+旧的 MathType SDK `MTEF -> PICT/WMF` 链路保留为
+`mathtypeConversionMethod: rust-sdk`：先由本程序生成 OLE/MTEF，再由预构建的
+`MathTypeOleHelper.exe --method sdk-xform-ole` 生成 WMF/JSON。默认的 `rust`
+不调用 helper，也不要求安装 MathType。
 
 ## Source Layout
 

@@ -1,50 +1,53 @@
-# Default output style metadata.
+# 默认输出样式元数据。
 #
-# Keep manuscript-specific metadata in manuscript.md. Values defined in the
-# manuscript YAML header override these defaults during the build.
+# 请将稿件特有的元数据保留在 manuscript.md 中。构建时，稿件 YAML 头部中
+# 定义的值会覆盖这些默认值。
 
-# Override citeproc's fixed en dash in collapsed numeric citation ranges.
-# Set "-" for hyphen ranges such as [1-3], or "–" to keep the CSL default.
+# 覆盖 citeproc 在折叠的数字引文范围中固定使用的短破折号。
+# 设置为 "-" 可生成 [1-3] 这样的连字符范围；设置为 "–" 则保留 CSL 默认值。
 citation-number-range-delimiter: "–"
 
-# Set to true to convert DOCX equations to MathType OLE objects during build.
-# The default stays false so a freshly initialized project builds without a
-# local MathType/OLE conversion setup.
-mathtype: true
-# MathType conversion backend: rust, set-data, auto, or both.
-# rust: LaTeX -> mathtype-rust -> OLE/MTEF -> MathType SDK WMF/JSON.
-# set-data: LaTeX -> MathType OLE TeX input -> OLE/WMF/JSON.
-# auto: try set-data first, then fall back to rust.
-# both: generate both backends, warn if OLE/JSON differ, and use set-data.
-mathtypeConversionMethod: both
+# 设置为 true，可在构建期间将 DOCX 公式转换为 MathType OLE 对象。
+# 默认保持为 false，以便新初始化的项目无需配置本地 MathType/OLE 转换环境即可构建。
+mathtype: false
+# MathType 转换后端：rust、rust-sdk、set-data、auto 或 both。
+# rust：跨平台 LaTeX -> mathtype-rust OLE/MTEF + latex2wmf WMF/JSON。
+# rust-sdk：mathtype-rust OLE/MTEF + MathType SDK 辅助程序 WMF/JSON（Windows）。
+# set-data：LaTeX -> MathType OLE TeX 输入 -> OLE/WMF/JSON。
+# auto：Windows 且 MathType 可用时依次尝试 set-data、rust-sdk、rust；否则直接使用 rust。
+# both：仅限 Windows；同时使用 rust 和 set-data，若 OLE/JSON 不同则发出警告，并采用 set-data 的结果。
+mathtypeConversionMethod: rust
+# 跨平台 rust 后端使用的 SVG 渲染器：ratex 或 typst。
+# ratex 直接解析 LaTeX；typst 通过 MiTeX 转换，使用内置的 XITS Math 字体，
+# 并读取公式框的实际基线深度。
+mathtypeSvgBackend: typst
 
-# Set to true to inline local child images inside referenced SVG files during
-# DOCX builds. This keeps SVG text/vector elements sharp while making linked
-# child images visible in Word. Automatically disabled when docxConvertSvgToPng
-# is true.
+# 设置为 true，可在构建 DOCX 时将引用的 SVG 文件中的本地子图像内嵌。
+# 这样既能保持 SVG 文本和矢量元素清晰，又能让链接的子图像在 Word 中可见。
+# 当 docxConvertSvgToPng 为 true 时，此功能会自动禁用。
 docxEmbedSvgImages: true
 
-# Set to true to rasterize every referenced SVG image to PNG during DOCX builds.
-# Use `{to-png=true}` on a single image when only one SVG needs rasterization.
-# Add `to-png-scale=2` on that image to override the global PNG scale.
+# 设置为 true，可在构建 DOCX 时将所有引用的 SVG 图像栅格化为 PNG。
+# 如果只需栅格化单个 SVG，请为该图像设置 `{to-png=true}`。
+# 可再为该图像添加 `to-png-scale=2`，以覆盖全局 PNG 缩放比例。
 docxConvertSvgToPng: false
-# Enable at most one of the following SVG-to-PNG sizing controls.
+# 以下 SVG 转 PNG 尺寸控制选项最多只能启用一个，建议都不启用。
 # docxSvgToPngWidth: 1600
 # docxSvgToPngDpi: 300
 # docxSvgToPngScale: 1
 
-# Set to true for continuous DOCX line numbers, or use a string such as
-# '连续', '每页重编', '每节重编', 'continuous', 'restart-page', or 'restart-section'.
+# 设置为 true 可启用连续的 DOCX 行号；也可以使用以下字符串：
+# '连续'、'每页重编'、'每节重编'、'continuous'、'restart-page' 或 'restart-section'。
 show-line-numbers: '连续'
 
-# DOCX page margins written into the reference DOCX before Pandoc conversion.
+# 在 Pandoc 转换前写入参考 DOCX 的页面边距。
 docxPageMargins:
   top: 2.54cm
   bottom: 2.54cm
   left: 3.17cm
   right: 3.17cm
 
-# DOCX paragraph style formatting (applied by exact style name in post-processing)
+# DOCX 段落样式格式（后处理时按精确的样式名称应用）
 docxStyle:
   标题 1: { fontSize: 小四 }
   标题 2: { fontSize: 小四 }
@@ -53,8 +56,8 @@ docxStyle:
     paragraphSpacing:
       before: 0pt
       after: 0pt
-# Reviewer reply output overrides. `pmt build reply` merges the top-level
-# metadata above with this section, and these values take precedence for replies.
+# 审稿回复输出的覆盖配置。`pmt build reply` 会将上方的顶层元数据与本节合并，
+# 并在生成回复时优先采用本节中的值。
 reply:
   docxStyle:
     正文文本:
@@ -63,46 +66,46 @@ reply:
         before: 6pt
         after: 6pt
         
-# Pandoc-crossref settings for cross-references
-## Item caption prefix format: {figureTitle} {number}{titleDelim} {caption}
+# Pandoc-crossref 交叉引用设置
+## 项目标题前缀格式：{figureTitle} {number}{titleDelim} {caption}
 figureTitle: "Figure "
 tableTitle: "Table "
 titleDelim: ""
-## Item cross-reference format
+## 项目交叉引用格式
 figPrefix: "Figure"
 tblPrefix: "Table"
 secPrefix: "Section"
 eqnPrefix: "Equation"
-# Support for centered equations and right-aligned numbering
+# 支持公式居中、编号右对齐
 tableEqns: true
 ## 表格排版公式
-# eqnBlockTemplate: | # 用表格排版公式，能正确显示 Display Math
+# eqnBlockTemplate: | # 用表格排版公式，能正确显示行间公式
 #   +:------+:--------------------------------------------------:+--------:+
 #   |       | $$t$$                                              | $$nmi$$ |
 #   +-------+----------------------------------------------------+---------+
 ## 制表符排版 Word 公式
-# eqnBlockTemplate: | # 用制表符排版公式，不需要后处理脚本，但是 Display Math 在 docx 中会显示为行内公式
+# eqnBlockTemplate: | # 用制表符排版公式，不需要后处理脚本，但行间公式在 DOCX 中会显示为行内公式
 #    `<w:pPr><w:tabs><w:tab w:val="center" w:leader="none" w:pos="4156" /><w:tab w:val="right" w:leader="none" w:pos="8312" /></w:tabs></w:pPr><w:r><w:tab /></w:r>`{=openxml} $$t$$ `<w:r><w:tab /></w:r>`{=openxml} $$nmi$$
-# eqnBlockInlineMath: true    # Support for centered equations and right-aligned numbering
-## 制表符排版 Mathtype 公式
-eqnBlockTemplate: | # 用制表符排版公式，不需要后处理脚本，但是 Display Math 在 docx 中会显示为行内公式
+# eqnBlockInlineMath: true    # 支持公式居中、编号右对齐
+## 制表符排版 MathType 公式
+eqnBlockTemplate: | # 用制表符排版公式，不需要后处理脚本，但行间公式在 DOCX 中会显示为行内公式
    `<w:pPr><w:tabs><w:tab w:val="center" w:leader="none" w:pos="4156" /><w:tab w:val="right" w:leader="none" w:pos="8312" /></w:tabs></w:pPr><w:r><w:tab /></w:r>`{=openxml}$$t$$`<w:r><w:tab /></w:r>`{=openxml}$$nmi$$
-eqnBlockInlineMath: true    # Support for centered equations and right-aligned numbering
+eqnBlockInlineMath: true    # 支持公式居中、编号右对齐
 
-## Options for section numbering and auto-labeling
-linkReferences: true        # Convert references to hyperlinks
-autoSectionLabels: true     # Auto-add "sec:" prefix to section labels
-autoEqnLabels: true         # Number all display equations
-numberSections: true        # Number sections. Add 1.1., 1.2., etc.
-sectionsDepth: 3            # Depth of numbered sections
-subfigGrid: true            # Subfigure grid layout support
+## 章节编号和自动标签选项
+linkReferences: true        # 将引用转换为超链接
+autoSectionLabels: true     # 自动为章节标签添加 "sec:" 前缀
+autoEqnLabels: true         # 为所有行间公式编号
+numberSections: true        # 为章节编号，如 1.1、1.2 等
+sectionsDepth: 3            # 章节编号深度
+subfigGrid: true            # 支持子图网格布局
 subfigureChildTemplate: ($$i$$) $$t$$
 subfigureTemplate: $$figureTitle$$ $$i$$$$titleDelim$$ $$t$$
 
-# Options for bibliography
+# 参考文献选项
 reference-section-title: References
 link-citations: true
-# Citation Style Language (CSL) file
-# Default: Vancouver style (numeric citations)
-# You can download csl files from https://www.zotero.org/styles
+# 引文样式语言（CSL）文件
+# 默认：Vancouver 样式（数字引文）
+# 可从 https://www.zotero.org/styles 下载 CSL 文件
 # csl: path/to/your.csl

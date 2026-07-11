@@ -1,0 +1,24 @@
+{
+  "bounds": {
+    "height_pt": 19.0,
+    "width_pt": 216.0
+  },
+  "mathtype": {
+    "baseline_from_bottom_pt": 4.0,
+    "baseline_from_bottom_raw": 128,
+    "height_pt": 19.0,
+    "height_raw": 608,
+    "horiz_pos": 0,
+    "horiz_pos_type": 0,
+    "width_pt": 216.0,
+    "width_raw": 6912
+  },
+  "renderer": {
+    "baseline_source": "ratex-layout-depth",
+    "font_size_pt": 12.0,
+    "math_font": "KaTeX",
+    "math_style": "display",
+    "svg_backend": "ratex",
+    "wmf_geometry": "flattened-svg-paths"
+  }
+}

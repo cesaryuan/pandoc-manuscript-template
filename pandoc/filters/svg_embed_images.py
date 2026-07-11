@@ -43,6 +43,14 @@ class SvgImageRef:
     mime_type: str
 
 
+@dataclass(frozen=True)
+class EmbeddedSvg:
+    """Store one cached SVG and whether Word requires PNG fallback."""
+
+    path: Path
+    requires_png_fallback: bool
+
+
 def should_log(level: str) -> bool:
     """Return True when a filter message should be emitted."""
     configured = os.getenv("PANDOC_TEMPLATE_LOG_LEVEL", "INFO").strip().upper()
@@ -312,25 +320,29 @@ def ensure_embedded_svg(
     source: Path,
     target: Path,
     pmt_version: str,
-) -> Path | None:
+) -> EmbeddedSvg | None:
     """Create or reuse a self-contained SVG cache file for one SVG source."""
     tree = parse_svg(source)
     refs = collect_image_refs(tree, source)
     if not refs:
         return None
 
+    # Word cannot render an SVG stored as a data URI inside another SVG, so
+    # these composed figures must continue through the following PNG filter.
+    requires_png_fallback = any(ref.source.suffix.lower() in SVG_SUFFIXES for ref in refs)
+
     expected_metadata = expected_cache_metadata(source, refs, pmt_version)
     if cache_metadata_matches(target, expected_metadata):
         REUSED.add(target)
         log_debug(f"[svg-embed] Reusing {target}")
-        return target
+        return EmbeddedSvg(target, requires_png_fallback)
 
     embed_refs(refs)
     write_embedded_svg(tree, target)
     write_cache_metadata(target, expected_metadata)
     EMBEDDED.add(target)
     log_debug(f"[svg-embed] Embedded {len(refs)} child image(s): {source} -> {target}")
-    return target
+    return EmbeddedSvg(target, requires_png_fallback)
 
 
 def rewrite_image(
@@ -350,14 +362,17 @@ def rewrite_image(
         log_warning(f"[WARN] SVG image not found, leaving unchanged: {elem.url}")
         return None
 
-    target = ensure_embedded_svg(
+    embedded = ensure_embedded_svg(
         source,
         output_path_for(source, output_root, base_dirs),
         pmt_version,
     )
-    if target is None:
+    if embedded is None:
         return None
-    elem.url = target.as_posix()
+    elem.url = embedded.path.as_posix()
+    if embedded.requires_png_fallback:
+        elem.attributes["to-png"] = "true"
+        log_debug(f"[svg-embed] Marked {source} for PNG fallback because it embeds an SVG child image")
     return elem
 
 

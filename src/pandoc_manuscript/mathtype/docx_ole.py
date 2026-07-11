@@ -202,12 +202,12 @@ def apply_run_position(run: ET.Element, position_half_points: int) -> None:
 def mathtype_position_half_points(template: MathTypeTemplate) -> int:
     """Return Word's MathType baseline offset in half-points.
 
-    Prefer MathType's own baseline distance when available. Word's w:position
-    uses half-points, and a negative value lowers the object so the equation
-    baseline, not the bottom of the preview box, aligns with the target line.
+    Prefer the preview renderer's baseline distance when available. Word's
+    w:position uses half-points, and a negative value lowers the object so the
+    equation baseline, not the bottom of the preview box, aligns with the line.
     """
-    if template.baseline_from_bottom_pt is not None and template.baseline_from_bottom_pt > 0:
-        return -max(1, round(template.baseline_from_bottom_pt * 2))
+    if template.baseline_from_bottom_pt is not None and template.baseline_from_bottom_pt >= 0:
+        return -round(template.baseline_from_bottom_pt * 2)
 
     # Fallback for structural probes that clone a sample object without fresh
     # MathType metadata. The real conversion path should provide the baseline.

@@ -20,4 +20,4 @@ uvx bump-my-version bump patch
 git push origin main --tags
 ```
 
-Use `minor` or `major` instead of `patch` when appropriate. The version bump command updates `pyproject.toml` and the root package entry in `uv.lock`, creates a release commit, and tags it as `v{new_version}`. The workflow builds the wheel and source distribution, smoke-tests both artifacts with `pmt --help`, then runs `uv publish`.
+Use `minor` or `major` instead of `patch` when appropriate. The version bump command updates `pyproject.toml` and the root package entry in `uv.lock`, creates a release commit, and tags it as `v{new_version}`. The workflow builds Windows, macOS 14-targeted, and manylinux wheels, smoke-tests their bundled native helpers, then runs `uv publish`.

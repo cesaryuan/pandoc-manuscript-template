@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-14]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -26,6 +26,14 @@ jobs:
       - name: Install Python
         run: uv python install 3.11
 
+      - name: Set macOS 14 deployment target
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          # Prevent a newer macOS SDK from producing helpers that macOS 14.6
+          # cannot load when the floating macos-latest image advances.
+          echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> "$GITHUB_ENV"
+
       - name: Check Rust toolchain
         run: |
           rustup show active-toolchain
@@ -37,6 +45,22 @@ jobs:
 
       - name: Build platform wheel
         run: uv build --wheel
+
+      - name: Verify macOS 14 native helper compatibility
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          wheel="$(find dist -name '*.whl' -print -quit)"
+          helper_dir="$(mktemp -d)"
+          trap 'rm -rf "$helper_dir"' EXIT
+          unzip -q "$wheel" 'pandoc_manuscript/mathtype/bin/mathtype-rust' 'pandoc_manuscript/mathtype/bin/latex2wmf' -d "$helper_dir"
+          for helper in "$helper_dir"/pandoc_manuscript/mathtype/bin/*; do
+            min_os="$(otool -l "$helper" | awk '$1 == "minos" || $1 == "version" { print $2; exit }')"
+            if [[ "$min_os" != 14.* ]]; then
+              echo "Expected macOS 14 deployment target for $helper, got ${min_os:-missing}." >&2
+              exit 1
+            fi
+          done
 
       - name: Smoke test packaged native helpers
         shell: pwsh

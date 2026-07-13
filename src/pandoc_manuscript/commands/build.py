@@ -97,6 +97,10 @@ class BuildCommandSettings(BaseSettings):
         validation_alias=AliasChoices("o", "output-file"),
         description="Exact output file path for DOCX, LaTeX, and JSON builds.",
     )
+    mathtype: bool | None = Field(
+        default=None,
+        description=PmtSettings.model_fields["mathtype"].description,
+    )
     project_dir: Path = Field(default=Path("."), description="Manuscript project directory.")
     reference_doc: CliSuppress[str | None] = Field(
         default=None,
@@ -117,6 +121,7 @@ class BuildCommandSettings(BaseSettings):
                     manuscript_option=self.manuscript_option,
                     output_file=self.output_file,
                     reference_doc=self.reference_doc,
+                    mathtype=self.mathtype,
                 )
             )
 
@@ -535,7 +540,11 @@ def csl_args(pandoc_metadata: dict[str, Any]) -> list[str]:
         return ['--csl', str(csl)]
     return ['--csl', to_pandoc_path(default_docx_csl())]
 
-def build_docx(*, warn_hat_order: bool = True):
+def build_docx(
+    effective: EffectiveMetadata,
+    *,
+    warn_hat_order: bool = True,
+) -> None:
     """Generate DOCX file with optional post-processing."""
     log_info("[DOCX] Building DOCX...\n")
 
@@ -543,7 +552,6 @@ def build_docx(*, warn_hat_order: bool = True):
     ensure_output_parent(docx_file)
     ensure_docx_target_writable(docx_file)
     extra_args = []
-    effective = load_build_metadata()
     pmt_settings = effective.pmt_settings
     conversion_method = normalize_conversion_method(pmt_settings.mathtype_conversion_method)
     use_mathtype = resolve_mathtype_build_enabled(
@@ -659,6 +667,7 @@ def run_build_command(
     output_file: str | None = None,
     reference_doc: str | None = None,
     warn_hat_order: bool = True,
+    mathtype: bool | None = None,
 ) -> int:
     """Run the selected manuscript build target with direct settings values."""
     configure_output_file(None)
@@ -675,18 +684,23 @@ def run_build_command(
     manuscript_arg = manuscript_option or markdown
     if reference_doc and target != "docx":
         raise ValueError("--reference-doc is only supported by the docx target.")
+    if mathtype is not None and target != "docx":
+        raise ValueError("--mathtype/--no-mathtype is only supported by the docx target.")
     configure_reference_doc(reference_doc)
 
     configure_manuscript(manuscript_arg or SETTINGS.manuscript_file, derive_project_name=bool(manuscript_arg))
 
-    targets = {
-        "docx": lambda: build_docx(warn_hat_order=warn_hat_order),
-        "latex": build_latex,
-        "json": build_json,
-    }
-
     try:
-        targets[target]()
+        if target == "docx":
+            effective = load_build_metadata()
+            if mathtype is not None:
+                effective.pmt_settings.mathtype = mathtype
+                log_debug(f"[DEBUG] Command-line MathType setting: mathtype: {str(mathtype).lower()}")
+            build_docx(effective=effective, warn_hat_order=warn_hat_order)
+        elif target == "latex":
+            build_latex()
+        else:
+            build_json()
         return 0
     except KeyboardInterrupt:
         log_warning("\n\n[WARN] Build interrupted by user.")

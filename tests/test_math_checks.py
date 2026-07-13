@@ -40,7 +40,7 @@ def test_run_build_command_forwards_hat_preflight_flag(tmp_path, monkeypatch) ->
     manuscript = tmp_path / "paper.md"
     manuscript.write_text("$\\hat{\\mathbf{C}}$\n", encoding="utf-8")
     calls: list[Path] = []
-    kwargs_seen: list[dict[str, bool]] = []
+    kwargs_seen: list[dict[str, object]] = []
 
     monkeypatch.setattr(build, "warn_mathtype_hat_style_order", lambda path: calls.append(path))
     monkeypatch.setattr(build, "build_docx", lambda **kwargs: kwargs_seen.append(kwargs))
@@ -48,8 +48,26 @@ def test_run_build_command_forwards_hat_preflight_flag(tmp_path, monkeypatch) ->
     result = build.run_build_command(target="docx", markdown=str(manuscript))
 
     assert result == 0
-    assert kwargs_seen == [{"warn_hat_order": True}]
+    assert kwargs_seen[0]["warn_hat_order"] is True
+    assert kwargs_seen[0]["effective"].pmt_settings.mathtype is False
     assert calls == []
+
+
+def test_run_build_command_applies_cli_mathtype_setting(tmp_path, monkeypatch) -> None:
+    """Apply the one-build MathType choice to the settings passed to DOCX."""
+    manuscript = tmp_path / "paper.md"
+    manuscript.write_text("Body\n", encoding="utf-8")
+    style = tmp_path / "style.yml"
+    style.write_text("mathtype: false\n", encoding="utf-8")
+    kwargs_seen: list[dict[str, object]] = []
+    monkeypatch.setattr(build.SETTINGS, "style_file", str(style))
+    monkeypatch.setattr(build, "build_docx", lambda **kwargs: kwargs_seen.append(kwargs))
+
+    result = build.run_build_command(target="docx", markdown=str(manuscript), mathtype=True)
+
+    assert result == 0
+    assert kwargs_seen[0]["warn_hat_order"] is True
+    assert kwargs_seen[0]["effective"].pmt_settings.mathtype is True
 
 
 def test_run_build_reply_command_txt_skips_hat_preflight(tmp_path, monkeypatch) -> None:

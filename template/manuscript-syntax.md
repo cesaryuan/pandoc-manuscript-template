@@ -595,6 +595,17 @@ margins. When MathType conversion is inactive or unavailable, PMT uses the
 three-column table template so native Word display equations remain centered
 with their numbers right-aligned.
 
+For a one-off DOCX build, the command line can override the top-level
+`mathtype` setting without editing `style.yml`:
+
+```powershell
+pmt build docx --mathtype
+pmt build docx --no-mathtype
+```
+
+The command-line value has higher priority than `style.yml`. These flags apply
+only to `pmt build docx`.
+
 Common Chinese built-in names such as `标题 1`, `正文文本`, and `正文` are automatically mapped to the corresponding Word built-in style names like `Heading 1`, `Body Text`, and `Normal`. Custom styles still need to use their exact DOCX style names.
 
 ```yaml

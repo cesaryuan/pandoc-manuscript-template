@@ -208,7 +208,13 @@ class PmtSettings(BaseSettings):
 
     model_config = SettingsConfigDict(extra="forbid", populate_by_name=True)
 
-    mathtype: bool = False
+    mathtype: bool = Field(
+        default=False,
+        description=(
+            "Convert DOCX equations to MathType OLE objects during the build. "
+            "When disabled, keep native Word equations and require no local MathType/OLE environment."
+        ),
+    )
     mathtype_conversion_method: str = Field(
         default="auto",
         validation_alias=AliasChoices("mathtypeConversionMethod", "mathtype-conversion-method", "mathtype_conversion_method"),

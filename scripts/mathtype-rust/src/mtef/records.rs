@@ -74,21 +74,6 @@ pub(super) fn write_size(size: SizeState, out: &mut Vec<u8>) {
     });
 }
 
-/// Write MathType's variable-length unsigned integer encoding.
-pub(super) fn write_unsigned(value: usize, out: &mut Vec<u8>) -> Result<(), String> {
-    if value < 255 {
-        out.push(value as u8);
-    } else if value <= u16::MAX as usize {
-        out.push(255);
-        write_u16(value as u16, out);
-    } else {
-        return Err(format!(
-            "value is too large for MTEF unsigned integer: {value}"
-        ));
-    }
-    Ok(())
-}
-
 /// Write a little-endian 16-bit value.
 pub(super) fn write_u16(value: u16, out: &mut Vec<u8>) {
     out.extend_from_slice(&value.to_le_bytes());

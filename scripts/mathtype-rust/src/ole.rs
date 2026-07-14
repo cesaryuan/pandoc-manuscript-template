@@ -111,12 +111,14 @@ pub(crate) fn write_compound_file(equation_native: &[u8]) -> Result<Vec<u8>, Str
     write_fat_sector(
         &mut sectors,
         &streams,
-        first_mini_fat_sector,
-        mini_fat_sector_count,
-        root_mini_stream_sector,
-        root_mini_stream_sector_count,
-        second_directory_sector,
-        total_sectors,
+        FatLayout {
+            first_mini_fat_sector,
+            mini_fat_sector_count,
+            root_mini_stream_sector,
+            root_mini_stream_sector_count,
+            second_directory_sector,
+            total_sectors,
+        },
     );
 
     let mut file = Vec::with_capacity((total_sectors as usize + 1) * SECTOR_SIZE);
@@ -341,16 +343,15 @@ fn write_minifat_sectors(
 }
 
 /// Write the FAT chains for directory, MiniFAT, root mini stream, and large streams.
-fn write_fat_sector(
-    sectors: &mut [[u8; SECTOR_SIZE]],
-    streams: &[Stream<'_>],
-    first_mini_fat_sector: u32,
-    mini_fat_sector_count: usize,
-    root_mini_stream_sector: u32,
-    root_mini_stream_sector_count: usize,
-    second_directory_sector: u32,
-    total_sectors: u32,
-) {
+fn write_fat_sector(sectors: &mut [[u8; SECTOR_SIZE]], streams: &[Stream<'_>], layout: FatLayout) {
+    let FatLayout {
+        first_mini_fat_sector,
+        mini_fat_sector_count,
+        root_mini_stream_sector,
+        root_mini_stream_sector_count,
+        second_directory_sector,
+        total_sectors,
+    } = layout;
     let fat = &mut sectors[FAT_SECTOR_ID as usize];
     for sector in 0..128 {
         put_u32(fat, sector * 4, FREE_SECTOR);
@@ -377,6 +378,17 @@ fn write_fat_sector(
     for sector in total_sectors..128 {
         put_u32(fat, (sector * 4) as usize, FREE_SECTOR);
     }
+}
+
+/// Keep the sector locations needed to construct one FAT together.
+#[derive(Clone, Copy)]
+struct FatLayout {
+    first_mini_fat_sector: u32,
+    mini_fat_sector_count: usize,
+    root_mini_stream_sector: u32,
+    root_mini_stream_sector_count: usize,
+    second_directory_sector: u32,
+    total_sectors: u32,
 }
 
 /// Mark one regular-sector chain in the FAT.

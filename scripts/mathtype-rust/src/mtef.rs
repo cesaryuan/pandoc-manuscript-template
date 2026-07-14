@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::generated::char_tables::ExplicitFont;
 use crate::generated::color_tables::named_color_def;
-use crate::mathtype_ansi::{encode_mathtype_source, encode_mathtype_text};
+use crate::mathtype_ansi::encode_mathtype_text;
 use crate::typeface::{
     EXPLICIT_FONT_NEG_1, EXPLICIT_FONT_NEG_2, FN_FUNCTION, FN_MT_EXTRA, FN_NUMBER, FN_SPACE,
     FN_SYMBOL, FN_TEXT, FN_VARIABLE, FN_VECTOR,
@@ -24,6 +24,8 @@ mod predicates;
 mod records;
 #[path = "mtef/scripts.rs"]
 mod scripts;
+#[path = "mtef/source.rs"]
+mod source;
 #[path = "mtef/templates.rs"]
 mod templates;
 
@@ -33,7 +35,7 @@ use environments::*;
 use predicates::*;
 use records::{
     color_black, color_default, write_expanding_glyph, write_null_line, write_size,
-    write_table_char, write_table_char_with_embellishments, write_u16, write_unsigned,
+    write_table_char, write_table_char_with_embellishments, write_u16,
 };
 use scripts::*;
 use templates::*;
@@ -214,26 +216,14 @@ pub(crate) fn write_mtef_with_prefs(
     expr: &Expr,
     prefs_file: Option<&std::path::Path>,
 ) -> Result<Vec<u8>, String> {
-    let mut out = vec![0x05, 0x01, 0x00, 0x07, 0x08];
-    out.extend_from_slice(b"DSMT7\0");
+    let translation_failed = expr_is_translation_failed_placeholder(expr);
+    let mut out = Vec::new();
     // MathType switches to a shorter failure-form header when TeX Input collapses
     // the whole formula into "(Text translation failed)".
-    if expr_is_translation_failed_placeholder(expr) {
-        out.push(0x00);
-    } else {
-        out.push(0x01);
-        out.push(0x66);
-    }
+    source::write_header(!translation_failed, &mut out);
 
-    if !expr_is_translation_failed_placeholder(expr) {
-        let mut source = b"TeX Input Language\0".to_vec();
-        source.extend_from_slice(&encode_mathtype_source(source_latex_header_text(
-            source_latex,
-            expr,
-        ))?);
-        source.push(0x00);
-        write_unsigned(source.len(), &mut out)?;
-        out.extend_from_slice(&source);
+    if !translation_failed {
+        source::write_tex_source_record(source_latex_header_text(source_latex, expr), &mut out)?;
     }
 
     if let Some(path) = prefs_file {
@@ -243,6 +233,11 @@ pub(crate) fn write_mtef_with_prefs(
     }
     write_equation_body(expr, &mut out)?;
     Ok(out)
+}
+
+/// Recover the source LaTeX stored in MathType's TeX-source future record.
+pub(crate) fn read_tex_source(mtef: &[u8]) -> Result<Option<String>, String> {
+    source::read_tex_source(mtef)
 }
 
 /// Return the TeX-source string MathType stores in the future record.
@@ -884,11 +879,13 @@ fn write_expr(
             placement,
             leading_space,
         } => write_math_op_expr(
-            content,
-            lower.as_deref(),
-            upper.as_deref(),
-            *placement,
-            *leading_space,
+            MathOpWrite {
+                content,
+                lower: lower.as_deref(),
+                upper: upper.as_deref(),
+                placement: *placement,
+                leading_space: *leading_space,
+            },
             out,
             current_size,
             writer,
@@ -907,11 +904,13 @@ fn write_expr(
             body,
             placement,
         } => write_integral_expr(
-            *kind,
-            body.as_deref(),
-            lower.as_deref(),
-            upper.as_deref(),
-            *placement,
+            IntegralWrite {
+                kind: *kind,
+                body: body.as_deref(),
+                lower: lower.as_deref(),
+                upper: upper.as_deref(),
+                placement: *placement,
+            },
             out,
             current_size,
             writer,
@@ -2072,17 +2071,29 @@ fn write_limit_expr(
     }
 }
 
-/// Write one parsed `\mathop` node, preserving limit placement and bare-atom spacing.
-fn write_math_op_expr(
-    content: &Expr,
-    lower: Option<&Expr>,
-    upper: Option<&Expr>,
+/// Bundle the semantic inputs for one `\mathop` write operation.
+struct MathOpWrite<'a> {
+    content: &'a Expr,
+    lower: Option<&'a Expr>,
+    upper: Option<&'a Expr>,
     placement: LimitPlacement,
     leading_space: bool,
+}
+
+/// Write one parsed `\mathop` node, preserving limit placement and bare-atom spacing.
+fn write_math_op_expr(
+    spec: MathOpWrite<'_>,
     out: &mut Vec<u8>,
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    let MathOpWrite {
+        content,
+        lower,
+        upper,
+        placement,
+        leading_space,
+    } = spec;
     if placement == LimitPlacement::NoLimits && (lower.is_some() || upper.is_some()) {
         let expr = Expr::Script {
             base: Box::new(content.clone()),
@@ -2106,17 +2117,29 @@ fn write_math_op_expr(
     }
 }
 
+/// Bundle the semantic inputs for one integral write operation.
+struct IntegralWrite<'a> {
+    kind: IntegralKind,
+    body: Option<&'a Expr>,
+    lower: Option<&'a Expr>,
+    upper: Option<&'a Expr>,
+    placement: LimitPlacement,
+}
+
 /// Write one parsed integral node while preserving side-script versus limit placement.
 fn write_integral_expr(
-    kind: IntegralKind,
-    body: Option<&Expr>,
-    lower: Option<&Expr>,
-    upper: Option<&Expr>,
-    placement: LimitPlacement,
+    spec: IntegralWrite<'_>,
     out: &mut Vec<u8>,
     current_size: SizeState,
     writer: &mut MtefWriter,
 ) -> Result<WriteState, String> {
+    let IntegralWrite {
+        kind,
+        body,
+        lower,
+        upper,
+        placement,
+    } = spec;
     if placement == LimitPlacement::NoLimits {
         if body.is_none() {
             let suppress_restore = !writer.force_next_no_limits_integral_style_restore;

@@ -1,5 +1,5 @@
 use crate::ast::{EnvironmentKind, Expr, MatrixKind};
-use crate::cfb::read_regular_stream;
+use crate::conversion::{extract_mtef_from_ole, mtef_to_latex};
 use crate::mtef::{write_mtef, write_mtef_with_prefs};
 use crate::parser::{normalize_latex, Parser};
 use crate::typeface::{
@@ -22,6 +22,10 @@ fn all_samples_match_mathtype_mtef() {
 
     let sample_count = cases.len();
     let mut failures = Vec::new();
+    let mut reverse_exact = 0usize;
+    let mut reverse_lossy = 0usize;
+    let mut reverse_missing = 0usize;
+    let skip_reference_bytes = should_skip_reference_bytes();
     for tex_path in cases.drain(..) {
         let stem = tex_path
             .file_stem()
@@ -35,16 +39,37 @@ fn all_samples_match_mathtype_mtef() {
             .expect("sample file has a parent directory")
             .join(format!("mt_eq_{number}.ole.bin"));
 
-        match compare_sample(&tex_path, &mt_path) {
-            Ok(()) => {}
+        match compare_sample(&tex_path, &mt_path, skip_reference_bytes) {
+            Ok(ReverseSampleStatus::Exact) => reverse_exact += 1,
+            Ok(ReverseSampleStatus::LossySource) => reverse_lossy += 1,
+            Ok(ReverseSampleStatus::MissingSource) => reverse_missing += 1,
             Err(err) => failures.push(format!("{}: {err}", tex_path.display())),
         }
     }
 
+    if skip_reference_bytes {
+        println!(
+            "MTEF portable render samples: {}/{} passed",
+            sample_count - failures.len(),
+            sample_count
+        );
+    } else {
+        println!(
+            "MTEF comparison samples: {}/{} passed",
+            sample_count - failures.len(),
+            sample_count
+        );
+    }
     println!(
-        "MTEF comparison samples: {}/{} passed",
-        sample_count - failures.len(),
-        sample_count
+        "MTEF-to-LaTeX samples: exact={reverse_exact}, lossy_source={reverse_lossy}, missing_source={reverse_missing}"
+    );
+    println!(
+        "MathType reference bytes: {}",
+        if skip_reference_bytes {
+            "portable smoke only"
+        } else {
+            "strict byte-for-byte"
+        }
     );
     assert!(
         failures.is_empty(),
@@ -52,6 +77,27 @@ fn all_samples_match_mathtype_mtef() {
         failures.len(),
         failures.join("\n")
     );
+    assert!(
+        (reverse_exact + reverse_lossy) * 100 >= sample_count * 98,
+        "fewer than 98% of samples expose a TeX source record"
+    );
+    assert!(
+        reverse_exact * 100 >= sample_count * 95,
+        "fewer than 95% of samples round-trip to the exact normalized LaTeX source"
+    );
+}
+
+/// Return true only for explicit opt-in values used by portable CI runners.
+fn should_skip_reference_bytes() -> bool {
+    std::env::var("MATHTYPE_RUST_SKIP_REFERENCE_BYTES")
+        .is_ok_and(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true"))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReverseSampleStatus {
+    Exact,
+    LossySource,
+    MissingSource,
 }
 
 /// Return all sample TeX files under the samples tree in stable order.
@@ -84,33 +130,39 @@ fn collect_sample_paths(dir: &Path, paths: &mut Vec<PathBuf>) -> Result<(), Stri
 }
 
 /// Generate Rust MTEF for one sample and compare it with MathType's reference OLE stream.
-fn compare_sample(tex_path: &Path, mt_path: &Path) -> Result<(), String> {
+fn compare_sample(
+    tex_path: &Path,
+    mt_path: &Path,
+    skip_reference_bytes: bool,
+) -> Result<ReverseSampleStatus, String> {
     let raw_latex = fs::read_to_string(tex_path)
         .map_err(|err| format!("failed to read {}: {err}", tex_path.display()))?;
     let latex = normalize_latex(&raw_latex);
     let rust_mtef = render_mtef_for_test(&latex)?;
     let mt_ole = fs::read(mt_path)
         .map_err(|err| format!("failed to read reference {}: {err}", mt_path.display()))?;
-    let equation_native = read_regular_stream(&mt_ole, "Equation Native")?;
-    if equation_native.len() < 28 {
-        return Err("Equation Native stream is shorter than the native header".to_string());
+    let mt_mtef = extract_mtef_from_ole(&mt_ole)?;
+    if !skip_reference_bytes && rust_mtef != mt_mtef {
+        let first_diff = rust_mtef
+            .iter()
+            .zip(mt_mtef.iter())
+            .position(|(left, right)| left != right)
+            .unwrap_or_else(|| rust_mtef.len().min(mt_mtef.len()));
+        return Err(format!(
+            "MTEF differs: mathtype_len={}, rust_len={}, first_diff={first_diff}, tex={latex}",
+            mt_mtef.len(),
+            rust_mtef.len()
+        ));
     }
-    let mt_mtef = &equation_native[28..];
 
-    if rust_mtef == mt_mtef {
-        return Ok(());
+    match mtef_to_latex(&mt_mtef) {
+        Ok(recovered) if recovered == latex => Ok(ReverseSampleStatus::Exact),
+        Ok(_) => Ok(ReverseSampleStatus::LossySource),
+        Err(err) if err.contains("does not contain a TeX Input Language source record") => {
+            Ok(ReverseSampleStatus::MissingSource)
+        }
+        Err(err) => Err(format!("MTEF-to-LaTeX failed: {err}")),
     }
-
-    let first_diff = rust_mtef
-        .iter()
-        .zip(mt_mtef.iter())
-        .position(|(left, right)| left != right)
-        .unwrap_or_else(|| rust_mtef.len().min(mt_mtef.len()));
-    Err(format!(
-        "MTEF differs: mathtype_len={}, rust_len={}, first_diff={first_diff}, tex={latex}",
-        mt_mtef.len(),
-        rust_mtef.len()
-    ))
 }
 
 /// Ensure common matrix environments take the native MATRIX path, not raw TeX fallback.

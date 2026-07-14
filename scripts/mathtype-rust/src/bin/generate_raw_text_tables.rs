@@ -459,7 +459,7 @@ fn first_visible_probe_char(mtef: &[u8]) -> Option<ProbeCharRecord> {
             }
             ProbeRecord::Char(_) | ProbeRecord::Other => None,
         })
-        .last()
+        .next_back()
 }
 
 /// Load one probe OLE and extract the embedded Equation Native payload.
@@ -770,7 +770,7 @@ fn find_last_ascii(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .windows(needle.len())
         .enumerate()
         .filter_map(|(index, window)| (window == needle).then_some(index))
-        .last()
+        .next_back()
 }
 
 /// Render one optional byte in generated Rust syntax.

@@ -2941,7 +2941,14 @@ fn delimited_bodyless_big_op_outer_script_expr(
     marker: &str,
     script: Expr,
 ) -> Option<Expr> {
-    let (left, right, kind, lower, upper) = delimited_bodyless_big_op_parts(&base)?;
+    let parts = delimited_bodyless_big_op_parts(&base)?;
+    let DelimitedBodylessBigOp {
+        left,
+        right,
+        kind,
+        lower,
+        upper,
+    } = parts;
     let mut items = vec![Expr::RawTex(format!("\\left{left}"))];
     items.push(bodyless_big_op_visible_expr(kind));
     if let Some(lower) = lower {
@@ -2957,10 +2964,17 @@ fn delimited_bodyless_big_op_outer_script_expr(
     Some(collapse_single_sequence(Expr::Sequence(items)))
 }
 
+/// Keep the semantically related parts of one fenced bodyless big operator together.
+struct DelimitedBodylessBigOp {
+    left: char,
+    right: char,
+    kind: BigOpKind,
+    lower: Option<Expr>,
+    upper: Option<Expr>,
+}
+
 /// Return the fence and limit parts for one delimited bodyless big operator.
-fn delimited_bodyless_big_op_parts(
-    expr: &Expr,
-) -> Option<(char, char, BigOpKind, Option<Expr>, Option<Expr>)> {
+fn delimited_bodyless_big_op_parts(expr: &Expr) -> Option<DelimitedBodylessBigOp> {
     match expr {
         Expr::Delimited {
             left,
@@ -2973,13 +2987,13 @@ fn delimited_bodyless_big_op_parts(
                 upper,
                 body: None,
                 placement: LimitPlacement::Limits,
-            } if lower.is_some() || upper.is_some() => Some((
-                *left,
-                *right,
-                *kind,
-                lower.as_deref().cloned(),
-                upper.as_deref().cloned(),
-            )),
+            } if lower.is_some() || upper.is_some() => Some(DelimitedBodylessBigOp {
+                left: *left,
+                right: *right,
+                kind: *kind,
+                lower: lower.as_deref().cloned(),
+                upper: upper.as_deref().cloned(),
+            }),
             Expr::Sequence(items) => match items.as_slice() {
                 [item] => delimited_bodyless_big_op_parts(&Expr::Delimited {
                     left: *left,

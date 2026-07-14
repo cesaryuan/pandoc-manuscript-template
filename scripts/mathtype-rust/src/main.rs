@@ -1,7 +1,7 @@
 mod ast;
-#[cfg(test)]
 mod cfb;
 mod cli;
+mod conversion;
 mod generated;
 mod mathtype_ansi;
 mod mathtype_input;

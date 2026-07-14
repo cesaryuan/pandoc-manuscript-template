@@ -1,0 +1,76 @@
+name: mathtype-rust CI
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - "scripts/mathtype-rust/**"
+      - ".github/workflows/mathtype-rust-ci.yml"
+      - "src/pandoc_manuscript/mathtype/Times+Symbol 12.eqp"
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/mathtype-rust/**"
+      - ".github/workflows/mathtype-rust-ci.yml"
+      - "src/pandoc_manuscript/mathtype/Times+Symbol 12.eqp"
+
+env:
+  # The checked-in MathType truth corpus was produced on Chinese Windows.
+  # GBK lets every runner decode those source records. Windows best-fit behavior
+  # is host-specific, so portable CI renders every sample but leaves strict byte
+  # parity to the matching Chinese-Windows acceptance environment.
+  MATHTYPE_RUST_SOURCE_ENCODING: gbk
+  MATHTYPE_RUST_SKIP_REFERENCE_BYTES: "1"
+
+defaults:
+  run:
+    working-directory: scripts/mathtype-rust
+
+jobs:
+  quality:
+    name: Format and lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install Rust quality components
+        run: rustup component add rustfmt clippy
+
+      - name: Install minimum supported Rust
+        run: rustup toolchain install 1.85.0 --profile minimal
+
+      - name: Check minimum supported Rust
+        run: cargo +1.85.0 check --all-targets
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Run Clippy with warnings denied
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Run complete Rust test suite
+        run: cargo test -- --show-output
+
+      - name: Smoke test CLI help
+        run: cargo run -- --help

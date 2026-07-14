@@ -1260,10 +1260,10 @@ fn consume_visible_double_backslash_sequence(parser: &mut Parser) -> Option<Expr
             .copied()
             .map(Expr::Char)
             .collect();
-        return Some(Expr::Sequence(vec![
+        Some(Expr::Sequence(vec![
             Expr::RawTex("\\\\".to_string()),
             Expr::Sequence(letters),
-        ]));
+        ]))
     } else if parser
         .peek()
         .is_some_and(|next| matches!(next, '[' | '|') || next.is_ascii_whitespace())
@@ -1274,16 +1274,16 @@ fn consume_visible_double_backslash_sequence(parser: &mut Parser) -> Option<Expr
         // Bug-fix: malformed visible line-break forms such as `\\[2ex]b`, `\\ A`,
         // and `\\|` keep only the raw `\\`; the following content stays on the
         // normal visible parse path instead of joining the raw run.
-        return Some(Expr::RawTex("\\\\".to_string()));
+        Some(Expr::RawTex("\\\\".to_string()))
     } else if parser
         .peek()
         .is_some_and(|next| matches!(next, '{' | '}' | '<' | '>' | '/' | '.' | '(' | ')'))
     {
         parser.pos += 1;
         let suffix: String = parser.chars[start..parser.pos].iter().collect();
-        return Some(Expr::RawTex(format!("\\\\{suffix}")));
+        Some(Expr::RawTex(format!("\\\\{suffix}")))
     } else {
-        return None;
+        None
     }
 }
 

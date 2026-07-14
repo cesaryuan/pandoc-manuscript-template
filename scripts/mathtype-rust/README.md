@@ -1,8 +1,10 @@
 # mathtype-rust
 
-`mathtype-rust` is a native Rust prototype for converting a supported subset of
-LaTeX math into MathType-compatible OLE `.bin` files. The generated OLE file
-contains an `Equation Native` stream with MTEF content.
+`mathtype-rust` is a native Rust converter for translating a supported subset of
+LaTeX math into MathType-compatible OLE `.bin` files. It can also recover the
+embedded LaTeX source from raw MTEF or a MathType OLE object when the MTEF carries
+MathType's `TeX Input Language` future record. The generated OLE file contains an
+`Equation Native` stream with MTEF content.
 
 当前实现的目标很明确：覆盖本仓库公式，并让生成的 MTEF 与 MathType 通过
 `TeX Input Language` 转出来的结果逐字节一致。WMF 预览由相邻的
@@ -36,7 +38,10 @@ scripts\mathtype-rust\target\debug\mathtype-rust.exe
 cargo test
 cargo fmt -- --check
 cargo clippy --all-targets --all-features -- -D warnings
+cargo +1.85.0 check --all-targets
 cargo run -- --latex '$x$' --output C:\tmp\formula.ole.bin --mtef-output C:\tmp\formula.mtef.bin
+cargo run -- --ole-input C:\tmp\formula.ole.bin
+cargo run -- --mtef-input C:\tmp\formula.mtef.bin
 ```
 
 ## Convert One Formula
@@ -71,6 +76,58 @@ scripts\mathtype-rust\target\debug\mathtype-rust.exe `
 `--latex` 和 `--input` 必须二选一。PowerShell 中建议用单引号包住 LaTeX，
 避免 `$` 被当成变量展开。
 
+## Convert MTEF or OLE Back to LaTeX
+
+从 MathType OLE 对象读取 `Equation Native`，并把其中保存的 LaTeX 输出到标准输出：
+
+```powershell
+scripts\mathtype-rust\target\debug\mathtype-rust.exe `
+  --ole-input scripts\mathtype-rust\samples\generated\mt_eq_053.ole.bin
+```
+
+从裸 MTEF 文件恢复 LaTeX，并写入文件：
+
+```powershell
+scripts\mathtype-rust\target\debug\mathtype-rust.exe `
+  --mtef-input C:\tmp\formula.mtef.bin `
+  --latex-output C:\tmp\formula.tex
+```
+
+反向参数说明：
+
+- `--ole-input <ole.bin>`: 从 OLE 的 `Equation Native` stream 读取 MTEF。
+- `--mtef-input <mtef.bin>`: 直接读取裸 MTEF。
+- `--latex-output <file>`: 可选；省略时把 LaTeX 写到标准输出。
+
+当前反向转换读取 MathType 正式保存的 `TeX Input Language` future record，并与
+正向 writer 共用 MTEF v5 header、future-record 长度和系统代码页编解码逻辑。
+这个路径能保留原始 TeX 命令，而不是从排版后的字符猜测命令。
+
+MTEF 源记录有两个格式级限制：
+
+- Windows MathType 使用当前 ANSI 代码页保存源文本；代码页无法表示的 Unicode
+  字符会在 MTEF 中永久变成 `?`，反向转换无法恢复已经丢失的信息。
+- MathType 翻译失败对象可能完全不写 `TeX Input Language` future record。此时命令
+  会明确报错；当前尚未用结构化 LINE/TMPL/MATRIX 解析器猜测 LaTeX。
+
+MTEF 不保存 Windows 代码页编号。Windows 默认使用当前系统 ANSI 代码页；Linux
+和 macOS 默认使用 UTF-8。如果对象来自另一种 Windows 区域设置，可以显式指定：
+
+```powershell
+$env:MATHTYPE_RUST_SOURCE_ENCODING = "gbk"          # 中文 Windows / CP936
+$env:MATHTYPE_RUST_SOURCE_ENCODING = "windows-1252" # 西欧 Windows
+$env:MATHTYPE_RUST_SOURCE_ENCODING = "utf-8"        # 明确的 UTF-8 记录
+```
+
+CI 把该变量固定为 `gbk`，因为当前 MathType 真值语料来自中文 Windows。Windows
+CP936 还包含操作系统特有的 best-fit 替换，标准跨平台 GBK 实现无法逐字节模拟。
+因此 CI 会设置 `MATHTYPE_RUST_SKIP_REFERENCE_BYTES=1`：仍然解析并生成全部样本、
+执行反向恢复统计和全部单元测试，但不伪称 Linux/macOS 与 Windows best-fit 字节
+完全一致。未设置该变量的中文 Windows 验收环境继续执行完整 byte-for-byte 比对。
+
+因此，这一功能的契约是“无损读取 MTEF 中实际保存的 TeX 源记录”，不是保证从
+任意没有源记录的手工 MathType 公式恢复原始输入字符串。
+
 ## Generate Cross-platform WMF Preview
 
 `mathtype-rust` 只负责生成 OLE 和裸 MTEF。正常 `pmt` 流程会把同一份 LaTeX
@@ -101,9 +158,11 @@ scripts\latex2wmf\target\debug\latex2wmf.exe `
 
 - `main.rs`: 二进制入口，只负责挂载模块并调用 CLI。
 - `cli.rs`: 命令行参数解析、输入读取、输出写入。
+- `conversion.rs`: 双向转换服务；统一正向产物生成、OLE/MTEF 提取和反向恢复。
 - `ast.rs`: LaTeX 子集解析后使用的表达式 AST。
 - `parser.rs`: LaTeX 公式解析和定界符归一化。
 - `mtef.rs`: MTEF 字节流生成，包括 MathType 字体定义、模板和符号记录。
+- `mtef/source.rs`: MTEF v5 header 和 `TeX Input Language` future record 编解码。
 - `ole.rs`: 最小 CFB/OLE 容器写入，用于生成 MathType `.ole.bin`。
 - `tests.rs`: 递归扫描 `samples`，并与 MathType 参考 OLE 做 byte-for-byte 回归比对。
 
@@ -142,7 +201,16 @@ cargo test -- --show-output
 
 ```text
 MTEF comparison samples: <passed>/<total> passed
+MTEF-to-LaTeX samples: exact=<n>, lossy_source=<n>, missing_source=<n>
 ```
+
+跨平台 CI 的 portable 模式会把第一行明确写成
+`MTEF portable render samples: <passed>/<total> passed`，避免与严格字节比对混淆。
+
+反向统计会扫描同一套 `samples` 真值对象：`exact` 表示源记录与规范化后的样本 TeX
+完全相同；`lossy_source` 表示源记录存在但 MathType 的 ANSI 保存已经损失字符；
+`missing_source` 表示对象没有 TeX 源记录。测试同时要求至少 98% 样本具有源记录、
+至少 95% 样本精确恢复，以防反向能力静默退化。
 
 如果某个样本不一致，测试会报告样本编号、MathType/Rust MTEF 长度、第一个不同
 字节的位置，以及对应的 TeX 内容。

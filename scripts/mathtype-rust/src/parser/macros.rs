@@ -466,7 +466,7 @@ impl Parser {
         if is_balanced_supported_environment_body(&visible) {
             return Ok(Expr::Text(MATHTYPE_TEXT_TRANSLATION_FAILED.to_string()));
         }
-        Ok(self.wrap_environment_definition_body_fragments(&content)?)
+        self.wrap_environment_definition_body_fragments(&content)
     }
 
     /// Parse one raw wrapper fragment so unsupported wrapper arguments stay visible in MathType order.

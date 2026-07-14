@@ -612,7 +612,7 @@ pub(super) fn prepend_hybrid_visible_prefix(parts: &mut Vec<HybridPart>, prefix:
         if let HybridPart::Line(expr) = part {
             let mut items = prefix_items.clone();
             push_visible_items(&mut items, (**expr).clone());
-            *expr = Box::new(collapse_single_sequence(Expr::Sequence(items)));
+            **expr = collapse_single_sequence(Expr::Sequence(items));
             return;
         }
     }
@@ -660,7 +660,7 @@ pub(super) fn append_hybrid_visible_suffix(parts: &mut Vec<HybridPart>, suffix: 
             let mut items = Vec::new();
             push_visible_items(&mut items, (**expr).clone());
             items.extend(suffix_items);
-            *expr = Box::new(collapse_single_sequence(Expr::Sequence(items)));
+            **expr = collapse_single_sequence(Expr::Sequence(items));
             return;
         }
     }

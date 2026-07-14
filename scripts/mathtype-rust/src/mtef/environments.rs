@@ -363,7 +363,6 @@ fn write_environment_fallback(
                 && expr_starts_with_environment_fallback(cell)
             {
                 color_default(out);
-                state.color = ColorState::Default;
             }
             // MathType re-selects the inherited/default color before a split
             // continuation row starts with tmLIM via `\underset{...}{\lim}`.
@@ -380,7 +379,6 @@ fn write_environment_fallback(
                 // therefore edge-triggered by the split-row transition, not by
                 // our tracked ColorState alone.
                 color_default(out);
-                state.color = ColorState::Default;
             }
             let is_last_cell = row_index + 1 == spec.rows.len() && cell_index + 1 == row.len();
             if is_last_cell && matches!(spec.name, "aligned" | "split") {

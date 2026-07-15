@@ -30,6 +30,68 @@ $$ c+d $$ {#eq:second}
     assert reply_build.extract_labeled_equation_labels(markdown) == ["eq:first", "eq:second"]
 
 
+def test_add_manuscript_caption_numbers_handles_quoted_figures_and_tables() -> None:
+    """Number copied figure/table captions while preserving manual and unresolved prefixes."""
+    markdown = """> ![Overview](figures/overview.png) {#fig:overview width=80%}
+>
+> | A | B |
+> |---|---|
+> | 1 | 2 |
+>
+> : Metrics. {#tbl:metrics}
+
+![Figure @fig:manual Existing prefix](figures/manual.png){#fig:manual}
+
+: Local-only table. {#tbl:local}
+"""
+    reference_map = {
+        "fig:overview": "Figure 3",
+        "tbl:metrics": "Table 2",
+        "fig:manual": "Figure 4",
+    }
+
+    resolved = reply_resolve.add_manuscript_caption_numbers(markdown, reference_map)
+
+    assert "> ![Figure 3 Overview](figures/overview.png){#fig:overview width=80%}" in resolved
+    assert "> : Table 2 Metrics. {#tbl:metrics}" in resolved
+    assert "![Figure @fig:manual Existing prefix]" in resolved
+    assert ": Local-only table. {#tbl:local}" in resolved
+    assert reply_resolve.add_manuscript_caption_numbers(resolved, reference_map) == resolved
+
+
+def test_resolve_reply_markdown_probes_labels_from_figure_table_definitions(tmp_path, monkeypatch) -> None:
+    """Probe definition labels before automatically adding manuscript caption numbers."""
+    markdown = """![Overview](figures/overview.png){#fig:overview}
+
+: Metrics. {#tbl:metrics}
+"""
+    observed_labels: list[str] = []
+
+    def fake_resolve_reference_map(manuscript, style, labels, from_format):
+        """Capture labels passed to the manuscript numbering probe."""
+        observed_labels.extend(labels)
+        return {"fig:overview": "Figure 3", "tbl:metrics": "Table 2"}
+
+    monkeypatch.setattr(reply_resolve, "resolve_reference_map", fake_resolve_reference_map)
+    monkeypatch.setattr(reply_resolve, "resolve_citation_map", lambda *args: {})
+    monkeypatch.setattr(reply_resolve, "resolve_citation_cluster_map", lambda *args: {})
+    monkeypatch.setattr(reply_line_source, "resolve_line_regexes", lambda text, source: text)
+
+    resolved = reply_build.resolve_reply_markdown(
+        markdown,
+        tmp_path / "manuscript.md",
+        tmp_path / "manuscript.pdf",
+        tmp_path / "style.yml",
+        SimpleNamespace(pandoc_metadata={}, pmt_settings=None),
+        "markdown",
+        format_labeled_equations=False,
+    )
+
+    assert observed_labels == ["fig:overview", "tbl:metrics"]
+    assert "![Figure 3 Overview](figures/overview.png){#fig:overview}" in resolved
+    assert ": Table 2 Metrics. {#tbl:metrics}" in resolved
+
+
 def test_replace_labeled_equation_blocks_uses_manuscript_number_and_tabs() -> None:
     """Rewrite labeled reply equations as tab-layout Word formulas with manuscript numbers."""
     markdown = r"""
@@ -421,7 +483,7 @@ $$ x+y $$ {#eq:sum}
     text = output.read_text(encoding="utf-8")
     assert "See Figure 3 at (Line 42)." in text
     assert "Prior work [1, 2] remains relevant." in text
-    assert "[Image: Layout]" in text
+    assert "[Image: Figure 3 Layout]" in text
     assert "$$ x+y $$" in text
     assert "{#eq:sum}" not in text
     assert "<w:tab" not in text

@@ -32,6 +32,16 @@ CITATION_PROBE_SENTINEL = "PANDOC_REPLY_CITE_PROBE"
 CITATION_CLUSTER_PROBE_SENTINEL = "PANDOC_REPLY_CITE_CLUSTER_PROBE"
 CROSSREF_PREFIXES = ("sec:", "fig:", "tbl:", "eq:")
 IMAGE_MARKDOWN_PATTERN = re.compile(r"!\[(?P<alt>[^\]]*)\]\((?P<target>[^)]*)\)(?:\s*\{[^}]*\})?")
+LABELED_FIGURE_CAPTION_PATTERN = re.compile(
+    rf"(?P<open>!\[)(?P<caption>[^\]\r\n]*)(?P<target>\]\([^\r\n]*?\))[ \t]*"
+    rf"(?P<attribute>\{{[^}}\r\n]*#(?P<label>fig:[A-Za-z0-9]{LABEL_CONTINUATION}*)[^}}\r\n]*\}})"
+)
+LABELED_TABLE_CAPTION_PATTERN = re.compile(
+    rf"^(?P<prefix>[ \t]*(?:>[ \t]*)*(?:Table)?:[ \t]+)"
+    rf"(?P<caption>.*?)(?P<attribute>[ \t]*\{{[^}}\r\n]*"
+    rf"#(?P<label>tbl:[A-Za-z0-9]{LABEL_CONTINUATION}*)[^}}\r\n]*\}}[ \t]*)$",
+    re.IGNORECASE | re.MULTILINE,
+)
 LABELED_CAPTION_ATTRIBUTE_PATTERN = re.compile(
     r"(?m)^(?P<caption>\s*(?:Table|Figure)?:\s+.*?)"
     r"[ \t]*\{#(?:tbl|fig):[A-Za-z0-9][^}\r\n]*\}[ \t]*$"
@@ -131,6 +141,18 @@ def extract_labeled_equation_labels(markdown: str) -> list[str]:
     labels = sorted({match.group("label") for match in DISPLAY_EQUATION_LABEL_PATTERN.finditer(markdown)})
     log_info(f"[INFO] Found {len(labels)} labeled reply equation block(s).")
     return labels
+
+
+def extract_labeled_figure_table_labels(markdown: str) -> list[str]:
+    """Return labels from reply figure and table definitions that need manuscript numbering."""
+    labels = {
+        match.group("label")
+        for pattern in (LABELED_FIGURE_CAPTION_PATTERN, LABELED_TABLE_CAPTION_PATTERN)
+        for match in pattern.finditer(markdown)
+    }
+    resolved_labels = sorted(labels)
+    log_info(f"[INFO] Found {len(resolved_labels)} labeled reply figure/table definition(s).")
+    return resolved_labels
 
 
 def extract_citation_keys(markdown: str) -> list[str]:
@@ -429,6 +451,62 @@ def replace_references(markdown: str, reference_map: dict[str, str]) -> str:
     return resolved
 
 
+def caption_has_number_prefix(caption: str, kind: str, label_prefix: str, display: str) -> bool:
+    """Return whether a reply caption already starts with a manual or resolved number prefix."""
+    stripped = caption.lstrip()
+    if re.match(rf"{re.escape(display)}(?=\s|$)", stripped, flags=re.IGNORECASE):
+        return True
+    return bool(
+        re.match(
+            rf"{kind}\s+(?:\[?@{label_prefix}:[A-Za-z0-9]|[A-Za-z]*\d)",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def add_manuscript_caption_numbers(markdown: str, reference_map: dict[str, str]) -> str:
+    """Prefix copied reply figure/table captions with their manuscript-derived numbers."""
+    figure_count = 0
+    table_count = 0
+
+    def replace_figure(match: re.Match[str]) -> str:
+        """Add the figure number and attach its attribute block directly for Pandoc parsing."""
+        nonlocal figure_count
+        label = match.group("label")
+        display = reference_map.get(label)
+        caption = match.group("caption")
+        if not display:
+            return match.group(0)
+        suffix = f"{match.group('target')}{match.group('attribute')}"
+        if caption_has_number_prefix(caption, "Figure", "fig", display):
+            return f"{match.group('open')}{caption}{suffix}"
+        figure_count += 1
+        separator = " " if caption else ""
+        return f"{match.group('open')}{display}{separator}{caption}{suffix}"
+
+    def replace_table(match: re.Match[str]) -> str:
+        """Add the resolved manuscript table number unless the caption already has one."""
+        nonlocal table_count
+        label = match.group("label")
+        display = reference_map.get(label)
+        caption = match.group("caption")
+        if not display or caption_has_number_prefix(caption, "Table", "tbl", display):
+            return match.group(0)
+        table_count += 1
+        separator = " " if caption else ""
+        return f"{match.group('prefix')}{display}{separator}{caption}{match.group('attribute')}"
+
+    resolved = LABELED_FIGURE_CAPTION_PATTERN.sub(replace_figure, markdown)
+    resolved = LABELED_TABLE_CAPTION_PATTERN.sub(replace_table, resolved)
+    if figure_count or table_count:
+        log_info(
+            "[INFO] Added manuscript numbering to copied reply captions: "
+            f"figures={figure_count}, tables={table_count}"
+        )
+    return resolved
+
+
 def compact_display_math_for_inline(math: str) -> str:
     """Collapse display-math line breaks so Pandoc keeps the tab-layout formula inline."""
     return re.sub(r"[ \t]*\r?\n[ \t]*", " ", math.strip())
@@ -617,6 +695,7 @@ def resolve_reply_markdown(
 ) -> str:
     """Resolve manuscript-derived reply placeholders before writing an output format."""
     labels = extract_reference_labels(reply_text)
+    labels += extract_labeled_figure_table_labels(reply_text)
     if format_labeled_equations:
         labels += extract_labeled_equation_labels(reply_text)
     labels = sorted(set(labels))
@@ -633,5 +712,6 @@ def resolve_reply_markdown(
             effective.pandoc_metadata,
             effective.pmt_settings,
         )
+    resolved_text = add_manuscript_caption_numbers(resolved_text, reference_map)
     resolved_text = replace_references(resolved_text, reference_map)
     return replace_citations(resolved_text, citation_map, citation_cluster_map)

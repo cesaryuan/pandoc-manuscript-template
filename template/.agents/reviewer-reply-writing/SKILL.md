@@ -9,23 +9,24 @@ description: 当需要撰写、修改或检查论文回复信、reply to reviewe
 
 ## 必须遵守的格式
 
-1. 引用文章原文时，用 `_强调_` 包裹，并确保引用内容与文章完全一致。
-2. 图片引用不要用 `_强调_` 包裹，否则 pandoc 无法解析图片。
+1. Quote 文章原文时，用 `_强调_` 包裹，并确保 Quote 内容与文章完全一致。
+2. 图片 Quote 不要用 `_强调_` 包裹，否则 pandoc 无法解析图片。
 3. 审稿意见原文不要用 `_强调_` 包裹，保持原样。
-4. 引用的原文如果是图片或表格，在题注最前面加上 `Figure @itslabel` 或 `Table @itslabel`。
+4. Quote 的原文如果是图片或表格，保留与手稿一致的 `{#fig:...}` 或 `{#tbl:...}` 标签，`pmt build-reply` 会按手稿编号自动补齐题注前缀。
 5. 每段回复都用 `::: {custom-style="Reply to Reviewers"}` 包裹，以便 DOCX 应用回复样式。
-6. 用 `(Line `regex`)` 引用手稿修改位置，不要手写固定行号。
+6. 用 `(Line `regex`)` reference 手稿修改位置，不要手写固定行号。
 
-图片引用示例：
+图片 Quote 示例：
 
 ```markdown
-![Figure @fig:label caption](path){#fig:label}
+![caption](path){#fig:label}
 ```
 
-表格引用示例：
+表格 Quote 示例：
 
 ```markdown
-Table @tbl:label caption text...
+|...|
+: caption text... {#tbl:label}
 ```
 
 ## 行号 regex 规则
@@ -192,9 +193,9 @@ _“引用原文.....”_
 交付回复信前，逐条检查：
 
 1. 所有回答块都使用 `::: {custom-style="Reply to Reviewers"}`。
-2. 文章原文引用已用 `_强调_` 包裹，图片除外。
+2. 文章原文 Quote 已用 `_强调_` 包裹，图片除外。
 3. 审稿意见原文没有被强调、改写或重新编号。
-4. 图表引用的题注前缀包含 `Figure @fig:label` 或 `Table @tbl:label`。
+4. Quote 的图表保留与手稿一致的 `{#fig:...}` 或 `{#tbl:...}` 标签，以便构建时自动补齐题注编号。
 5. 所有修改位置都使用 `(Line `regex`)`，且 regex 面向最终 PDF 可见文本。
 6. regex 不依赖 Markdown 标签、固定页码、固定行号、过泛短语或公式文本层。
 7. 对每条实质性意见，回答里都能看到“修改动作 + 修改位置 + 具体改动 + 必要证据”，而不是只有感谢或空泛表态。

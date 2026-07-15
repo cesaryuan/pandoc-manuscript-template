@@ -505,8 +505,8 @@ def docx_reference_doc_args(settings: PmtSettings) -> list[str]:
     if result is None:
         return reference_doc_args()
 
-    log_info(
-        "[INFO] Prepared reference DOCX with docxPageMargins: "
+    log_debug(
+        "[DEBUG] Prepared reference DOCX with docxPageMargins: "
         f"{to_pandoc_path(target)} margins={result['margins']}"
     )
     return ['--reference-doc', to_pandoc_path(target)]
@@ -546,7 +546,7 @@ def build_docx(
     warn_hat_order: bool = True,
 ) -> None:
     """Generate DOCX file with optional post-processing."""
-    log_info("[DOCX] Building DOCX...\n")
+    log_debug("[DOCX] Building DOCX...\n")
 
     docx_file = manuscript_output_file(SETTINGS.docx_dir, "docx")
     ensure_output_parent(docx_file)

@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Iterable
 from xml.etree import ElementTree as ET
 
-from .common import print_error, print_info, print_success, print_warning
+from .common import print_debug, print_error, print_info, print_success, print_warning
 
 
 WORD_NAMESPACE = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
@@ -179,7 +179,7 @@ def find_unrendered_pandoc_syntax(
 def validate_final_docx_syntax(docx_path: str | Path, max_findings: int = 20) -> list[SyntaxFinding]:
     """Log the final DOCX syntax check and return any suspicious findings."""
     docx_file = Path(docx_path).resolve()
-    print_info(f"Running final DOCX syntax check in: {docx_file}")
+    print_debug(f"Running final DOCX syntax check in: {docx_file}")
 
     findings = find_unrendered_pandoc_syntax(docx_file, max_findings=max_findings)
     if not findings:

@@ -2,6 +2,7 @@ from pathlib import Path
 import subprocess
 import sys
 from types import SimpleNamespace
+import zipfile
 
 import pytest
 
@@ -13,6 +14,37 @@ from pandoc_manuscript.commands.build_reply import command as reply_command
 from pandoc_manuscript.commands.build_reply import line_source as reply_line_source
 from pandoc_manuscript.commands.build_reply import output as reply_output
 from pandoc_manuscript.commands.build_reply import resolve as reply_resolve
+
+
+def write_test_docx(
+    path: Path,
+    *,
+    created: str = "2026-01-01T00:00:00Z",
+    document_text: str = "manuscript",
+    zip_timestamp: tuple[int, int, int, int, int, int] = (2026, 1, 1, 0, 0, 0),
+) -> None:
+    """Write a minimal DOCX package for line-source cache tests."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    core_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<cp:coreProperties
+  xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+  xmlns:dcterms="http://purl.org/dc/terms/">
+  <dcterms:created>{created}</dcterms:created>
+  <dcterms:modified>{created}</dcterms:modified>
+</cp:coreProperties>
+"""
+    document_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body><w:p><w:r><w:t>{document_text}</w:t></w:r></w:p></w:body>
+</w:document>
+"""
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, data in (
+            ("docProps/core.xml", core_xml),
+            ("word/document.xml", document_xml),
+        ):
+            entry = zipfile.ZipInfo(name, date_time=zip_timestamp)
+            archive.writestr(entry, data)
 
 
 def test_extract_labeled_equation_labels() -> None:
@@ -235,7 +267,7 @@ def test_extract_probe_map_reads_superscript_csl_cluster_without_probe_space() -
 def test_prepare_line_source_pdf_uses_soffice_on_non_windows(tmp_path, monkeypatch) -> None:
     """Convert DOCX line sources with soffice when Word COM is unavailable."""
     source_docx = tmp_path / "manuscript.docx"
-    source_docx.write_bytes(b"docx")
+    write_test_docx(source_docx)
     pdf_dir = tmp_path / "reply-line-source-pdf"
     cache_dir = tmp_path / "line-source-cache"
     calls = []
@@ -287,6 +319,32 @@ def test_default_reply_line_source_is_manuscript_markdown() -> None:
     assert reply_build.DEFAULT_REPLY_LINE_SOURCE == "manuscript.md"
 
 
+def test_docx_line_source_cache_key_ignores_volatile_package_timestamps(tmp_path) -> None:
+    """Reuse PDF cache keys when only DOCX package and core timestamps change."""
+    source_docx = tmp_path / "manuscript.docx"
+    write_test_docx(source_docx)
+    first_key = reply_build.docx_line_source_pdf_cache_key(source_docx)
+
+    write_test_docx(
+        source_docx,
+        created="2026-07-15T04:49:21Z",
+        zip_timestamp=(2026, 7, 15, 4, 49, 20),
+    )
+
+    assert reply_build.docx_line_source_pdf_cache_key(source_docx) == first_key
+
+
+def test_docx_line_source_cache_key_changes_with_document_content(tmp_path) -> None:
+    """Invalidate the PDF cache when layout-relevant DOCX content changes."""
+    source_docx = tmp_path / "manuscript.docx"
+    write_test_docx(source_docx, document_text="first manuscript")
+    first_key = reply_build.docx_line_source_pdf_cache_key(source_docx)
+
+    write_test_docx(source_docx, document_text="revised manuscript")
+
+    assert reply_build.docx_line_source_pdf_cache_key(source_docx) != first_key
+
+
 def test_prepare_line_source_pdf_builds_markdown_before_pdf(tmp_path, monkeypatch) -> None:
     """Convert Markdown line sources through a temporary DOCX before PDF extraction."""
     source_markdown = tmp_path / "manuscript.md"
@@ -299,8 +357,7 @@ def test_prepare_line_source_pdf_builds_markdown_before_pdf(tmp_path, monkeypatc
     def fake_build_markdown_line_source_docx(source, target):
         """Pretend the normal manuscript DOCX build created the intermediate file."""
         calls.append(("build", source, target))
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(b"docx")
+        write_test_docx(target)
 
     def fake_export_docx_to_pdf_with_word(source, target):
         """Pretend Word exported the intermediate DOCX to PDF."""

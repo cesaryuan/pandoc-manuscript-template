@@ -8,8 +8,10 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 
 from ... import runtime_cache_version
 from ...runtime.logging import log_debug, log_error, log_info, log_warning
@@ -24,11 +26,11 @@ LINE_SOURCE_PDF_DIR = PMT_REPLY_LINE_SOURCE_PDF_DIR
 LINE_SOURCE_DOCX_DIR = PMT_REPLY_LINE_SOURCE_DOCX_DIR
 LINE_SOURCE_CACHE_DIR = PMT_REPLY_LINE_SOURCE_CACHE_DIR
 LINE_REGEX_PATTERN = re.compile(r"\(Line `([^`]+)`\)")
-
-
-def file_sha256(path: Path) -> str:
-    """Return a SHA-256 digest for a dependency file."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+DOCX_CORE_PROPERTIES_PART = "docProps/core.xml"
+DOCX_VOLATILE_CORE_PROPERTY_TAGS = {
+    "{http://purl.org/dc/terms/}created",
+    "{http://purl.org/dc/terms/}modified",
+}
 
 
 def hash_json_payload(payload: dict[str, Any]) -> str:
@@ -37,12 +39,44 @@ def hash_json_payload(payload: dict[str, Any]) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def dependency_record(path: Path) -> dict[str, str]:
-    """Return the stable cache record for one input file."""
+def normalized_docx_part(part_name: str, data: bytes) -> bytes:
+    """Remove volatile package metadata that cannot affect rendered line layout."""
+    if part_name != DOCX_CORE_PROPERTIES_PART:
+        return data
+
+    root = ElementTree.fromstring(data)
+    for element in root.iter():
+        if element.tag in DOCX_VOLATILE_CORE_PROPERTY_TAGS:
+            # Pandoc writes the current build time here, which previously made
+            # identical Markdown line sources miss the DOCX-to-PDF cache.
+            element.text = ""
+    return ElementTree.tostring(root, encoding="utf-8")
+
+
+def docx_semantic_sha256(path: Path) -> str:
+    """Hash DOCX part names and normalized contents without ZIP container timestamps."""
+    digest = hashlib.sha256()
+    with zipfile.ZipFile(path) as archive:
+        entries = sorted(
+            (entry for entry in archive.infolist() if not entry.is_dir()),
+            key=lambda entry: entry.filename,
+        )
+        for entry in entries:
+            name = entry.filename.encode("utf-8")
+            data = normalized_docx_part(entry.filename, archive.read(entry))
+            digest.update(len(name).to_bytes(8, "big"))
+            digest.update(name)
+            digest.update(len(data).to_bytes(8, "big"))
+            digest.update(data)
+    return digest.hexdigest()
+
+
+def docx_dependency_record(path: Path) -> dict[str, str]:
+    """Return a cache record based on layout-relevant DOCX package contents."""
     resolved = path.resolve()
     return {
         "path": str(resolved),
-        "sha256": file_sha256(resolved),
+        "sha256": docx_semantic_sha256(resolved),
     }
 
 
@@ -83,10 +117,10 @@ def docx_line_source_pdf_cache_key(source_docx: Path) -> str:
     return hash_json_payload(
         {
             "kind": "docx-line-source-pdf",
-            "schema": 1,
+            "schema": 2,
             "pmt_version": runtime_cache_version(),
             "backend": line_source_pdf_backend(),
-            "source": dependency_record(source_docx),
+            "source": docx_dependency_record(source_docx),
         }
     )
 

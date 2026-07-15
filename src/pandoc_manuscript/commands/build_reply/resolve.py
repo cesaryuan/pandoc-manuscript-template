@@ -12,6 +12,7 @@ from ...docx.equation_layout import derive_docx_equation_layout, sync_eqn_block_
 from ...runtime.logging import log_debug, log_info, log_warning
 from ...runtime.metadata import EffectiveMetadata, PmtSettings, load_effective_metadata, write_pandoc_metadata
 from ...runtime.paths import PMT_REPLY_PROBE_DIR
+from ..common import suppress_known_external_warnings
 from ..setup import pandoc_command, pandoc_tools_env
 from . import line_source as reply_line_source
 
@@ -116,13 +117,19 @@ def write_reply_style_metadata_file(
 def run_command(cmd: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     """Run a command, debug-log it, and raise with captured output on failure."""
     log_debug(f"[Run] {' '.join(cmd)}")
-    result = subprocess.run(
+    completed = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
         env=env,
+    )
+    result = subprocess.CompletedProcess(
+        completed.args,
+        completed.returncode,
+        stdout=completed.stdout,
+        stderr=suppress_known_external_warnings(completed.stderr),
     )
     if result.returncode != 0:
         result.check_returncode()
@@ -132,14 +139,14 @@ def run_command(cmd: list[str], env: dict[str, str] | None = None) -> subprocess
 def extract_reference_labels(markdown: str) -> list[str]:
     """Return unique manuscript-style cross-reference labels used in reply text."""
     labels = sorted(set(REF_PATTERN.findall(markdown)))
-    log_info(f"[INFO] Found {len(labels)} manuscript-style references in reply.")
+    log_debug(f"[DEBUG] Found {len(labels)} manuscript-style references in reply.")
     return labels
 
 
 def extract_labeled_equation_labels(markdown: str) -> list[str]:
     """Return equation labels attached to display-math blocks in reply text."""
     labels = sorted({match.group("label") for match in DISPLAY_EQUATION_LABEL_PATTERN.finditer(markdown)})
-    log_info(f"[INFO] Found {len(labels)} labeled reply equation block(s).")
+    log_debug(f"[DEBUG] Found {len(labels)} labeled reply equation block(s).")
     return labels
 
 
@@ -151,7 +158,7 @@ def extract_labeled_figure_table_labels(markdown: str) -> list[str]:
         for match in pattern.finditer(markdown)
     }
     resolved_labels = sorted(labels)
-    log_info(f"[INFO] Found {len(resolved_labels)} labeled reply figure/table definition(s).")
+    log_debug(f"[DEBUG] Found {len(resolved_labels)} labeled reply figure/table definition(s).")
     return resolved_labels
 
 
@@ -159,7 +166,7 @@ def extract_citation_keys(markdown: str) -> list[str]:
     """Return unique bibliography citation keys used in reply text."""
     keys = set(citation_keys_in_text(markdown))
     citations = sorted(keys)
-    log_info(f"[INFO] Found {len(citations)} bibliography citations in reply.")
+    log_debug(f"[DEBUG] Found {len(citations)} bibliography citations in reply.")
     return citations
 
 
@@ -314,7 +321,7 @@ def resolve_reference_map(
         log_warning("[WARN] These labels were not resolved from manuscript.md:")
         for label in missing:
             log_warning(f"  - {label}")
-    log_info(f"[INFO] Resolved {len(resolved)} references from manuscript numbering.")
+    log_debug(f"[DEBUG] Resolved {len(resolved)} references from manuscript numbering.")
     return resolved
 
 
@@ -357,7 +364,7 @@ def resolve_citation_map(
         log_warning("[WARN] These citation keys were not resolved from manuscript bibliography:")
         for key in missing:
             log_warning(f"  - {key}")
-    log_info(f"[INFO] Resolved {len(resolved)} citations from manuscript citeproc output.")
+    log_debug(f"[DEBUG] Resolved {len(resolved)} citations from manuscript citeproc output.")
     return resolved
 
 
@@ -409,7 +416,7 @@ def resolve_citation_cluster_map(
         log_warning("[WARN] These citation clusters were not resolved from manuscript bibliography:")
         for cluster in missing:
             log_warning(f"  - {cluster}")
-    log_info(f"[INFO] Resolved {len(resolved)} citation clusters from manuscript citeproc output.")
+    log_debug(f"[DEBUG] Resolved {len(resolved)} citation clusters from manuscript citeproc output.")
     return resolved
 
 
@@ -500,8 +507,8 @@ def add_manuscript_caption_numbers(markdown: str, reference_map: dict[str, str])
     resolved = LABELED_FIGURE_CAPTION_PATTERN.sub(replace_figure, markdown)
     resolved = LABELED_TABLE_CAPTION_PATTERN.sub(replace_table, resolved)
     if figure_count or table_count:
-        log_info(
-            "[INFO] Added manuscript numbering to copied reply captions: "
+        log_debug(
+            "[DEBUG] Added manuscript numbering to copied reply captions: "
             f"figures={figure_count}, tables={table_count}"
         )
     return resolved
@@ -571,7 +578,7 @@ def replace_labeled_equation_blocks(
 
     resolved = DISPLAY_EQUATION_LABEL_PATTERN.sub(replace_match, markdown)
     if replacements:
-        log_info(f"[INFO] Formatted {replacements} labeled reply equation block(s) with manuscript numbering.")
+        log_debug(f"[DEBUG] Formatted {replacements} labeled reply equation block(s) with manuscript numbering.")
     return resolved
 
 

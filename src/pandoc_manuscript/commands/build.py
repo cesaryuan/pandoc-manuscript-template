@@ -33,7 +33,7 @@ from ..docx.svg_filters import (
 )
 from ..docx import svg_filters as svg_filter_helpers
 from .setup import ensure_pandoc_tools, pandoc_command, pandoc_tools_env
-from .common import VerboseCommandSettings, project_directory
+from .common import VerboseCommandSettings, project_directory, run_streaming_command
 
 # ============================================================================
 # SETTINGS
@@ -149,8 +149,7 @@ def run_command(
     command_env = None if env is None else {**os.environ, **env}
 
     if stream_output:
-        # Stream output to console in real-time
-        return subprocess.run(cmd, cwd=cwd, check=check, env=command_env)
+        return run_streaming_command(cmd, cwd=cwd, check=check, env=command_env)
     else:
         # Capture output (for commands where we need to parse it)
         return subprocess.run(cmd, cwd=cwd, check=check, capture_output=True, text=True, env=command_env)

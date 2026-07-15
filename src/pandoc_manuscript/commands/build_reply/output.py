@@ -8,7 +8,7 @@ import shutil
 import time
 import uuid
 from pathlib import Path
-from ...runtime.logging import log_info, log_success, log_warning
+from ...runtime.logging import log_info, log_success, log_warning, log_debug
 from ...runtime.metadata import PmtSettings
 from ...runtime.paths import PMT_MATHTYPE_WORK_DIR, PMT_REPLY_PROBE_DIR, PMT_REPLY_WORK_DIR
 from ...runtime.resources import template_root
@@ -43,7 +43,7 @@ def resolve_mathtype_enabled(requested: bool, conversion_method: object | None =
     if not requested:
         return False
 
-    log_info("[INFO] MathType DOCX equations enabled by reply metadata: mathtype: true")
+    log_debug("[DEBUG] MathType DOCX equations enabled by reply metadata: mathtype: true")
     availability = check_mathtype_availability(conversion_method)
     if availability.usable:
         return True
@@ -106,12 +106,12 @@ def svg_to_png_filter_env(
 def run_mathtype_conversion(marked_docx: Path, target_docx: Path, pmt_settings: PmtSettings) -> None:
     """Convert a marked reply DOCX's OMML equations into MathType OLE equations."""
     if not extract_marked_equation_requests(marked_docx):
-        log_info("[INFO] No MathType equation markers found; keeping Pandoc DOCX equations unchanged.")
+        log_debug("[DEBUG] No MathType equation markers found; keeping Pandoc DOCX equations unchanged.")
         target_docx.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(marked_docx, target_docx)
         return
 
-    log_info("\n[DOCX] Converting reply equations to MathType OLE objects...\n")
+    log_debug("\n[DEBUG] Converting reply equations to MathType OLE objects...\n")
     convert_marked_docx(
         source=marked_docx,
         target=target_docx,
@@ -178,8 +178,8 @@ def reply_reference_doc_for_pandoc(reference_doc: Path, output: Path, pmt_settin
     if result is None:
         return reference_doc
 
-    log_info(
-        "[INFO] Prepared reply reference DOCX with docxPageMargins: "
+    log_debug(
+        "[DEBUG] Prepared reply reference DOCX with docxPageMargins: "
         f"{reply_resolve.to_pandoc_path(target)} margins={result['margins']}"
     )
     return target
@@ -237,11 +237,11 @@ def build_reply_docx(
         embed_svg_images = should_embed_docx_svg_images(pmt_settings)
         convert_all_svg = should_convert_docx_svg_to_png(pmt_settings)
         if convert_all_svg and svg_filter_helpers.requested_docx_svg_image_embedding(pmt_settings):
-            log_info("[INFO] Skipping reply SVG child-image embedding because docxConvertSvgToPng is enabled")
+            log_debug("[DEBUG] Skipping reply SVG child-image embedding because docxConvertSvgToPng is enabled")
         elif embed_svg_images:
-            log_info("[INFO] Embedding linked child images inside reply SVG files for DOCX")
+            log_debug("[DEBUG] Embedding linked child images inside reply SVG files for DOCX")
         if convert_all_svg:
-            log_info("[INFO] Converting referenced reply SVG images to PNG for DOCX")
+            log_debug("[DEBUG] Converting referenced reply SVG images to PNG for DOCX")
         svg_filter_args = [
             *svg_embed_images_filter_args(),
             *svg_to_png_filter_args(),

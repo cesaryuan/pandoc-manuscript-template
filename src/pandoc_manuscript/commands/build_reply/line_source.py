@@ -101,7 +101,7 @@ def copy_from_cache(cached: Path, target: Path, label: str) -> bool:
         return False
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(cached, target)
-    log_info(f"[LINE] Reusing cached {label}: {target}")
+    log_debug(f"[LINE] Reusing cached {label}: {target}")
     return True
 
 
@@ -398,7 +398,7 @@ def build_markdown_line_source_docx(source_markdown: Path, target_docx: Path) ->
         raise RuntimeError(f"Markdown line-source DOCX build failed: {source_markdown}")
     if not target_docx.exists():
         raise RuntimeError(f"Markdown line-source DOCX build did not create: {target_docx}")
-    log_info(f"[LINE] Markdown line source DOCX created: {target_docx}")
+    log_debug(f"[LINE] Markdown line source DOCX created: {target_docx}")
 
 
 def prepare_line_source_pdf(line_source: Path) -> Path:
@@ -432,23 +432,23 @@ def extract_pdf_numbered_lines(pdf: Path) -> list[tuple[int, int, str]]:
     with fitz.open(pdf) as document:
         if is_libreoffice_pdf(document.metadata):
             numbered_lines = extract_pdf_numbered_lines_by_layout(document)
-            log_info(
-                f"[INFO] Extracted {len(numbered_lines)} numbered PDF text lines from {pdf} using LibreOffice layout matching."
+            log_debug(
+                f"[DEBUG] Extracted {len(numbered_lines)} numbered PDF text lines from {pdf} using LibreOffice layout matching."
             )
             return numbered_lines
 
         if is_microsoft_word_pdf(document.metadata):
             numbered_lines = extract_pdf_numbered_lines_by_layout(document)
             if numbered_lines:
-                log_info(
-                    f"[INFO] Extracted {len(numbered_lines)} numbered PDF text lines from {pdf} using Word layout matching."
+                log_debug(
+                    f"[DEBUG] Extracted {len(numbered_lines)} numbered PDF text lines from {pdf} using Word layout matching."
                 )
                 return numbered_lines
             log_warning("[WARN] Microsoft Word PDF layout matching found no numbered lines; falling back to text order.")
 
         numbered_lines = extract_pdf_numbered_lines_by_text_order(document)
 
-    log_info(f"[INFO] Extracted {len(numbered_lines)} numbered PDF text lines from {pdf}.")
+    log_debug(f"[DEBUG] Extracted {len(numbered_lines)} numbered PDF text lines from {pdf}.")
     return numbered_lines
 
 
@@ -509,5 +509,5 @@ def resolve_line_regexes(markdown: str, line_source: Path) -> str:
         return replacements.get(match.group(1), match.group(0))
 
     resolved = LINE_REGEX_PATTERN.sub(replace_match, markdown)
-    log_info(f"[INFO] Resolved {len(replacements)} of {len(patterns)} unique line regexes.")
+    log_debug(f"[DEBUG] Resolved {len(replacements)} of {len(patterns)} unique line regexes.")
     return resolved

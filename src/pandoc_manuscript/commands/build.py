@@ -568,20 +568,20 @@ def build_docx(
     embed_svg_images = should_embed_docx_svg_images(pmt_settings)
     convert_all_svg = should_convert_docx_svg_to_png(pmt_settings)
     if convert_all_svg and svg_filter_helpers.requested_docx_svg_image_embedding(pmt_settings):
-        log_info("[INFO] Skipping SVG child-image embedding because docxConvertSvgToPng is enabled")
+        log_debug("[DEBUG] Skipping SVG child-image embedding because docxConvertSvgToPng is enabled")
     elif embed_svg_images:
-        log_info("[INFO] Embedding linked child images inside SVG files for DOCX")
+        log_debug("[DEBUG] Embedding linked child images inside SVG files for DOCX")
     extra_args.extend(docx_svg_embed_images_filter_args())
     pandoc_env.update(docx_svg_embed_images_filter_env(pmt_settings, embed_images=embed_svg_images))
 
     if convert_all_svg:
-        log_info("[INFO] Converting referenced SVG images to PNG for DOCX")
+        log_debug("[DEBUG] Converting referenced SVG images to PNG for DOCX")
     extra_args.extend(docx_svg_to_png_filter_args())
     pandoc_env.update(docx_svg_to_png_filter_env(pmt_settings, convert_all=convert_all_svg))
 
     # Add filter for older Pandoc versions
     if should_use_mathbfit_filter():
-        log_info("[INFO] Using mathbfit filter (Pandoc <= 3.8.3.0)")
+        log_debug("[DEBUG] Using mathbfit filter (Pandoc <= 3.8.3.0)")
         extra_args.extend(['--filter', to_pandoc_path(resource_path('pandoc/filters/to_mathbfit.py'))])
 
     if use_mathtype:
@@ -601,7 +601,7 @@ def build_docx(
 
     # Post-process DOCX if enabled
     if SETTINGS.enable_docx_postprocess:
-        log_info("\n[DOCX] Running Python post-processing...\n")
+        log_debug("\n[DOCX] Running Python post-processing...\n")
         postprocess_target = pandoc_output if use_mathtype else docx_file
         # When MathType is enabled, post-process the marker DOCX before
         # replacing OMML. Several DOCX fixes detect equation layout tables from

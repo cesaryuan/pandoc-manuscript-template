@@ -120,7 +120,7 @@ def postprocess_docx(
         return False
 
     docx_path_abs = docx_file.resolve()
-    log_info("[postprocess] Starting DOCX post-processing pipeline")
+    log_debug("[postprocess] Starting DOCX post-processing pipeline")
     log_debug(f"[postprocess] Target file: {docx_path_abs}")
     log_debug(
         f"[postprocess] PMT settings: {len(pmt_settings.model_fields_set)}, "

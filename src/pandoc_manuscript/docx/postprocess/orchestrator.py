@@ -85,7 +85,7 @@ def run_pipeline_step(label: str, action: Callable[[], None]) -> None:
 
 def log_skip(label: str, reason: str) -> None:
     """Log a skipped optional pipeline step using the same step format."""
-    log_info(f"[postprocess] Step: Skipping {label} ({reason})")
+    log_debug(f"[postprocess] Step: Skipping {label} ({reason})")
 
 
 def postprocess_docx(
@@ -264,7 +264,7 @@ def postprocess_docx(
         doc.save(str(docx_path_abs))
         log_debug("[postprocess] Document saved successfully")
 
-        log_success("[postprocess] DOCX post-processing completed successfully")
+        log_debug("[postprocess] DOCX post-processing completed successfully")
         return True
 
     except Exception as e:

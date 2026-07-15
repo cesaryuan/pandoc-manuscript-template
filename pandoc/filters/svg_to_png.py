@@ -568,7 +568,7 @@ def finalize(doc: pf.Doc) -> None:
     """Report an INFO-level summary after all images have been inspected."""
     total = len(CONVERTED) + len(REUSED)
     if total:
-        log_info(f"[svg-to-png] SVG image PNG cache ready: {total} file(s)")
+        log_debug(f"[svg-to-png] SVG image PNG cache ready: {total} file(s)")
     if SKIPPED:
         log_warning(f"[WARN] SVG image conversion skipped for {len(SKIPPED)} missing file(s)")
 

@@ -9,12 +9,14 @@ import shutil
 import subprocess
 import sys
 import zipfile
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
 from ... import runtime_cache_version
-from ...runtime.logging import log_debug, log_error, log_info, log_warning
+from ...runtime.logging import log_debug, log_error, log_info, log_warning, should_log
 from ...runtime.paths import (
     PMT_REPLY_LINE_SOURCE_CACHE_DIR,
     PMT_REPLY_LINE_SOURCE_DOCX_DIR,
@@ -381,20 +383,47 @@ def build_markdown_line_source_docx(source_markdown: Path, target_docx: Path) ->
     target_docx.parent.mkdir(parents=True, exist_ok=True)
 
     previous_settings = manuscript_build.SETTINGS.model_copy(deep=True)
+    quiet = not should_log("DEBUG")
+    captured_stdout = StringIO()
+    captured_stderr = StringIO()
     result = 1
+
+    def replay_captured_output() -> None:
+        """Replay nested build diagnostics only when the hidden build fails."""
+        for buffer, target in (
+            (captured_stdout, sys.stdout),
+            (captured_stderr, sys.stderr),
+        ):
+            output = buffer.getvalue()
+            if output:
+                print(output, end="" if output.endswith("\n") else "\n", file=target)
+
     try:
         log_info(f"[LINE] Building Markdown line source DOCX: {source_markdown}")
-        result = manuscript_build.run_build_command(
-            target="docx",
-            markdown=str(source_markdown),
-            output_file=str(target_docx),
-            warn_hat_order=False,
-        )
+        try:
+            with ExitStack() as stack:
+                if quiet:
+                    # The line-source DOCX is an internal intermediate build;
+                    # keep its full pipeline output for failures or --verbose.
+                    stack.enter_context(redirect_stdout(captured_stdout))
+                    stack.enter_context(redirect_stderr(captured_stderr))
+                result = manuscript_build.run_build_command(
+                    target="docx",
+                    markdown=str(source_markdown),
+                    output_file=str(target_docx),
+                    warn_hat_order=False,
+                )
+        except BaseException:
+            if quiet:
+                replay_captured_output()
+            raise
     finally:
         for key, value in previous_settings.model_dump().items():
             setattr(manuscript_build.SETTINGS, key, value)
 
     if result != 0:
+        if quiet:
+            replay_captured_output()
         raise RuntimeError(f"Markdown line-source DOCX build failed: {source_markdown}")
     if not target_docx.exists():
         raise RuntimeError(f"Markdown line-source DOCX build did not create: {target_docx}")

@@ -59,7 +59,7 @@ def run_build_reply_command(
                 from_format=active_from_format,
             )
         else:
-            log_info("\n[DOCX] Building reviewer reply DOCX...\n")
+            log_info("[DOCX] Building reviewer reply DOCX...")
             build_reply_docx(
                 reply=reply,
                 manuscript=manuscript,

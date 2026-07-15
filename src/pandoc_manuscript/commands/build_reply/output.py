@@ -270,7 +270,7 @@ def build_reply_docx(
         ]
         reply_resolve.run_command(cmd, env=pandoc_tools_env(svg_filter_env))
 
-        log_info("[INFO] Running reply DOCX post-processing...")
+        log_debug("[DEBUG] Running reply DOCX post-processing...")
         if not postprocess_docx(
             str(pandoc_output),
             pmt_settings=pmt_settings,

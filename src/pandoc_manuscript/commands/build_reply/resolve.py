@@ -192,7 +192,7 @@ def extract_citation_clusters(markdown: str) -> list[str]:
             continue
         clusters.append(cluster)
         seen.add(cluster)
-    log_info(f"[INFO] Found {len(clusters)} bracketed citation clusters in reply.")
+    log_debug(f"[DEBUG] Found {len(clusters)} bracketed citation clusters in reply.")
     return clusters
 
 

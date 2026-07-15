@@ -402,7 +402,7 @@ def finalize(doc: pf.Doc) -> None:
     """Report an INFO-level summary after all images have been inspected."""
     total = len(EMBEDDED) + len(REUSED)
     if total:
-        log_info(f"[svg-embed] Self-contained SVG cache ready: {total} file(s)")
+        log_debug(f"[svg-embed] Self-contained SVG cache ready: {total} file(s)")
     if SKIPPED:
         log_warning(f"[WARN] SVG child image embedding skipped for {len(SKIPPED)} file(s)")
 

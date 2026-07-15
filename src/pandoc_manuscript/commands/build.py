@@ -621,7 +621,7 @@ def build_docx(
     if syntax_findings:
         raise RuntimeError("Final DOCX still contains unrendered Pandoc syntax")
 
-    log_success(f"\n[OK] DOCX created: {docx_file}")
+    log_success(f"[OK] DOCX created: {docx_file}")
 
 
 def build_latex():

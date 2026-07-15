@@ -15,6 +15,7 @@ from .commands.doctor import DoctorSettings
 from .commands.init import InitSettings
 from .commands.build_reply import BuildReplySettings
 from .commands.setup import SetupSettings
+from .runtime.logging import verbose_logging
 
 
 class PmtCli(BaseSettings):
@@ -51,7 +52,8 @@ class PmtCli(BaseSettings):
             log("Use `pmt --help` to see available commands.")
             self._exit_code = 1
             return
-        self._exit_code = int(command.run())
+        with verbose_logging(command.verbose):
+            self._exit_code = int(command.run())
 
 
 def main(argv: list[str] | None = None) -> int:

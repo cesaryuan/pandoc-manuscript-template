@@ -7,6 +7,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+from pydantic import Field
+from pydantic_settings import BaseSettings
+
+
+class VerboseCommandSettings(BaseSettings):
+    """Base settings shared by pmt subcommands that support detailed logging."""
+
+    verbose: bool = Field(default=False, description="Enable detailed debug logging.")
+
 
 def log(message: str) -> None:
     """Print a pmt CLI status line."""

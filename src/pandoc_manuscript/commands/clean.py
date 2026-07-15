@@ -7,12 +7,12 @@ from pathlib import Path
 from typing import ClassVar, Literal
 
 from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 
 from ..runtime.logging import log_error, log_info, log_success, log_warning
 from ..runtime.paths import PMT_DIR, PMT_WORK_DIR
 from .build import DEFAULT_OUTPUT_DIR
-from .common import project_directory
+from .common import VerboseCommandSettings, project_directory
 
 
 def is_relative_to(path: Path, parent: Path) -> bool:
@@ -65,7 +65,7 @@ def distclean(output_dir: str | Path = DEFAULT_OUTPUT_DIR) -> None:
     log_success("\n[OK] Deep clean complete.")
 
 
-class CleanSettings(BaseSettings):
+class CleanSettings(VerboseCommandSettings):
     """Settings for `pmt clean` and `pmt distclean`."""
 
     model_config = SettingsConfigDict(

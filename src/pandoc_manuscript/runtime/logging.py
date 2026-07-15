@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TextIO
 
 
@@ -40,6 +42,24 @@ def normalize_log_level(level: str | None) -> int:
 def current_log_level() -> int:
     """Return the active minimum log level from the environment."""
     return normalize_log_level(os.environ.get(LOG_LEVEL_ENV))
+
+
+@contextmanager
+def verbose_logging(enabled: bool) -> Iterator[None]:
+    """Temporarily enable DEBUG logging for one CLI command invocation."""
+    if not enabled:
+        yield
+        return
+
+    previous_level = os.environ.get(LOG_LEVEL_ENV)
+    os.environ[LOG_LEVEL_ENV] = "DEBUG"
+    try:
+        yield
+    finally:
+        if previous_level is None:
+            os.environ.pop(LOG_LEVEL_ENV, None)
+        else:
+            os.environ[LOG_LEVEL_ENV] = previous_level
 
 
 def should_log(level: str) -> bool:

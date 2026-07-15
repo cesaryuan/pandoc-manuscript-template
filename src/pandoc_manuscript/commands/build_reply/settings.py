@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings, CliPositionalArg, CliSuppress, SettingsConfigDict
+from pydantic_settings import CliPositionalArg, CliSuppress, SettingsConfigDict
 
-from ..common import project_directory
+from ..common import VerboseCommandSettings, project_directory
 
 
 DEFAULT_OUTPUT_DIR = "output"
@@ -27,7 +27,7 @@ BUILD_REPLY_CLI_CONFIG = SettingsConfigDict(
 )
 
 
-class BuildReplySettings(BaseSettings):
+class BuildReplySettings(VerboseCommandSettings):
     """Settings for `pmt build-reply`."""
 
     model_config = BUILD_REPLY_CLI_CONFIG

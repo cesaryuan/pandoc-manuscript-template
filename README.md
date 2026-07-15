@@ -180,6 +180,10 @@ pmt distclean
 
 Use `pmt --help` to see the full CLI.
 
+Add `--verbose` to any command, for example `pmt build docx --verbose`, to show
+detailed debug logs such as complete external command lines. Normal output keeps
+the main build stages, warnings, and results concise.
+
 ## Acknowledgments
 
 - [Pandoc](https://pandoc.org/)

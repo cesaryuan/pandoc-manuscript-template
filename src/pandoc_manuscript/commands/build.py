@@ -33,7 +33,7 @@ from ..docx.svg_filters import (
 )
 from ..docx import svg_filters as svg_filter_helpers
 from .setup import ensure_pandoc_tools, pandoc_command, pandoc_tools_env
-from .common import project_directory
+from .common import VerboseCommandSettings, project_directory
 
 # ============================================================================
 # SETTINGS
@@ -77,7 +77,7 @@ class BuildSettings(BaseSettings):
 SETTINGS = BuildSettings()
 
 
-class BuildCommandSettings(BaseSettings):
+class BuildCommandSettings(VerboseCommandSettings):
     """Settings for `pmt build`."""
 
     model_config = BUILD_CLI_CONFIG
@@ -145,7 +145,7 @@ def run_command(
         stream_output: If True, stream stdout/stderr to console in real-time
         env: Extra environment variables for this command
     """
-    log_info(f"[Run] {' '.join(str(c) for c in cmd)}")
+    log_debug(f"[Run] {' '.join(str(c) for c in cmd)}")
     command_env = None if env is None else {**os.environ, **env}
 
     if stream_output:

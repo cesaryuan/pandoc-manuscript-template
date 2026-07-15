@@ -5,13 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 
-from ..common import log, project_directory
+from ..common import VerboseCommandSettings, log, project_directory
 from .pandoc_tools import setup_pandoc_tools
 
 
-class SetupSettings(BaseSettings):
+class SetupSettings(VerboseCommandSettings):
     """Settings for `pmt setup`."""
 
     model_config = SettingsConfigDict(cli_kebab_case=True, cli_implicit_flags=True)

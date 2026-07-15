@@ -6,12 +6,12 @@ import shutil
 from pathlib import Path
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, CliPositionalArg, SettingsConfigDict
+from pydantic_settings import CliPositionalArg, SettingsConfigDict
 
 from ..runtime.resources import iter_project_template_entries, project_template_root
 from ..runtime.paths import PMT_DIR
 from .setup import setup_pandoc_tools
-from .common import log, project_directory
+from .common import VerboseCommandSettings, log, project_directory
 
 
 IGNORE_NAMES = {
@@ -105,7 +105,7 @@ def merge_template_directory(source: Path, destination: Path) -> tuple[int, int]
     return copied, skipped
 
 
-class InitSettings(BaseSettings):
+class InitSettings(VerboseCommandSettings):
     """Settings for `pmt init`."""
 
     model_config = SettingsConfigDict(cli_kebab_case=True, cli_implicit_flags=True)

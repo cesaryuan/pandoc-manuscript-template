@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ...docx.equation_layout import derive_docx_equation_layout, sync_eqn_block_template_with_page_margins
-from ...runtime.logging import log_info, log_warning
+from ...runtime.logging import log_debug, log_info, log_warning
 from ...runtime.metadata import EffectiveMetadata, PmtSettings, load_effective_metadata, write_pandoc_metadata
 from ...runtime.paths import PMT_REPLY_PROBE_DIR
 from ..setup import pandoc_command, pandoc_tools_env
@@ -114,8 +114,8 @@ def write_reply_style_metadata_file(
 
 
 def run_command(cmd: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    """Run a command, echo it, and raise with captured output on failure."""
-    log_info(f"[Run] {' '.join(cmd)}")
+    """Run a command, debug-log it, and raise with captured output on failure."""
+    log_debug(f"[Run] {' '.join(cmd)}")
     result = subprocess.run(
         cmd,
         capture_output=True,

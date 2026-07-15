@@ -5,11 +5,11 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 
 from ..runtime.resources import template_root
 from .setup import ensure_pandoc_tools, pandoc_tools_env, resolve_tool
-from .common import log
+from .common import VerboseCommandSettings, log
 
 
 def command_status(command: list[str]) -> tuple[bool, str]:
@@ -43,7 +43,7 @@ def import_status(module_name: str) -> tuple[bool, str]:
     return True, "available"
 
 
-class DoctorSettings(BaseSettings):
+class DoctorSettings(VerboseCommandSettings):
     """Settings for `pmt doctor`."""
 
     model_config = SettingsConfigDict(cli_kebab_case=True, cli_implicit_flags=True)

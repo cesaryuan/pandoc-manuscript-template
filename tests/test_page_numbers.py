@@ -54,7 +54,7 @@ def test_docx_page_numbers_can_be_added_and_removed(tmp_path: Path) -> None:
         run.style.name == PAGE_NUMBER_STYLE_NAME
         for run in doc.sections[0].footer.paragraphs[0].runs
     )
-    assert doc.settings.element.find(qn("w:updateFields")) is not None
+    assert doc.settings.element.find(qn("w:updateFields")) is None
 
     output = tmp_path / "page-numbers.docx"
     doc.save(output)
@@ -64,6 +64,7 @@ def test_docx_page_numbers_can_be_added_and_removed(tmp_path: Path) -> None:
         run.style.name == PAGE_NUMBER_STYLE_NAME
         for run in doc.sections[0].footer.paragraphs[0].runs
     )
+    assert doc.settings.element.find(qn("w:updateFields")) is None
 
     result = apply_page_number_settings(
         doc,

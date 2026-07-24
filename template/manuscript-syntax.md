@@ -589,9 +589,10 @@ docxPageMargins:
 
 To control automatic page numbers in DOCX footers, set `docxShowPageNumbers`.
 `true` adds a Word `PAGE` field to each defined footer using the reference
-DOCX's `page number` character style and updates it when the document is
-opened; `false` removes `PAGE` fields while retaining any other footer text. If
-the setting is omitted, PMT leaves the reference DOCX footer unchanged:
+DOCX's `page number` character style; `false` removes `PAGE` fields while
+retaining any other footer text. PMT does not request a document-wide field
+update when Word opens the file. If the setting is omitted, PMT leaves the
+reference DOCX footer unchanged:
 
 ```yaml
 docxShowPageNumbers: true

@@ -109,16 +109,6 @@ def append_page_field(paragraph: Paragraph) -> None:
         paragraph._p.append(run)
 
 
-def enable_field_updates_on_open(doc: DocumentObject) -> None:
-    """Ask Word to refresh newly inserted page-number fields when opening the file."""
-    settings = doc.settings.element
-    update_fields = settings.find(qn("w:updateFields"))
-    if update_fields is None:
-        update_fields = OxmlElement("w:updateFields")
-        settings.append(update_fields)
-    update_fields.set(qn("w:val"), "true")
-
-
 def add_page_numbers(doc: DocumentObject) -> tuple[int, int]:
     """Add one PAGE field using the page number style to each defined footer."""
     updated = 0
@@ -137,8 +127,6 @@ def add_page_numbers(doc: DocumentObject) -> tuple[int, int]:
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         append_page_field(paragraph)
         updated += 1
-    if updated:
-        enable_field_updates_on_open(doc)
     return updated, existing
 
 

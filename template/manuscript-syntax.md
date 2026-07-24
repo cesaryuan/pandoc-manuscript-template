@@ -587,6 +587,16 @@ docxPageMargins:
   right: 3.17cm
 ```
 
+To control automatic page numbers in DOCX footers, set `docxShowPageNumbers`.
+`true` adds a Word `PAGE` field to each defined footer using the reference
+DOCX's `page number` character style and updates it when the document is
+opened; `false` removes `PAGE` fields while retaining any other footer text. If
+the setting is omitted, PMT leaves the reference DOCX footer unchanged:
+
+```yaml
+docxShowPageNumbers: true
+```
+
 For DOCX builds, `pmt` derives the pandoc-crossref equation layout automatically;
 do not add `tableEqns`, `eqnBlockTemplate`, or `eqnBlockInlineMath` to
 `pandocMetadata`. When MathType conversion is active, PMT uses an inline

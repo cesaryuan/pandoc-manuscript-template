@@ -95,6 +95,14 @@ PMT_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "showLineNumbers",
         "show_line_numbers",
     ),
+    "docxShowPageNumbers": (
+        "docxShowPageNumbers",
+        "docx-show-page-numbers",
+        "docx_show_page_numbers",
+        "show-page-numbers",
+        "showPageNumbers",
+        "show_page_numbers",
+    ),
     "docxPageMargins": ("docxPageMargins", "docx-page-margins", "docx_page_margins"),
     "docxPageWidth": ("docxPageWidth", "docx-page-width", "docx_page_width"),
     "docxStyle": ("docxStyle", "docx-style", "docx_style"),
@@ -277,6 +285,18 @@ class PmtSettings(BaseSettings):
             "show_line_numbers",
         ),
         serialization_alias="docxShowLineNumbers",
+    )
+    docx_show_page_numbers: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "docxShowPageNumbers",
+            "docx-show-page-numbers",
+            "docx_show_page_numbers",
+            "show-page-numbers",
+            "showPageNumbers",
+            "show_page_numbers",
+        ),
+        serialization_alias="docxShowPageNumbers",
     )
     docx_page_margins: dict[str, str | int | float] | None = Field(
         default=None,

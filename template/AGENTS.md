@@ -9,7 +9,7 @@ For content syntax, formatting patterns, or writing fragments not covered in thi
 
 ## Style Metadata
 
-If the user wants to change reusable style behavior, update `style.yml`. PMT-owned settings such as `mathtype`, `docxStyle`, and `docxPageMargins` stay at the top level. Pandoc, citeproc, and pandoc-crossref defaults such as `csl` and `subfigGrid` belong under `pandocMetadata`. The YAML header in `manuscript.md` overrides only `pandocMetadata`; it does not override PMT-owned settings. See the `Style Metadata` section in `manuscript-syntax.md` for details.
+If the user wants to change reusable style behavior, update `style.yml`. PMT-owned settings such as `mathtype`, `docxStyle`, `docxPageMargins`, and `docxShowPageNumbers` stay at the top level. Pandoc, citeproc, and pandoc-crossref defaults such as `csl` and `subfigGrid` belong under `pandocMetadata`. The YAML header in `manuscript.md` overrides only `pandocMetadata`; it does not override PMT-owned settings. See the `Style Metadata` section in `manuscript-syntax.md` for details.
 
 ## Pandoc Markdown Syntax
 

@@ -260,6 +260,17 @@ def test_docx_line_numbers_default_to_continuous_and_serialize_with_new_key() ->
     assert legacy.to_mapping()["docxShowLineNumbers"] == "每页重编"
 
 
+def test_docx_page_numbers_are_optional_and_serialize_when_configured() -> None:
+    """Keep reference-DOCX footers unchanged unless page-number metadata is set."""
+    default = PmtSettings.model_validate({})
+    enabled = PmtSettings.model_validate({"show-page-numbers": True})
+
+    assert default.docx_show_page_numbers is None
+    assert "docxShowPageNumbers" not in default.to_mapping()
+    assert enabled.docx_show_page_numbers is True
+    assert enabled.to_mapping()["docxShowPageNumbers"] is True
+
+
 def test_legacy_pandoc_citation_delimiter_moves_to_pmt_settings(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

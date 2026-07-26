@@ -442,6 +442,7 @@ version = "0.5.3"
 source = { editable = "." }
 dependencies = [
     { name = "lxml" },
+    { name = "packaging" },
     { name = "panflute" },
     { name = "py7zr" },
     { name = "pydantic-settings" },
@@ -461,6 +462,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "lxml", specifier = ">=4.9.0" },
+    { name = "packaging", specifier = ">=24.2" },
     { name = "panflute", specifier = ">=2.3.0" },
     { name = "py7zr", specifier = ">=0.22.0" },
     { name = "pydantic-settings", specifier = ">=2.2.1" },

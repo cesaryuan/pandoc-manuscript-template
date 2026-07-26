@@ -16,6 +16,7 @@ from .commands.init import InitSettings
 from .commands.build_reply import BuildReplySettings
 from .commands.setup import SetupSettings
 from .runtime.logging import verbose_logging
+from .runtime.update_check import notify_if_update_available
 
 
 class PmtCli(BaseSettings):
@@ -58,15 +59,21 @@ class PmtCli(BaseSettings):
 
 def main(argv: list[str] | None = None) -> int:
     """Run the pmt command-line interface."""
+    check_for_updates = True
     try:
         app = CliApp.run(PmtCli, cli_args=argv, cli_parse_args=True)
         return app._exit_code
     except KeyboardInterrupt:
+        # Do not turn an immediate Ctrl-C into a network wait.
+        check_for_updates = False
         print("\n[WARN] Interrupted by user.", file=sys.stderr)
         return 1
     except Exception as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
+    finally:
+        if check_for_updates:
+            notify_if_update_available(__version__)
 
 
 __all__ = [

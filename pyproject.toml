@@ -26,6 +26,7 @@ dependencies = [
   "panflute>=2.3.0",
   "pymupdf>=1.26.0",
   "pydantic-settings>=2.2.1",
+  "packaging>=24.2",
   "python-dotenv>=1.0.0",
   "py7zr>=0.22.0",
   "resvg-py>=0.3.3",

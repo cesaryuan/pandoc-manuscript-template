@@ -100,6 +100,12 @@ uv tool install --upgrade pandoc-manuscript-template
 pmt init my-paper
 ```
 
+每次 `pmt` 命令结束后，PMT 会检查 PyPI 是否有新版本；发现新版本时会提示升级命令。使用以下命令升级已安装的 PMT：
+
+```bash
+uv tool upgrade pandoc-manuscript-template
+```
+
 ## 典型工作流
 
 ```bash

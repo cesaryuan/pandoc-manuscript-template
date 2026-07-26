@@ -13,6 +13,12 @@ from pandoc_manuscript.commands.build_reply import resolve as reply_resolve
 from pandoc_manuscript.runtime.logging import LOG_LEVEL_ENV, log_debug
 
 
+@pytest.fixture(autouse=True)
+def disable_update_check(monkeypatch) -> None:
+    """Keep CLI behavior tests independent of the external PyPI endpoint."""
+    monkeypatch.setattr(cli, "notify_if_update_available", lambda version: None)
+
+
 @pytest.mark.parametrize(
     ("settings_class", "arguments"),
     [

@@ -437,7 +437,9 @@ def default_docx_csl() -> Path:
 def pandoc_filter_env(pmt_settings: PmtSettings) -> dict[str, str]:
     """Return PMT settings passed to bundled Pandoc filters via the environment."""
     delimiter = pmt_settings.citation_number_range_delimiter
-    if delimiter is None:
+    # Pandoc citeproc already emits an en dash. Passing it through Lua's Windows
+    # environment boundary corrupts the Unicode value before the filter reads it.
+    if delimiter is None or delimiter == "–":
         return {}
     return {PMT_CITATION_NUMBER_RANGE_DELIMITER_ENV: delimiter}
 

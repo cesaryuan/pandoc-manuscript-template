@@ -27,9 +27,8 @@ docxConvertSvgToPng: false
 # docxSvgToPngDpi: 300
 # docxSvgToPngScale: 1
 
-# 设置 citeproc 折叠数字引文范围的分隔符。
-# 设置为 "-" 可生成 [1-3]，设置为 "–" 可保留 CSL 默认值。
-citationNumberRangeDelimiter: "–"
+# 设置 citeproc 折叠数字引文范围的分隔符。设置为 "-" 可生成 [1-3]
+# citationNumberRangeDelimiter: "-"
 
 # 设置为 true 可启用连续的 DOCX 行号；也可以使用以下字符串：
 # '连续'、'每页重编'、'每节重编'、'continuous'、'restart-page' 或 'restart-section'。

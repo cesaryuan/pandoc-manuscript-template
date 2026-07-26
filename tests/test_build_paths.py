@@ -1,4 +1,7 @@
 from pathlib import Path
+import os
+import shutil
+import subprocess
 import sys
 from typing import get_args
 
@@ -51,6 +54,64 @@ def test_citation_range_delimiter_uses_filter_environment() -> None:
     env = build.pandoc_filter_env(settings)
 
     assert env == {"PMT_CITATION_NUMBER_RANGE_DELIMITER": "-"}
+
+
+def test_default_citation_range_delimiter_skips_filter_environment() -> None:
+    """Let citeproc retain its native en dash without a Unicode environment value."""
+    settings = PmtSettings.model_validate({"citationNumberRangeDelimiter": "–"})
+
+    assert build.pandoc_filter_env(settings) == {}
+
+
+def test_default_citation_range_delimiter_survives_pandoc_lua_filter(tmp_path: Path) -> None:
+    """Keep collapsed citation ranges intact on Windows Lua environment reads."""
+    pandoc = shutil.which("pandoc")
+    if pandoc is None:
+        pytest.skip("pandoc is not installed")
+
+    bibliography = tmp_path / "references.bib"
+    bibliography.write_text(
+        "@article{one, author = {One, Ada}, title = {One}, journal = {Journal}, year = {2020}}\n"
+        "@article{two, author = {Two, Bea}, title = {Two}, journal = {Journal}, year = {2021}}\n"
+        "@article{three, author = {Three, Cy}, title = {Three}, journal = {Journal}, year = {2022}}\n",
+        encoding="utf-8",
+    )
+    repo_root = Path(__file__).resolve().parents[1]
+    environment = os.environ.copy()
+    environment.update(
+        build.pandoc_filter_env(
+            PmtSettings.model_validate({"citationNumberRangeDelimiter": "–"})
+        )
+    )
+
+    result = subprocess.run(
+        [
+            pandoc,
+            "--citeproc",
+            "--bibliography",
+            str(bibliography),
+            "--csl",
+            str(repo_root / "pandoc" / "csl" / "elsevier-vancouver.csl"),
+            "--lua-filter",
+            str(repo_root / "pandoc" / "filters" / "citation_number_range_delimiter.lua"),
+            "--from",
+            "markdown",
+            "--to",
+            "plain",
+            "--wrap=none",
+        ],
+        input="References [@one; @two; @three].\n",
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        env=environment,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "References [1–3]." in result.stdout
+    assert "\ufffd" not in result.stdout
 
 
 def test_svg_embed_cache_uses_pmt_cache(monkeypatch) -> None:

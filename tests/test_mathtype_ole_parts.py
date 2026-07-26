@@ -25,6 +25,24 @@ def test_missing_helper_is_not_built_during_conversion(monkeypatch, tmp_path) ->
         ole_parts.require_helper_executable()
 
 
+def test_auto_native_digest_does_not_build_rust_fallbacks(monkeypatch, tmp_path) -> None:
+    """Keep a successful auto set-data build from compiling unused Rust tools."""
+    monkeypatch.setattr(ole_parts, "MATHTYPE_RUST_EXE", tmp_path / "mathtype-rust.exe")
+    monkeypatch.setattr(ole_parts, "LATEX2WMF_EXE", tmp_path / "latex2wmf.exe")
+    monkeypatch.setattr(
+        ole_parts,
+        "build_mathtype_rust_converter",
+        lambda: pytest.fail("auto cache setup must not build mathtype-rust"),
+    )
+    monkeypatch.setattr(
+        ole_parts,
+        "build_latex2wmf_converter",
+        lambda: pytest.fail("auto cache setup must not build latex2wmf"),
+    )
+
+    assert ole_parts.native_exe_digest_for_method("auto") is None
+
+
 def test_decode_process_output_falls_back_for_localized_helper_errors() -> None:
     """Preserve Chinese stderr from older helpers that use a Windows code page."""
     message = "[ole-helper] 找不到文件\n"

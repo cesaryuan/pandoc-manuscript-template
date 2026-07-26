@@ -542,21 +542,28 @@ def build_latex2wmf_converter() -> Path:
 
 
 def native_exe_digest_for_method(conversion_method: MathTypeConversionMethod) -> str | None:
-    """Build and hash the native converters used by the selected backend."""
+    """Hash available native converters without compiling unused fallback tools."""
     if conversion_method == "set-data":
         return None
-    if conversion_method == "rust-sdk":
-        return file_sha256(build_mathtype_rust_converter())
-    if conversion_method == "auto":
-        try:
-            return file_group_sha256(
-                [build_mathtype_rust_converter(), build_latex2wmf_converter()]
-            )
-        except (RuntimeError, FileNotFoundError):
-            return None
-    return file_group_sha256(
-        [build_mathtype_rust_converter(), build_latex2wmf_converter()]
+    projects = (
+        (MATHTYPE_RUST_PROJECT,)
+        if conversion_method == "rust-sdk"
+        else (MATHTYPE_RUST_PROJECT, LATEX2WMF_PROJECT)
     )
+    # Source checkouts already include a source digest in the cache key. Avoid
+    # changing that key after the first on-demand Cargo build creates an .exe.
+    if all(project is not None and project.exists() for project in projects):
+        return None
+    executables = (
+        (MATHTYPE_RUST_EXE,)
+        if conversion_method == "rust-sdk"
+        else (MATHTYPE_RUST_EXE, LATEX2WMF_EXE)
+    )
+    if not all(executable.exists() for executable in executables):
+        return None
+    if conversion_method == "rust-sdk":
+        return file_sha256(MATHTYPE_RUST_EXE)
+    return file_group_sha256(list(executables))
 
 
 def normalize_mathtype_latex(latex: str) -> str:

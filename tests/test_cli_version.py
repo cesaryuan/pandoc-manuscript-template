@@ -10,7 +10,7 @@ from pandoc_manuscript import cli
 def test_cli_version_uses_distribution_metadata(monkeypatch, capsys) -> None:
     """Keep `pmt --version` synchronized with the installed package metadata."""
     expected = importlib_metadata.version("pandoc-manuscript-template")
-    monkeypatch.setattr(cli, "notify_if_update_available", lambda version: None)
+    monkeypatch.setattr(cli, "notify_and_schedule_update_check", lambda version: None)
 
     result = cli.main(["--version"])
 

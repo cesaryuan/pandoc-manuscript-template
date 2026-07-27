@@ -16,7 +16,7 @@ from pandoc_manuscript.runtime.logging import LOG_LEVEL_ENV, log_debug
 @pytest.fixture(autouse=True)
 def disable_update_check(monkeypatch) -> None:
     """Keep CLI behavior tests independent of the external PyPI endpoint."""
-    monkeypatch.setattr(cli, "notify_if_update_available", lambda version: None)
+    monkeypatch.setattr(cli, "notify_and_schedule_update_check", lambda version: None)
 
 
 @pytest.mark.parametrize(

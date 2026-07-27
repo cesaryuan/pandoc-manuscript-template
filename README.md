@@ -100,7 +100,7 @@ uv tool install --upgrade pandoc-manuscript-template
 pmt init my-paper
 ```
 
-After each `pmt` invocation, PMT checks PyPI for a newer release and prints an upgrade hint when one is available. Upgrade an installed PMT tool with:
+After each `pmt` invocation, PMT reads its cached PyPI update status and prints an upgrade hint when one is available. A silent background worker refreshes that cache at most once every hour, so commands do not wait for network I/O. Upgrade an installed PMT tool with:
 
 ```bash
 uv tool upgrade pandoc-manuscript-template

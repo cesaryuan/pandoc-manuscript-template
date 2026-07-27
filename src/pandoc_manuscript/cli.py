@@ -16,7 +16,7 @@ from .commands.init import InitSettings
 from .commands.build_reply import BuildReplySettings
 from .commands.setup import SetupSettings
 from .runtime.logging import verbose_logging
-from .runtime.update_check import notify_if_update_available
+from .runtime.update_check import notify_and_schedule_update_check
 
 
 class PmtCli(BaseSettings):
@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     finally:
         if check_for_updates:
-            notify_if_update_available(__version__)
+            notify_and_schedule_update_check(__version__)
 
 
 __all__ = [

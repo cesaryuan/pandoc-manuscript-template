@@ -1,0 +1,3 @@
+[net]
+# Reuse system Git credentials when native helpers resolve private dependencies.
+git-fetch-with-cli = true

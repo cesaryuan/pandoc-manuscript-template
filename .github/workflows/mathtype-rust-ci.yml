@@ -45,6 +45,16 @@ jobs:
           token: ${{ secrets.PRIVATE_SUBMODULES_TOKEN }}
           submodules: recursive
 
+      # Cargo clones Git dependencies outside the checkout credential scope.
+      - name: Authenticate private Cargo dependencies
+        shell: bash
+        env:
+          PRIVATE_SUBMODULES_TOKEN: ${{ secrets.PRIVATE_SUBMODULES_TOKEN }}
+        run: |
+          git config --global \
+            url."https://x-access-token:${PRIVATE_SUBMODULES_TOKEN}@github.com/cesaryuan/latex2wmf".insteadOf \
+            "https://github.com/cesaryuan/latex2wmf"
+
       - name: Install Rust quality components
         run: rustup component add rustfmt clippy
 
@@ -74,6 +84,16 @@ jobs:
         with:
           token: ${{ secrets.PRIVATE_SUBMODULES_TOKEN }}
           submodules: recursive
+
+      # Cargo clones Git dependencies outside the checkout credential scope.
+      - name: Authenticate private Cargo dependencies
+        shell: bash
+        env:
+          PRIVATE_SUBMODULES_TOKEN: ${{ secrets.PRIVATE_SUBMODULES_TOKEN }}
+        run: |
+          git config --global \
+            url."https://x-access-token:${PRIVATE_SUBMODULES_TOKEN}@github.com/cesaryuan/latex2wmf".insteadOf \
+            "https://github.com/cesaryuan/latex2wmf"
 
       - name: Run complete Rust test suite
         run: cargo test -- --show-output

@@ -1,5 +1,27 @@
 # Development
 
+## Private native submodules
+
+The `scripts/mathtype-rust` and `scripts/latex2wmf` source trees are private
+submodules. A source checkout therefore requires GitHub read access to both
+repositories:
+
+```bash
+git clone --recurse-submodules https://github.com/cesaryuan/pandoc-manuscript-template.git
+```
+
+For an existing checkout, initialize or refresh them with:
+
+```bash
+git submodule update --init --recursive
+```
+
+The GitHub Actions workflows use the repository secret
+`PRIVATE_SUBMODULES_TOKEN`. Configure it with a least-privilege token that has
+read-only Contents access to the parent repository and both private submodule
+repositories. Secrets are not provided to workflows triggered by pull requests
+from forks, so those runs cannot fetch the private source trees.
+
 ## Release to PyPI
 
 This project publishes to PyPI with GitHub Actions trusted publishing, so release jobs do not need a stored PyPI token.

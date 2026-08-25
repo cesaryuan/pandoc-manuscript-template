@@ -6,14 +6,18 @@ permissions:
 on:
   pull_request:
     paths:
+      - "scripts/mathtype-rust"
       - "scripts/mathtype-rust/**"
+      - ".gitmodules"
       - ".github/workflows/mathtype-rust-ci.yml"
       - "src/pandoc_manuscript/mathtype/Times+Symbol 12.eqp"
   push:
     branches:
       - main
     paths:
+      - "scripts/mathtype-rust"
       - "scripts/mathtype-rust/**"
+      - ".gitmodules"
       - ".github/workflows/mathtype-rust-ci.yml"
       - "src/pandoc_manuscript/mathtype/Times+Symbol 12.eqp"
 
@@ -38,6 +42,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
         with:
+          token: ${{ secrets.PRIVATE_SUBMODULES_TOKEN }}
           submodules: recursive
 
       - name: Install Rust quality components
@@ -67,6 +72,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
         with:
+          token: ${{ secrets.PRIVATE_SUBMODULES_TOKEN }}
           submodules: recursive
 
       - name: Run complete Rust test suite

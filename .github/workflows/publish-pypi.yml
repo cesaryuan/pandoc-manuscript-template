@@ -18,6 +18,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
         with:
+          token: ${{ secrets.PRIVATE_SUBMODULES_TOKEN }}
           submodules: recursive
 
       - name: Install uv
@@ -118,6 +119,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
         with:
+          token: ${{ secrets.PRIVATE_SUBMODULES_TOKEN }}
           submodules: recursive
 
       # Build inside the manylinux container so the bundled Rust executables

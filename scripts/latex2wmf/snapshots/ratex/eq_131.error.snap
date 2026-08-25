@@ -1,5 +1,0 @@
----
-source: src/snapshot_tests.rs
-expression: error
----
-generated SVG contains no supported vector paths

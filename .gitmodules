@@ -1,3 +1,9 @@
 [submodule "pandoc/manuscript-template"]
 	path = pandoc/manuscript-template
 	url = https://github.com/cesaryuan/manuscript-template
+[submodule "scripts/mathtype-rust"]
+	path = scripts/mathtype-rust
+	url = https://github.com/cesaryuan/mathtype-rust.git
+[submodule "scripts/latex2wmf"]
+	path = scripts/latex2wmf
+	url = https://github.com/cesaryuan/latex2wmf.git

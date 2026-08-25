@@ -1,6 +1,0 @@
----
-source: src/snapshot_tests.rs
-expression: metadata
-extension: json
-snapshot_kind: binary
----

@@ -81,7 +81,7 @@ uvx ruff check .
 ### 创建第一个项目
 
 ```bash
-uvx --from git+https://github.com/cesaryuan/pandoc-manuscript-template pmt init my-paper
+uvx --from pandoc-manuscript-template pmt init my-paper
 cd my-paper
 pmt doctor
 pmt build docx

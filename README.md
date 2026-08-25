@@ -81,7 +81,7 @@ This is only a rough version-compatibility check. It can catch syntax that does 
 ### Create Your First Project
 
 ```bash
-uvx --from git+https://github.com/cesaryuan/pandoc-manuscript-template pmt init my-paper
+uvx --from pandoc-manuscript-template pmt init my-paper
 cd my-paper
 pmt doctor
 pmt build docx

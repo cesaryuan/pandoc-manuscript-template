@@ -438,7 +438,7 @@ wheels = [
 
 [[package]]
 name = "pandoc-manuscript-template"
-version = "0.5.7"
+version = "0.5.8"
 source = { editable = "." }
 dependencies = [
     { name = "lxml" },

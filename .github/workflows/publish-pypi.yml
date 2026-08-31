@@ -35,6 +35,17 @@ jobs:
           # cannot load when the floating macos-latest image advances.
           echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> "$GITHUB_ENV"
 
+      # Cargo fetches Git dependencies in its own cache, outside checkout's
+      # credential scope. Keep the rewrite limited to the private dependency.
+      - name: Authenticate private Cargo dependencies
+        shell: bash
+        env:
+          PRIVATE_SUBMODULES_TOKEN: ${{ secrets.PRIVATE_SUBMODULES_TOKEN }}
+        run: |
+          git config --global \
+            url."https://x-access-token:${PRIVATE_SUBMODULES_TOKEN}@github.com/cesaryuan/latex2wmf".insteadOf \
+            "https://github.com/cesaryuan/latex2wmf"
+
       - name: Check Rust toolchain
         run: |
           rustup show active-toolchain
@@ -131,7 +142,15 @@ jobs:
           CIBW_BUILD: cp311-manylinux_x86_64
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_BEFORE_ALL_LINUX: curl -sSf https://sh.rustup.rs | sh -s -- -y
+          # The Cargo build happens in the manylinux container rather than on
+          # the runner, so pass its private-repository token explicitly.
+          PRIVATE_SUBMODULES_TOKEN: ${{ secrets.PRIVATE_SUBMODULES_TOKEN }}
           CIBW_ENVIRONMENT_LINUX: PATH=$HOME/.cargo/bin:$PATH
+          CIBW_ENVIRONMENT_PASS_LINUX: PRIVATE_SUBMODULES_TOKEN
+          CIBW_BEFORE_BUILD_LINUX: >-
+            git config --global
+            url."https://x-access-token:${PRIVATE_SUBMODULES_TOKEN}@github.com/cesaryuan/latex2wmf".insteadOf
+            "https://github.com/cesaryuan/latex2wmf"
         with:
           output-dir: dist
 

@@ -152,7 +152,7 @@ PMT 关注的不只是“把 Markdown 转成 Word”，还包括那些常常在�
 
 ## 文档导航
 
-- [`template/manuscript-syntax.md`](template/manuscript-syntax.md)：稿件语法、引用、交叉引用、伪代码、修订标记、样式元数据
+- [`template/.agents/manuscript-syntax.md`](template/.agents/manuscript-syntax.md)：稿件语法、引用、交叉引用、伪代码、修订标记、样式元数据
 - [`template/manuscript.md`](template/manuscript.md)：示例稿件
 - [`AGENTS.md`](AGENTS.md)：仓库级 agent 指南
 
@@ -189,5 +189,5 @@ pmt distclean
 
 ## 支持
 
-- 先查看 [`template/manuscript-syntax.md`](template/manuscript-syntax.md)
+- 先查看 [`template/.agents/manuscript-syntax.md`](template/.agents/manuscript-syntax.md)
 - 提 issue 时尽量附上最小可复现示例

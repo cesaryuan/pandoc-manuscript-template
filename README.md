@@ -152,7 +152,7 @@ The output is scripted, reproducible, and version-controlled, but the source pro
 
 ## Documentation Map
 
-- [`template/manuscript-syntax.md`](template/manuscript-syntax.md): manuscript syntax, citations, cross-references, pseudocode, revision markup, and style metadata
+- [`template/.agents/manuscript-syntax.md`](template/.agents/manuscript-syntax.md): manuscript syntax, citations, cross-references, pseudocode, revision markup, and style metadata
 - [`template/manuscript.md`](template/manuscript.md): example manuscript content
 - [`AGENTS.md`](AGENTS.md): repository-specific guidance for coding agents
 
@@ -197,5 +197,5 @@ the main build stages, warnings, and results concise.
 
 ## Support
 
-- Review the syntax guide in [`template/manuscript-syntax.md`](template/manuscript-syntax.md)
+- Review the syntax guide in [`template/.agents/manuscript-syntax.md`](template/.agents/manuscript-syntax.md)
 - Open an issue with a minimal reproducible example

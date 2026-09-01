@@ -20,6 +20,15 @@ def test_init_copies_packaged_agents_directory(tmp_path) -> None:
     assert (target / ".agents" / "word-manuscript-fix" / "scripts" / "unescape_latex.py").is_file()
 
 
+def test_init_without_directory_uses_current_directory(tmp_path, monkeypatch) -> None:
+    """Use the current directory when the init target is omitted."""
+    monkeypatch.chdir(tmp_path)
+
+    assert cli.main(["init"]) == 0
+
+    assert (tmp_path / "manuscript.md").is_file()
+
+
 def test_init_merge_agents_directory_keeps_existing_files(tmp_path) -> None:
     """Merge .agents by filling missing files without overwriting local edits."""
     target = tmp_path / "paper"

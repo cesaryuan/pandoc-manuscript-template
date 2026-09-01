@@ -87,6 +87,12 @@ pmt doctor
 pmt build docx
 ```
 
+To initialize the manuscript project in the current directory, omit the target directory:
+
+```bash
+pmt init
+```
+
 That produces:
 
 ```text
@@ -173,7 +179,7 @@ PMT is especially useful if:
 ## Commands at a Glance
 
 ```bash
-pmt init my-paper
+pmt init [directory]
 pmt setup
 pmt doctor
 pmt build docx

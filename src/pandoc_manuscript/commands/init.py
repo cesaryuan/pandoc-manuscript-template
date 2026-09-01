@@ -110,7 +110,10 @@ class InitSettings(VerboseCommandSettings):
 
     model_config = SettingsConfigDict(cli_kebab_case=True, cli_implicit_flags=True)
 
-    directory: CliPositionalArg[str]
+    directory: CliPositionalArg[str] = Field(
+        default=".",
+        description="Target manuscript project directory. Defaults to the current directory.",
+    )
     force: bool = Field(default=False, description="Overwrite existing template entries in the target project.")
     merge: bool = Field(
         default=False,

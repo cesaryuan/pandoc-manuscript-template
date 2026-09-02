@@ -303,7 +303,7 @@ def load_build_metadata() -> EffectiveMetadata:
     )
     if not effective.has_yaml_header:
         # Reply-style documents may omit manuscript YAML; keep style.yml defaults.
-        log_warning(f"[WARN] No YAML front matter found in {SETTINGS.manuscript_file}; using metadata files only")
+        log_info(f"[INFO] No YAML front matter found in {SETTINGS.manuscript_file}; using metadata files only")
     return effective
 
 

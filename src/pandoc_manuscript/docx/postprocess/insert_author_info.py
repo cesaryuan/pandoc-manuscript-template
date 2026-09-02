@@ -54,7 +54,7 @@ if __package__ in (None, ""):
     # Allow direct execution while reusing the repository-wide logging gate.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ...runtime.logging import log_error, log_success, log_warning
+from ...runtime.logging import log_error, log_success, log_info
 from ...runtime.metadata import parse_yaml_header
 
 try:
@@ -462,7 +462,7 @@ def insert_author_info(docx_path: str, md_path: str) -> tuple[int, int, bool]:
     result = insert_author_info_to_doc(doc, metadata)
 
     if result[0] == 0:
-        log_warning("Warning: No authors found in YAML metadata")
+        log_info("Warning: No authors found in YAML metadata")
         return result
 
     doc.save(docx_path)

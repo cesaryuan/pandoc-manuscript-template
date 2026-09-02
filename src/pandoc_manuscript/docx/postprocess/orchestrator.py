@@ -147,7 +147,7 @@ def postprocess_docx(
                         f"Footnote: {'Yes' if has_footnote else 'No'}"
                     )
                 else:
-                    print_warning("No authors found in YAML metadata, skipping")
+                    print_debug_success("No authors found in YAML metadata, skipping")
 
             run_pipeline_step("Inserting author information", insert_author_info_step)
 

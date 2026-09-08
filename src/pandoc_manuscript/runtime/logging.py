@@ -8,6 +8,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TextIO
 
+from tqdm import tqdm
+
 
 LOG_LEVELS = {
     "DEBUG": 10,
@@ -130,7 +132,8 @@ def log_message(level: str, message: str, *, stream: TextIO | None = None) -> No
     if not should_log(level):
         return
     target_stream = stream or sys.stdout
-    print(format_log_message(level, message, target_stream), file=target_stream)
+    # Clear and redraw active progress bars so logs do not append to their current line.
+    tqdm.write(format_log_message(level, message, target_stream), file=target_stream)
 
 
 def log_debug(message: str) -> None:

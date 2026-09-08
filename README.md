@@ -52,6 +52,8 @@ PMT is not just a generic Pandoc wrapper. It is a manuscript workflow with opini
 - CSL-based citations
 - Reference DOCX support for Word styling
 - DOCX post-processing for author blocks, table behavior, styles, and line-number-related workflows
+- Tab-layout equation paragraphs automatically use `Para Equation`, based on `Body Text`, with 0.5 line spacing after and single line spacing. To apply only this step to an existing DOCX in place, run `uv run python -m pandoc_manuscript.docx.postprocess.para_equation_style path/to/file.docx` (add `--no-save` for a dry run).
+  The style's center and right tab stops use half and all of the first DOCX section's writable width (page width minus left/right margins). Direct paragraph tab stops are removed so equations inherit the style's positions; rerun the step after changing page margins.
 - SVG handling and DOCX fallbacks for figures that Word does not handle well
 - Cross-platform MathType-compatible OLE/WMF equations, with an optional native MathType comparison path on Windows
 

@@ -62,6 +62,7 @@ except ImportError as e:
     print("  - autofit_tables.py")
     print("  - table_text_style.py")
     print("  - para_after_table_style.py")
+    print("  - para_equation_style.py")
     print("  - insert_author_info.py")
     print("  - clear_subfigure_table_format.py")
     print("  - format_equation_layout_tables.py")
@@ -225,6 +226,13 @@ def postprocess_docx(
             equation_table_count = format_equation_layout_tables(doc)
             print_debug_success(f"Formatted {equation_table_count} equation layout table(s)")
 
+        def apply_para_equation_style_step() -> None:
+            """Apply the Body Text-based style to tab-layout equation paragraphs."""
+            # Defer the import so this step's module can also run directly with python -m.
+            from .para_equation_style import process_para_equation_style
+
+            process_para_equation_style(doc)
+
         def apply_where_paragraph_style_step() -> None:
             """Style where clauses that immediately follow equations."""
             where_count = process_where_paragraph_styles(doc)
@@ -262,6 +270,7 @@ def postprocess_docx(
             ("Applying equation revision metadata", process_equation_metadata_step),
             ("Applying table attribute metadata", process_table_metadata_step),
             ("Formatting equation layout tables", format_equation_layout_tables_step),
+            ("Applying tab-layout equation paragraph style", apply_para_equation_style_step),
             ("Applying where paragraph style", apply_where_paragraph_style_step),
             ("Adding spaces after standalone inline math", add_inline_math_spacing_step),
         ]
@@ -310,6 +319,7 @@ Processing steps:
   - Auto-fit tables to window width and center align
   - Apply table attributes exported by the Pandoc table metadata filter
   - Format equation layout tables
+  - Apply 'Para Equation' to tab-layout equations (0.5 line after, single spacing)
   - Apply 'Where Paragraph' style after equation paragraphs
   - Add trailing spaces after standalone inline math
   - Optionally apply reply-only blue formatting

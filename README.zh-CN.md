@@ -52,6 +52,8 @@ PMT 不只是一个通用的 Pandoc 封装器。它是一个面向真实投稿�
 - 基于 CSL 的参考文献格式
 - 通过 reference DOCX 控制 Word 样式
 - 面向 DOCX 的后处理：作者信息、表格行为、样式、行号相关工作流
+- 制表符排版的公式段落自动应用 `Para Equation` 样式，继承“正文文本”，段后间距为 0.5 行，使用单倍行距。对已有 DOCX 单独执行此步骤并原地保存：`uv run python -m pandoc_manuscript.docx.postprocess.para_equation_style path/to/file.docx`（加 `--no-save` 可仅检查而不保存）。
+  样式的居中、右对齐制表位分别设在 DOCX 第一节正文可用宽度（页面宽度减左右页边距）的一半和末端；移除公式段落上的直接制表位，使其继承样式。修改页边距后需重新执行此步骤。
 - Word 不友好图片场景下的 SVG 处理和回退方案
 - 需要时支持 MathType 相关的 DOCX 工作流
 

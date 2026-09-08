@@ -92,6 +92,13 @@ def equation_tab_stops_from_settings(settings: PmtSettings) -> tuple[int, int] |
     page_width = page_width_twips_from_settings(settings)
     left_margin = margin_twips_from_settings(settings, "left")
     right_margin = margin_twips_from_settings(settings, "right")
+    return equation_tab_stops_from_page_width(page_width, left_margin, right_margin)
+
+
+def equation_tab_stops_from_page_width(
+    page_width: int, left_margin: int, right_margin: int
+) -> tuple[int, int]:
+    """Return center/right equation tab positions in twips for the writable page width."""
     right_tab = page_width - left_margin - right_margin
     if right_tab <= 0:
         raise ValueError("docxPageMargins left/right values leave no positive DOCX text width")

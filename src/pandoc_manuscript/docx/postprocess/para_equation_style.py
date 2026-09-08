@@ -15,7 +15,8 @@ from typing import cast
 
 from docx.document import Document as DocumentObject
 from docx.enum.style import WD_STYLE_TYPE
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+from docx.enum.text import WD_TAB_ALIGNMENT
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Twips
 from docx.styles.style import _ParagraphStyle
@@ -86,7 +87,16 @@ def process_para_equation_style(doc: DocumentObject) -> int:
     style = cast(_ParagraphStyle, style)
     style.base_style = body_style
     configure_equation_tab_stops(doc, style)
-    style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # Word's paragraph text alignment controls vertical alignment within each line.
+    p_pr = style.element.get_or_add_pPr()
+    text_alignment = p_pr.find(qn("w:textAlignment"))
+    if text_alignment is None:
+        text_alignment = OxmlElement("w:textAlignment")
+        p_pr.insert_element_before(
+            text_alignment, "w:textboxTightWrap", "w:outlineLvl", "w:divId",
+            "w:cnfStyle", "w:rPr", "w:sectPr", "w:pPrChange",
+        )
+    text_alignment.set(qn("w:val"), "center")
     style.paragraph_format.line_spacing = 1.0
     spacing = style.element.get_or_add_pPr().get_or_add_spacing()
     # Word stores line-based paragraph spacing in hundredths, not points/twips.
@@ -98,8 +108,10 @@ def process_para_equation_style(doc: DocumentObject) -> int:
 
     for paragraph in paragraphs:
         paragraph.style = style
-        # Inherit centered alignment instead of retaining a direct paragraph override.
-        paragraph.alignment = None
+        # Inherit vertical text alignment while preserving horizontal paragraph alignment.
+        direct_alignment = paragraph._p.get_or_add_pPr().find(qn("w:textAlignment"))
+        if direct_alignment is not None:
+            direct_alignment.getparent().remove(direct_alignment)
         # Direct tabs merge with style tabs, so remove the old template's positions entirely.
         paragraph.paragraph_format.tab_stops.clear_all()
         direct_spacing = paragraph._p.get_or_add_pPr().find(qn("w:spacing"))

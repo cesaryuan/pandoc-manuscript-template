@@ -45,6 +45,9 @@ def test_saved_tab_equation_inherits_body_style_without_direct_spacing_overrides
     old_style.paragraph_format.space_after = Pt(24)
     equation = doc.add_paragraph("\t")
     equation.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    text_alignment = OxmlElement("w:textAlignment")
+    text_alignment.set(qn("w:val"), "top")
+    equation._p.get_or_add_pPr().append(text_alignment)
     add_math(equation, ole=ole)
     equation.add_run("\t(1)")
     equation.paragraph_format.tab_stops.add_tab_stop(Inches(3), WD_TAB_ALIGNMENT.CENTER)
@@ -63,8 +66,10 @@ def test_saved_tab_equation_inherits_body_style_without_direct_spacing_overrides
     reopened = Document(path)
     paragraph = reopened.paragraphs[0]
     assert paragraph.style.name == "Para Equation"
-    assert paragraph.alignment is None
-    assert paragraph.style.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert paragraph.alignment == WD_ALIGN_PARAGRAPH.LEFT
+    assert paragraph.style.paragraph_format.alignment is None
+    assert paragraph._p.pPr.find(qn("w:textAlignment")) is None
+    assert paragraph.style.element.pPr.find(qn("w:textAlignment")).get(qn("w:val")) == "center"
     assert paragraph.style.base_style.name == "Body Text"
     assert paragraph.style.base_style.font.size.pt == 13
     assert paragraph.style.paragraph_format.line_spacing == 1.0

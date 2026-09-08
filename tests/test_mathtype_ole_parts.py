@@ -518,8 +518,9 @@ def test_generate_equation_parts_both_uses_independent_backend_caches(monkeypatc
 
     monkeypatch.setattr(ole_parts, "generate_uncached_equation_parts", fake_generate_uncached)
 
+    latex = r"\frac{a}{b} + \alpha"
     equations = ole_parts.generate_equation_parts(
-        [ole_parts.EquationRequest("x")],
+        [ole_parts.EquationRequest(latex)],
         tmp_path,
         conversion_method="both",
     )
@@ -529,6 +530,7 @@ def test_generate_equation_parts_both_uses_independent_backend_caches(monkeypatc
     assert (tmp_path / "eq_001.ole.bin").read_bytes() == b"ole-set-data"
     assert (tmp_path / "eq_001.rust.ole.bin").read_bytes() == b"ole-rust"
     assert any("rust and set-data outputs differ" in message for message in warnings)
+    assert any(f"LaTeX: {latex}" in message for message in warnings)
 
 
 def test_generate_equation_parts_both_rejects_non_windows(monkeypatch, tmp_path) -> None:
@@ -552,6 +554,7 @@ def test_warn_if_conversion_outputs_differ_accepts_equal_mtef(monkeypatch, tmp_p
 
     ole_parts.warn_if_conversion_outputs_differ(
         1,
+        "x",
         rust_ole,
         set_data_ole,
     )
@@ -572,6 +575,7 @@ def test_warn_if_conversion_outputs_differ_reports_ole_mtef(monkeypatch, tmp_pat
 
     ole_parts.warn_if_conversion_outputs_differ(
         2,
+        "x",
         rust_ole,
         set_data_ole,
     )

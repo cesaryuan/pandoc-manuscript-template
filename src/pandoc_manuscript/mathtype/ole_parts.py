@@ -968,6 +968,7 @@ def generate_cached_equation_parts_auto(
 
 def warn_if_conversion_outputs_differ(
     index: int,
+    latex: str,
     rust_ole_path: Path,
     set_data_ole_path: Path,
 ) -> None:
@@ -982,7 +983,7 @@ def warn_if_conversion_outputs_differ(
     if differing_parts:
         log_warning(
             f"[mathtype] warning: rust and set-data outputs differ for equation {index}: "
-            f"{', '.join(differing_parts)}; using set-data output"
+            f"{', '.join(differing_parts)}; using set-data output; LaTeX: {latex}"
         )
 
 
@@ -1385,6 +1386,7 @@ def generate_equation_parts(
             cache_misses += int(not rust_hit) + int(not set_data_hit)
             warn_if_conversion_outputs_differ(
                 index,
+                latex,
                 rust_ole_path,
                 ole_path,
             )

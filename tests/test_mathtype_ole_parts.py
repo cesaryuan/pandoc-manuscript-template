@@ -1,5 +1,6 @@
 from pathlib import Path
 import struct
+import subprocess
 import sys
 import zipfile
 
@@ -119,7 +120,12 @@ def test_cross_platform_wmf_passes_inline_math_style(monkeypatch, tmp_path) -> N
     metadata_path = tmp_path / "eq.json"
 
     monkeypatch.setattr(ole_parts, "build_latex2wmf_converter", lambda: latex2wmf_exe)
-    monkeypatch.setattr(ole_parts, "run", lambda command, **kwargs: calls.append(command))
+    def fake_run(command, **kwargs):
+        """Capture a successful renderer invocation."""
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(ole_parts, "run", fake_run)
 
     ole_parts.make_wmf_metadata_cross_platform(
         input_path,
@@ -688,3 +694,89 @@ class FakeCompound:
     def read_stream(self, name: str) -> bytes:
         """Return a valid MathType marker for generated-output validation."""
         return b"DSMT"
+
+
+@pytest.mark.parametrize("method", ["rust", "auto", "both"])
+@pytest.mark.parametrize("failed_indices", [{2}, {1, 2, 3}])
+def test_failed_latex2wmf_continues_docx_build(monkeypatch, tmp_path, method, failed_indices) -> None:
+    """Preserve failed OMML, later formula alignment, and usable both-mode output."""
+    warnings = []
+    visited = []
+    work = tmp_path / "work"
+    cache = tmp_path / "cache"
+    source = tmp_path / "source.docx"
+    target = tmp_path / "result.docx"
+    formulas = ["a", r"\unsupported{b}", "c"]
+    paragraphs = "".join(
+        f'<w:p><w:r><w:rPr><w:vanish/></w:rPr><w:t>MTLATEX:inline:{latex}</w:t></w:r>'
+        f'<m:oMath><m:r><m:t>{latex}</m:t></m:r></m:oMath></w:p>'
+        for latex in formulas
+    )
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            f'<w:document xmlns:w="{marked_docx.NS["w"]}" xmlns:m="{marked_docx.NS["m"]}">'
+            f'<w:body>{paragraphs}</w:body></w:document>',
+        )
+        archive.writestr("word/styles.xml", f'<w:styles xmlns:w="{marked_docx.NS["w"]}"/>')
+        archive.writestr("word/_rels/document.xml.rels", f'<Relationships xmlns="{marked_docx.NS["rel"]}"/>')
+        archive.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
+
+    def fake_process(command, **kwargs):
+        """Fail selected renderer inputs after writing partial preview output."""
+        input_path = Path(command[command.index("--input") + 1])
+        output_path = Path(command[command.index("--output") + 1])
+        if command[0] == "rust-converter":
+            output_path.write_bytes(input_path.read_bytes())
+            Path(command[command.index("--mtef-output") + 1]).write_bytes(b"mtef")
+            return subprocess.CompletedProcess(command, 0, b"", b"")
+        index = int(input_path.stem.removeprefix("eq_"))
+        visited.append(index)
+        output_path.write_bytes(minimal_wmf())
+        Path(command[command.index("--metadata-output") + 1]).write_text("{}", encoding="utf-8")
+        code = 7 if index in failed_indices else 0
+        return subprocess.CompletedProcess(command, code, b"", b"unsupported formula" if code else b"")
+
+    def fake_set_data(input_path, ole_path, wmf_path, metadata_path, **kwargs):
+        """Provide native output independently of the failed Rust renderer."""
+        ole_path.write_bytes(input_path.read_bytes())
+        wmf_path.write_bytes(minimal_wmf())
+        metadata_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(ole_parts, "MATHTYPE_CACHE_DIR", cache)
+    monkeypatch.setattr(ole_parts, "resolve_auto_conversion_methods", lambda: ("rust",))
+    monkeypatch.setattr(ole_parts, "native_source_digest_for_method", lambda method: None)
+    monkeypatch.setattr(ole_parts, "native_exe_digest_for_method", lambda method: None)
+    monkeypatch.setattr(ole_parts, "build_mathtype_rust_converter", lambda: "rust-converter")
+    monkeypatch.setattr(ole_parts, "build_latex2wmf_converter", lambda: "wmf-converter")
+    monkeypatch.setattr(ole_parts.subprocess, "run", fake_process)
+    monkeypatch.setattr(ole_parts, "make_ole_wmf_metadata_with_mathtype_set_data", fake_set_data)
+    monkeypatch.setattr(ole_parts, "inspect_ole", lambda path: FakeCompound())
+    monkeypatch.setattr(ole_parts, "mathtype_ole_mtef_sha256", lambda path: path.read_bytes())
+    monkeypatch.setattr(ole_parts, "log_warning", warnings.append)
+
+    replaced = convert_marked_docx_module.convert_marked_docx(
+        source, target, work,
+        PmtSettings.model_validate({"mathtypeConversionMethod": method}),
+    )
+    expected = 3 if method == "both" else 3 - len(failed_indices)
+    assert replaced == expected
+    assert visited == [1, 2, 3]
+    for index in failed_indices:
+        assert any("exit code 7" in message and formulas[index - 1] in message for message in warnings)
+        stem = f"eq_{index:03d}" + (".rust" if method == "both" else "")
+        assert not (work / f"{stem}.wmf").exists()
+        assert not (work / f"{stem}.json").exists()
+    assert len(list(cache.rglob("preview.wmf"))) == (6 - len(failed_indices) if method == "both" else expected)
+    with zipfile.ZipFile(target) as archive:
+        document = marked_docx.read_xml(archive, "word/document.xml")
+        assert b"MTLATEX:" not in archive.read("word/document.xml")
+        for index, paragraph in enumerate(document.findall(".//w:body/w:p", marked_docx.NS), start=1):
+            if method != "both" and index in failed_indices:
+                assert paragraph.find(".//m:t", marked_docx.NS).text == formulas[index - 1]
+                assert paragraph.find(".//w:object", marked_docx.NS) is None
+            else:
+                assert paragraph.find(".//m:oMath", marked_docx.NS) is None
+                assert paragraph.find(".//w:object", marked_docx.NS) is not None
+                assert archive.read(f"word/embeddings/mathtype_formula_{index}.bin") == ole_parts.mathtype_tex_payload(formulas[index - 1]).encode()

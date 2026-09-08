@@ -355,8 +355,8 @@ def remove_marker_run(parent_map: dict[ET.Element, ET.Element], marker_run: ET.E
                 paragraph_parent.remove(marker_parent)
 
 
-def replace_marked_omml_with_generated(source: Path, target: Path, equations: list[GeneratedEquation]) -> int:
-    """Replace marker-bound OMML nodes with generated MathType OLE objects."""
+def replace_marked_omml_with_generated(source: Path, target: Path, equations: list[GeneratedEquation | None]) -> int:
+    """Replace converted formulas with MathType objects, retaining OMML for failed previews."""
     # Build the Word-side object shell in code so the real converter no longer
     # depends on a hand-made sample DOCX being present on disk.
     template = build_mathtype_template()
@@ -376,8 +376,13 @@ def replace_marked_omml_with_generated(source: Path, target: Path, equations: li
         rid_counter = find_next_numeric_id(existing_rids, "rId")
         parent_map = collect_parent_map(document)
         added_parts: dict[str, bytes] = {}
+        replaced = 0
 
         for index, (binding, equation) in enumerate(zip(bindings, equations), start=1):
+            if equation is None:
+                # A failed preview leaves the original visible formula, without its hidden marker.
+                remove_marker_run(parent_map, binding.marker_run, index)
+                continue
             if binding.latex != equation.latex:
                 raise ValueError(f"marker/equation mismatch at {index}: {binding.latex!r} != {equation.latex!r}")
 
@@ -406,6 +411,7 @@ def replace_marked_omml_with_generated(source: Path, target: Path, equations: li
             append_relationship(rels, ole_rid, REL_OLE, ole_name.removeprefix("word/"))
             added_parts[image_name] = item_template.image_bytes
             added_parts[ole_name] = item_template.ole_bytes
+            replaced += 1
 
         ensure_default_content_type(content_types, "bin", CONTENT_OLE)
         ensure_default_content_type(content_types, "wmf", CONTENT_WMF)
@@ -427,7 +433,7 @@ def replace_marked_omml_with_generated(source: Path, target: Path, equations: li
                     raise ValueError(f"Generated part already exists: {name}")
                 out_zip.writestr(name, data)
 
-    return len(equations)
+    return replaced
 
 
 def inspect_docx(path: Path) -> None:

@@ -64,6 +64,10 @@ DEFAULT_MATHTYPE_CONVERSION_METHOD: MathTypeConversionMethod = "auto"
 DEFAULT_MATHTYPE_SVG_BACKEND: MathTypeSvgBackend = "typst"
 
 
+class FormulaPreviewError(RuntimeError):
+    """Signal a failed latex2wmf preview so the build can retain the original formula."""
+
+
 def source_tree_path(path: str | Path) -> Path | None:
     """Resolve a repository path only when pmt is running from a source checkout."""
     path = Path(path)
@@ -434,6 +438,7 @@ def run(
     stderr_as_warning: bool = True,
     stdout_as_debug: bool = False,
     stderr_as_debug: bool = False,
+    check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """Run a command and echo its useful output for MathType logs."""
     result = subprocess.run(
@@ -455,7 +460,7 @@ def run(
             log_warning(stderr.strip())
         else:
             log_info(stderr.strip())
-    if result.returncode != 0:
+    if check and result.returncode != 0:
         raise RuntimeError(f"command failed: {' '.join(command)}")
     return subprocess.CompletedProcess(command, result.returncode, stdout=stdout, stderr=stderr)
 
@@ -955,6 +960,8 @@ def generate_cached_equation_parts_auto(
         except (RuntimeError, FileNotFoundError) as exc:
             misses += 1
             if position + 1 == len(methods):
+                if isinstance(exc, FormulaPreviewError):
+                    raise
                 raise RuntimeError(
                     f"All MathType auto backends failed for equation {index}: {', '.join(methods)}"
                 ) from exc
@@ -1096,7 +1103,17 @@ def make_wmf_metadata_cross_platform(
         "--math-font",
         math_font,
     ]
-    run(command, stderr_as_warning=False, stdout_as_debug=True, stderr_as_debug=True)
+    result = run(command, stderr_as_warning=False, stdout_as_debug=True, stderr_as_debug=True, check=False)
+    if result.returncode != 0:
+        # Remove partial or stale previews before bypassing cache storage and DOCX injection.
+        wmf_output.unlink(missing_ok=True)
+        metadata_output.unlink(missing_ok=True)
+        latex = input_path.read_text(encoding="utf-8-sig")
+        log_warning(
+            f"[mathtype] warning: latex2wmf failed with exit code {result.returncode} "
+            f"for {input_path.name}; skipping Rust preview; LaTeX: {latex}"
+        )
+        raise FormulaPreviewError(f"latex2wmf failed for {input_path.name}")
 
 
 def make_ole_wmf_metadata_with_mathtype_rust(
@@ -1243,6 +1260,8 @@ def generate_uncached_equation_parts(
             return
         except (RuntimeError, FileNotFoundError) as exc:
             if position + 1 == len(methods):
+                if isinstance(exc, FormulaPreviewError):
+                    raise
                 raise RuntimeError(
                     f"All MathType auto backends failed for equation {index}: {', '.join(methods)}"
                 ) from exc
@@ -1284,7 +1303,7 @@ def generate_equation_parts(
     conversion_method: MathTypeConversionMethod = DEFAULT_MATHTYPE_CONVERSION_METHOD,
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
     math_font: str = "XITS Math",
-) -> list[GeneratedEquation]:
+) -> list[GeneratedEquation | None]:
     """Generate OLE bins and WMF previews for all marker-bound formulas."""
     conversion_method = normalize_conversion_method(conversion_method)
     svg_backend = normalize_svg_backend(svg_backend)
@@ -1297,7 +1316,7 @@ def generate_equation_parts(
         raise ValueError("mathtypeConversionMethod=both is only supported on Windows")
     auto_methods = resolve_auto_conversion_methods() if conversion_method == "auto" else ()
     output_dir.mkdir(parents=True, exist_ok=True)
-    equations: list[GeneratedEquation] = []
+    equations: list[GeneratedEquation | None] = []
     prefs_template = MATHTYPE_DEFAULT_PREFS_TEMPLATE if MATHTYPE_DEFAULT_PREFS_TEMPLATE.exists() else None
     prefs_cache: dict[float, Path] = {}
     needs_variable_sizes = any(request.font_size_pt is not None for request in requests)
@@ -1343,97 +1362,108 @@ def generate_equation_parts(
 
         write_latex_input(input_path, latex)
         prefs_digest = file_sha256(prefs_path) if prefs_path is not None else None
-        if conversion_method == "both":
-            rust_hit = generate_cached_equation_parts_for_method(
-                index,
-                latex,
-                font_size_key,
-                prefs_digest,
-                helper_digest,
-                rust_source_digest,
-                rust_exe_digest,
-                input_path,
-                rust_ole_path,
-                rust_wmf_path,
-                rust_metadata_path,
-                rust_mtef_path,
-                prefs_path,
-                "rust",
-                svg_backend,
-                math_style,
-                math_font,
-            )
-            set_data_hit = generate_cached_equation_parts_for_method(
-                index,
-                latex,
-                font_size_key,
-                prefs_digest,
-                helper_digest,
-                rust_source_digest,
-                rust_exe_digest,
-                input_path,
-                ole_path,
-                wmf_path,
-                metadata_path,
-                mtef_path,
-                prefs_path,
-                "set-data",
-                svg_backend,
-                math_style,
-                math_font,
-            )
-            cache_hits += int(rust_hit) + int(set_data_hit)
-            cache_misses += int(not rust_hit) + int(not set_data_hit)
-            warn_if_conversion_outputs_differ(
-                index,
-                latex,
-                rust_ole_path,
-                ole_path,
-            )
-        elif conversion_method == "auto":
-            hits, misses = generate_cached_equation_parts_auto(
-                index,
-                latex,
-                font_size_key,
-                prefs_digest,
-                helper_digest,
-                rust_source_digest,
-                rust_exe_digest,
-                input_path,
-                ole_path,
-                wmf_path,
-                metadata_path,
-                mtef_path,
-                prefs_path,
-                auto_methods,
-                svg_backend,
-                math_style,
-                math_font,
-            )
-            cache_hits += hits
-            cache_misses += misses
-        else:
-            hit = generate_cached_equation_parts_for_method(
-                index,
-                latex,
-                font_size_key,
-                prefs_digest,
-                helper_digest,
-                rust_source_digest,
-                rust_exe_digest,
-                input_path,
-                ole_path,
-                wmf_path,
-                metadata_path,
-                mtef_path,
-                prefs_path,
-                conversion_method=conversion_method,
-                svg_backend=svg_backend,
-                math_style=math_style,
-                math_font=math_font,
-            )
-            cache_hits += int(hit)
-            cache_misses += int(not hit)
+        try:
+            if conversion_method == "both":
+                try:
+                    rust_hit = generate_cached_equation_parts_for_method(
+                        index,
+                        latex,
+                        font_size_key,
+                        prefs_digest,
+                        helper_digest,
+                        rust_source_digest,
+                        rust_exe_digest,
+                        input_path,
+                        rust_ole_path,
+                        rust_wmf_path,
+                        rust_metadata_path,
+                        rust_mtef_path,
+                        prefs_path,
+                        "rust",
+                        svg_backend,
+                        math_style,
+                        math_font,
+                    )
+                except FormulaPreviewError:
+                    # The valid Rust OLE can still be compared with the set-data result.
+                    rust_hit = False
+                set_data_hit = generate_cached_equation_parts_for_method(
+                    index,
+                    latex,
+                    font_size_key,
+                    prefs_digest,
+                    helper_digest,
+                    rust_source_digest,
+                    rust_exe_digest,
+                    input_path,
+                    ole_path,
+                    wmf_path,
+                    metadata_path,
+                    mtef_path,
+                    prefs_path,
+                    "set-data",
+                    svg_backend,
+                    math_style,
+                    math_font,
+                )
+                cache_hits += int(rust_hit) + int(set_data_hit)
+                cache_misses += int(not rust_hit) + int(not set_data_hit)
+                warn_if_conversion_outputs_differ(
+                    index,
+                    latex,
+                    rust_ole_path,
+                    ole_path,
+                )
+            elif conversion_method == "auto":
+                hits, misses = generate_cached_equation_parts_auto(
+                    index,
+                    latex,
+                    font_size_key,
+                    prefs_digest,
+                    helper_digest,
+                    rust_source_digest,
+                    rust_exe_digest,
+                    input_path,
+                    ole_path,
+                    wmf_path,
+                    metadata_path,
+                    mtef_path,
+                    prefs_path,
+                    auto_methods,
+                    svg_backend,
+                    math_style,
+                    math_font,
+                )
+                cache_hits += hits
+                cache_misses += misses
+            else:
+                hit = generate_cached_equation_parts_for_method(
+                    index,
+                    latex,
+                    font_size_key,
+                    prefs_digest,
+                    helper_digest,
+                    rust_source_digest,
+                    rust_exe_digest,
+                    input_path,
+                    ole_path,
+                    wmf_path,
+                    metadata_path,
+                    mtef_path,
+                    prefs_path,
+                    conversion_method=conversion_method,
+                    svg_backend=svg_backend,
+                    math_style=math_style,
+                    math_font=math_font,
+                )
+                cache_hits += int(hit)
+                cache_misses += int(not hit)
+        except FormulaPreviewError:
+            # Keep an aligned slot so later formulas never replace the failed formula.
+            cache_misses += 1
+            equations.append(None)
+            log_warning(f"[mathtype] warning: retaining original Word formula for equation {index}; LaTeX: {latex}")
+            continue
         compound = inspect_ole(ole_path)
         if compound.read_stream("Equation Native").find(b"DSMT") < 0:
             raise ValueError(f"generated OLE lacks DSMT marker: {ole_path}")

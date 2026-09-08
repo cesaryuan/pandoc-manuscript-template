@@ -227,3 +227,8 @@ Changing the family or font file contents invalidates the formula preview cache.
 This controls Typst SVG/WMF previews, not editable MathType OLE font preferences.
 It has no effect on RaTeX or native MathType previews (`set-data` / `rust-sdk`).
 `auto` applies it only when using `rust`; `both` retains the native MathType result.
+
+If `latex2wmf` exits with a nonzero status for a formula, the build warns with the
+exit code and LaTeX input and continues. The affected formula retains its original
+Word equation (OMML); other formulas are converted normally. In `both` mode,
+conversion continues with the `set-data` result. Failed previews are not cached.

@@ -405,7 +405,15 @@ def replace_marked_omml_with_generated(source: Path, target: Path, equations: li
             parent.remove(binding.omml_node)
             parent.insert(
                 child_index,
-                make_object_run(item_template, image_rid, ole_rid, index),
+                make_object_run(
+                    item_template,
+                    image_rid,
+                    ole_rid,
+                    index,
+                    # Display equations are standalone lines; their visual
+                    # placement must not inherit an inline baseline offset.
+                    apply_position=equation.math_style == "inline",
+                ),
             )
             append_relationship(rels, image_rid, REL_IMAGE, image_name.removeprefix("word/"))
             append_relationship(rels, ole_rid, REL_OLE, ole_name.removeprefix("word/"))

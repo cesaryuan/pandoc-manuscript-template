@@ -717,6 +717,7 @@ def mathtype_cache_key(
     conversion_method: MathTypeSingleConversionMethod,
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
     math_style: MathTypeMathStyle = "display",
+    math_font: str = "XITS Math",
 ) -> str:
     """Build a stable cache key from the exact MathType inputs.
 
@@ -750,6 +751,12 @@ def mathtype_cache_key(
         "conversion_method": conversion_method,
         "svg_backend": svg_backend_key,
         "math_style": math_style_key,
+        "math_font": math_font if conversion_method == "rust" and svg_backend == "typst" else None,
+        "math_font_sha256": (
+            file_sha256(Path(math_font))
+            if conversion_method == "rust" and svg_backend == "typst" and Path(math_font).is_file()
+            else None
+        ),
     }
     data = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(data).hexdigest()
@@ -864,6 +871,7 @@ def generate_cached_equation_parts_for_method(
     conversion_method: MathTypeSingleConversionMethod,
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
     math_style: MathTypeMathStyle = "display",
+    math_font: str = "XITS Math",
 ) -> bool:
     """Restore or generate one equation for one cache-isolated backend."""
     cache_key = mathtype_cache_key(
@@ -876,6 +884,7 @@ def generate_cached_equation_parts_for_method(
         conversion_method,
         svg_backend,
         math_style,
+        math_font,
     )
     if restore_cached_equation(cache_key, ole_path, wmf_path, metadata_path):
         log_debug(f"[mathtype] cache hit eq={index} method={conversion_method} key={cache_key[:12]}")
@@ -894,6 +903,7 @@ def generate_cached_equation_parts_for_method(
         svg_backend=svg_backend,
         font_size_pt=font_size_key,
         math_style=math_style,
+        math_font=math_font,
     )
     store_cached_equation(cache_key, ole_path, wmf_path, metadata_path)
     return False
@@ -916,6 +926,7 @@ def generate_cached_equation_parts_auto(
     methods: tuple[MathTypeSingleConversionMethod, ...],
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
     math_style: MathTypeMathStyle = "display",
+    math_font: str = "XITS Math",
 ) -> tuple[int, int]:
     """Try the resolved auto backends in order until one succeeds."""
     misses = 0
@@ -938,6 +949,7 @@ def generate_cached_equation_parts_auto(
                 method,
                 svg_backend,
                 math_style,
+                math_font,
             )
             return int(hit), misses + int(not hit)
         except (RuntimeError, FileNotFoundError) as exc:
@@ -1062,6 +1074,7 @@ def make_wmf_metadata_cross_platform(
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
     font_size_pt: float | None = None,
     math_style: MathTypeMathStyle = "display",
+    math_font: str = "XITS Math",
 ) -> None:
     """Generate formula WMF and placement JSON without MathType or Windows."""
     executable = build_latex2wmf_converter()
@@ -1079,6 +1092,8 @@ def make_wmf_metadata_cross_platform(
         math_style,
         "--font-size",
         format_font_size_pt(font_size_pt or 12.0),
+        "--math-font",
+        math_font,
     ]
     run(command, stderr_as_warning=False, stdout_as_debug=True, stderr_as_debug=True)
 
@@ -1093,6 +1108,7 @@ def make_ole_wmf_metadata_with_mathtype_rust(
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
     font_size_pt: float | None = None,
     math_style: MathTypeMathStyle = "display",
+    math_font: str = "XITS Math",
 ) -> None:
     """Generate OLE, WMF, and metadata through cross-platform Rust tools."""
     make_ole_from_mathtype_rust(input_path, ole_path, mtef_path, prefs_file=prefs_file)
@@ -1103,6 +1119,7 @@ def make_ole_wmf_metadata_with_mathtype_rust(
         svg_backend=svg_backend,
         font_size_pt=font_size_pt,
         math_style=math_style,
+        math_font=math_font,
     )
 
 
@@ -1160,6 +1177,7 @@ def generate_uncached_equation_parts(
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
     font_size_pt: float | None = None,
     math_style: MathTypeMathStyle = "display",
+    math_font: str = "XITS Math",
 ) -> None:
     """Generate MathType parts using the configured conversion backend."""
     if conversion_method == "both":
@@ -1176,6 +1194,7 @@ def generate_uncached_equation_parts(
             svg_backend=svg_backend,
             font_size_pt=font_size_pt,
             math_style=math_style,
+            math_font=math_font,
         )
         log_debug(f"[mathtype] mathtype-rust conversion succeeded for equation {index}")
         return
@@ -1218,6 +1237,7 @@ def generate_uncached_equation_parts(
                 svg_backend=svg_backend,
                 font_size_pt=font_size_pt,
                 math_style=math_style,
+                math_font=math_font,
             )
             return
         except (RuntimeError, FileNotFoundError) as exc:
@@ -1262,10 +1282,16 @@ def generate_equation_parts(
     output_dir: Path,
     conversion_method: MathTypeConversionMethod = DEFAULT_MATHTYPE_CONVERSION_METHOD,
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
+    math_font: str = "XITS Math",
 ) -> list[GeneratedEquation]:
     """Generate OLE bins and WMF previews for all marker-bound formulas."""
     conversion_method = normalize_conversion_method(conversion_method)
     svg_backend = normalize_svg_backend(svg_backend)
+    math_font = math_font.strip()
+    if not math_font:
+        raise ValueError("mathtypeTypstMathFont must not be blank")
+    if svg_backend == "typst":
+        log_debug(f"[mathtype] Typst math font: {math_font}")
     if conversion_method == "both" and platform.system() != "Windows":
         raise ValueError("mathtypeConversionMethod=both is only supported on Windows")
     auto_methods = resolve_auto_conversion_methods() if conversion_method == "auto" else ()
@@ -1334,6 +1360,7 @@ def generate_equation_parts(
                 "rust",
                 svg_backend,
                 math_style,
+                math_font,
             )
             set_data_hit = generate_cached_equation_parts_for_method(
                 index,
@@ -1352,6 +1379,7 @@ def generate_equation_parts(
                 "set-data",
                 svg_backend,
                 math_style,
+                math_font,
             )
             cache_hits += int(rust_hit) + int(set_data_hit)
             cache_misses += int(not rust_hit) + int(not set_data_hit)
@@ -1378,6 +1406,7 @@ def generate_equation_parts(
                 auto_methods,
                 svg_backend,
                 math_style,
+                math_font,
             )
             cache_hits += hits
             cache_misses += misses
@@ -1399,6 +1428,7 @@ def generate_equation_parts(
                 conversion_method=conversion_method,
                 svg_backend=svg_backend,
                 math_style=math_style,
+                math_font=math_font,
             )
             cache_hits += int(hit)
             cache_misses += int(not hit)

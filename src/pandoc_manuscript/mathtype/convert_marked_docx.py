@@ -39,6 +39,7 @@ def convert_marked_docx(
         work_dir,
         conversion_method=conversion_method,
         svg_backend=svg_backend,
+        math_font=settings.mathtype_typst_math_font,
     )
     replaced = replace_marked_omml_with_generated(source, target, equations)
     log_debug(f"[mathtype] replaced top-level OMML nodes: {replaced}")

@@ -64,6 +64,8 @@ def default_pandoc_metadata() -> dict[str, Any]:
 PMT_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "mathtype": ("mathtype",),
     "mathtypeConversionMethod": ("mathtypeConversionMethod", "mathtype-conversion-method", "mathtype_conversion_method"),
+    "mathtypeTypstMathFont": ("mathtypeTypstMathFont", "mathtype-typst-math-font", "mathtype_typst_math_font"),
+    "mathtypeTypstMathFont": ("mathtypeTypstMathFont", "mathtype-typst-math-font", "mathtype_typst_math_font"),
     "mathtypeSvgBackend": ("mathtypeSvgBackend", "mathtype-svg-backend", "mathtype_svg_backend"),
     "docxEmbedSvgImages": (
         "docxEmbedSvgImages",
@@ -233,6 +235,11 @@ class PmtSettings(BaseSettings):
         validation_alias=AliasChoices("mathtypeSvgBackend", "mathtype-svg-backend", "mathtype_svg_backend"),
         serialization_alias="mathtypeSvgBackend",
     )
+    mathtype_typst_math_font: str = Field(
+        default="XITS Math",
+        validation_alias=AliasChoices("mathtypeTypstMathFont", "mathtype-typst-math-font", "mathtype_typst_math_font"),
+        serialization_alias="mathtypeTypstMathFont",
+    )
     docx_embed_svg_images: bool = Field(
         default=True,
         validation_alias=AliasChoices(
@@ -331,6 +338,15 @@ class PmtSettings(BaseSettings):
         """Disable implicit sources because manuscript builds must be deterministic."""
         return (init_settings,)
 
+    @field_validator("mathtype_typst_math_font")
+    @classmethod
+    def validate_typst_math_font(cls, value: str) -> str:
+        """Reject empty font families before starting formula conversion."""
+        value = value.strip()
+        if not value:
+            raise ValueError("mathtypeTypstMathFont must not be blank")
+        return value
+
     @field_validator("mathtype_conversion_method")
     @classmethod
     def validate_conversion_method(cls, value: str) -> str:
@@ -383,7 +399,15 @@ class PmtSettings(BaseSettings):
                 raise ValueError("YAML root must be a mapping")
             pmt_values, _, reply = _split_style_mapping(raw, source=path)
             pmt_values["reply"] = ReplySettings.from_mapping(reply, path) if reply is not None else None
-            return cls.model_validate(pmt_values)
+            settings = cls.model_validate(pmt_values)
+            font = settings.mathtype_typst_math_font
+            font_path = Path(font).expanduser()
+            if "/" in font or "\\" in font or font_path.suffix.lower() in {".otf", ".ttf", ".ttc", ".otc"}:
+                # Resolve font assets beside their style file, independent of build cwd.
+                if not font_path.is_absolute():
+                    font_path = path.parent / font_path
+                settings.mathtype_typst_math_font = str(font_path.resolve())
+            return settings
         except (AttributeError, TypeError, ValueError) as exc:
             raise ValueError(f"Invalid style settings in {path}: {exc}") from exc
 

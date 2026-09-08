@@ -603,6 +603,7 @@ def test_convert_marked_docx_passes_style_conversion_method(monkeypatch, tmp_pat
         output_dir,
         conversion_method="rust",
         svg_backend="ratex",
+        math_font="XITS Math",
     ):
         seen["conversion_method"] = conversion_method
         seen["svg_backend"] = svg_backend

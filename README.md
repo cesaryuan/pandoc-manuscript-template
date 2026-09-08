@@ -205,3 +205,25 @@ the main build stages, warnings, and results concise.
 
 - Review the syntax guide in [`template/.agents/manuscript-syntax.md`](template/.agents/manuscript-syntax.md)
 - Open an issue with a minimal reproducible example
+
+### Typst equation font
+
+Configure `style.yml` to select an installed OpenType math font:
+
+```yaml
+mathtype: true
+mathtypeConversionMethod: rust
+mathtypeSvgBackend: typst
+mathtypeTypstMathFont: Cambria Math
+```
+
+Bundled math families are `XITS Math` (the default) and `New Computer Modern Math`.
+You can also set `mathtypeTypstMathFont: fonts/STIXTwoMath-Regular.otf` to load a font
+file without installing it. Relative paths resolve beside the style file; absolute
+paths are supported. Accepted files are `.otf`, `.ttf`, `.ttc`, and `.otc`, and must
+contain an OpenType math font. Collections select their first math family.
+When using a custom family name, install it in every build environment.
+Changing the family or font file contents invalidates the formula preview cache.
+This controls Typst SVG/WMF previews, not editable MathType OLE font preferences.
+It has no effect on RaTeX or native MathType previews (`set-data` / `rust-sdk`).
+`auto` applies it only when using `rust`; `both` retains the native MathType result.

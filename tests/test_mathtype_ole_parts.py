@@ -503,7 +503,6 @@ def test_generate_equation_parts_both_uses_independent_backend_caches(monkeypatc
     monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
     monkeypatch.setattr(ole_parts, "iter_equation_requests_with_progress", lambda requests: enumerate(requests, start=1))
     monkeypatch.setattr(ole_parts, "mathtype_ole_mtef_sha256", lambda path: f"mtef:{Path(path).name}")
-    monkeypatch.setattr(ole_parts, "json_result_sha256", lambda path: f"json:{Path(path).name}")
     monkeypatch.setattr(ole_parts, "native_source_digest_for_method", lambda method: "rust-source")
     monkeypatch.setattr(ole_parts, "restore_cached_equation", lambda *args: False)
     monkeypatch.setattr(ole_parts, "store_cached_equation", lambda *args: None)
@@ -540,17 +539,13 @@ def test_generate_equation_parts_both_rejects_non_windows(monkeypatch, tmp_path)
         ole_parts.generate_equation_parts([], tmp_path, conversion_method="both")
 
 
-def test_warn_if_conversion_outputs_differ_ignores_wmf(monkeypatch, tmp_path) -> None:
-    """Compare only OLE MTEF and JSON results in both-mode diagnostics."""
+def test_warn_if_conversion_outputs_differ_accepts_equal_mtef(monkeypatch, tmp_path) -> None:
+    """Equal formula data must not warn or require preview metadata."""
     warnings = []
     rust_ole = tmp_path / "rust.ole.bin"
     set_data_ole = tmp_path / "set-data.ole.bin"
-    rust_json = tmp_path / "rust.json"
-    set_data_json = tmp_path / "set-data.json"
     for path in (rust_ole, set_data_ole):
         path.write_bytes(b"not-used")
-    rust_json.write_text('{"height_pt": 1, "width_pt": 2}', encoding="utf-8")
-    set_data_json.write_text('{"width_pt": 2, "height_pt": 1}', encoding="utf-8")
 
     monkeypatch.setattr(ole_parts, "mathtype_ole_mtef_sha256", lambda path: "same-mtef")
     monkeypatch.setattr(ole_parts, "log_warning", lambda message: warnings.append(message))
@@ -558,63 +553,19 @@ def test_warn_if_conversion_outputs_differ_ignores_wmf(monkeypatch, tmp_path) ->
     ole_parts.warn_if_conversion_outputs_differ(
         1,
         rust_ole,
-        rust_json,
         set_data_ole,
-        set_data_json,
     )
 
     assert warnings == []
 
 
-def test_json_result_sha256_ignores_raw_wmf_metadata(tmp_path) -> None:
-    """Ignore backend-specific raw WMF metadata when hashing JSON results."""
-    left = tmp_path / "left.json"
-    right = tmp_path / "right.json"
-    left.write_text(
-        (
-            '{"map_mode":8,"x_ext":800,"y_ext":448,"units_per_inch":2304,'
-            '"width_pt":24.9732,"height_pt":13.9748,'
-            '"mathtype":{"width_raw":800,"height_raw":448,'
-            '"baseline_from_bottom_raw":96,"width_pt":25.0,"height_pt":14.0,'
-            '"baseline_from_bottom_pt":3.0,"horiz_pos_type":0,"horiz_pos":0}}'
-        ),
-        encoding="utf-8",
-    )
-    right.write_text(
-        (
-            '{"map_mode":8,"x_ext":881,"y_ext":493,"units_per_inch":2540,'
-            '"height_pt":14.0,"width_pt":25.0,'
-            '"mathtype":{"height_raw":493,"width_raw":881,'
-            '"baseline_from_bottom_raw":106,"height_pt":14.0,"width_pt":25.0,'
-            '"baseline_from_bottom_pt":3.0,"horiz_pos_type":5,"horiz_pos":718}}'
-        ),
-        encoding="utf-8",
-    )
-
-    assert ole_parts.json_result_sha256(left) == ole_parts.json_result_sha256(right)
-
-
-def test_json_result_sha256_reports_rounded_point_metric_difference(tmp_path) -> None:
-    """Keep rounded point-size differences visible in JSON comparison."""
-    left = tmp_path / "left.json"
-    right = tmp_path / "right.json"
-    left.write_text('{"width_pt": 90.0, "mathtype": {"height_pt": 14.0}}', encoding="utf-8")
-    right.write_text('{"width_pt": 91.0, "mathtype": {"height_pt": 14.0}}', encoding="utf-8")
-
-    assert ole_parts.json_result_sha256(left) != ole_parts.json_result_sha256(right)
-
-
-def test_warn_if_conversion_outputs_differ_reports_ole_mtef_and_json(monkeypatch, tmp_path) -> None:
-    """Report OLE MTEF and canonical JSON differences."""
+def test_warn_if_conversion_outputs_differ_reports_ole_mtef(monkeypatch, tmp_path) -> None:
+    """Keep formula-data differences visible regardless of preview metadata."""
     warnings = []
     rust_ole = tmp_path / "rust.ole.bin"
     set_data_ole = tmp_path / "set-data.ole.bin"
-    rust_json = tmp_path / "rust.json"
-    set_data_json = tmp_path / "set-data.json"
     for path in (rust_ole, set_data_ole):
         path.write_bytes(b"not-used")
-    rust_json.write_text('{"height_pt": 1}', encoding="utf-8")
-    set_data_json.write_text('{"height_pt": 2}', encoding="utf-8")
 
     monkeypatch.setattr(ole_parts, "mathtype_ole_mtef_sha256", lambda path: Path(path).stem)
     monkeypatch.setattr(ole_parts, "log_warning", lambda message: warnings.append(message))
@@ -622,14 +573,12 @@ def test_warn_if_conversion_outputs_differ_reports_ole_mtef_and_json(monkeypatch
     ole_parts.warn_if_conversion_outputs_differ(
         2,
         rust_ole,
-        rust_json,
         set_data_ole,
-        set_data_json,
     )
 
     assert len(warnings) == 1
     assert "OLE MTEF" in warnings[0]
-    assert "JSON" in warnings[0]
+    assert "JSON" not in warnings[0]
     assert "WMF" not in warnings[0]
 
 

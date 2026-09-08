@@ -628,54 +628,6 @@ def mathtype_ole_mtef_sha256(path: Path) -> str:
     return hashlib.sha256(mathtype_ole_mtef_payload(path)).hexdigest()
 
 
-JSON_RESULT_COMPARISON_FIELDS = (
-    ("width_pt",),
-    ("height_pt",),
-    ("mathtype", "width_pt"),
-    ("mathtype", "height_pt"),
-    ("mathtype", "baseline_from_bottom_pt"),
-)
-
-
-def rounded_json_result_value(value: object) -> object:
-    """Round numeric JSON metadata values before backend comparison."""
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return round(value)
-    return value
-
-
-def json_result_comparison_payload(data: object) -> dict[str, object]:
-    """Keep only rounded point-size metrics that should match across backends."""
-    if not isinstance(data, dict):
-        return {}
-
-    payload: dict[str, object] = {}
-    for field_path in JSON_RESULT_COMPARISON_FIELDS:
-        source: object = data
-        for key in field_path:
-            if not isinstance(source, dict) or key not in source:
-                break
-            source = source[key]
-        else:
-            target = payload
-            for key in field_path[:-1]:
-                nested = target.setdefault(key, {})
-                if not isinstance(nested, dict):
-                    nested = {}
-                    target[key] = nested
-                target = nested
-            target[field_path[-1]] = rounded_json_result_value(source)
-    return payload
-
-
-def json_result_sha256(path: Path) -> str:
-    """Return a stable digest for comparable rounded MathType JSON metrics."""
-    data = json.loads(path.read_text(encoding="utf-8-sig"))
-    data = json_result_comparison_payload(data)
-    canonical = json.dumps(data, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
-
-
 def file_group_sha256(paths: list[Path]) -> str | None:
     """Return one digest for a small ordered set of existing input files."""
     existing_paths = [path for path in paths if path.exists()]
@@ -1005,23 +957,15 @@ def generate_cached_equation_parts_auto(
 def warn_if_conversion_outputs_differ(
     index: int,
     rust_ole_path: Path,
-    rust_metadata_path: Path,
     set_data_ole_path: Path,
-    set_data_metadata_path: Path,
 ) -> None:
-    """Warn when both MathType backends produce different OLE or JSON results."""
+    """Compare only MTEF; renderer-specific preview metrics can legitimately differ."""
     differing_parts = []
     try:
         if mathtype_ole_mtef_sha256(rust_ole_path) != mathtype_ole_mtef_sha256(set_data_ole_path):
             differing_parts.append("OLE MTEF")
     except (KeyError, ValueError) as exc:
         differing_parts.append(f"OLE MTEF unreadable ({exc})")
-
-    try:
-        if json_result_sha256(rust_metadata_path) != json_result_sha256(set_data_metadata_path):
-            differing_parts.append("JSON")
-    except (OSError, ValueError) as exc:
-        differing_parts.append(f"JSON unreadable ({exc})")
 
     if differing_parts:
         log_warning(
@@ -1414,9 +1358,7 @@ def generate_equation_parts(
             warn_if_conversion_outputs_differ(
                 index,
                 rust_ole_path,
-                rust_metadata_path,
                 ole_path,
-                metadata_path,
             )
         elif conversion_method == "auto":
             hits, misses = generate_cached_equation_parts_auto(

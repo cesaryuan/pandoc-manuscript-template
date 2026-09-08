@@ -169,7 +169,9 @@ Windows-only TeX input OLE path. `rust-sdk` preserves the older two-stage path:
 `auto` tries `set-data`, then `rust-sdk`, then `rust`; if MathType is unavailable,
 it uses `rust` directly. On non-Windows systems, `auto` always uses `rust`. The
 `both` mode is Windows-only: it generates the `rust` and `set-data` backends,
-warns when their OLE/JSON results differ, and keeps the `set-data` output in the DOCX. Runtime
+compares only the MTEF formula data streams extracted from OLE and warns if they differ.
+WMF previews and JSON metadata are excluded from comparison. The DOCX uses the
+`set-data` output. Runtime
 conversion never builds the .NET helper; Windows wheels contain its executable.
 
 Set `mathtypeSvgBackend` to choose how the cross-platform `rust` path produces

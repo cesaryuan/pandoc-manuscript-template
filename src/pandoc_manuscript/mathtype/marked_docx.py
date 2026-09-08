@@ -356,7 +356,7 @@ def remove_marker_run(parent_map: dict[ET.Element, ET.Element], marker_run: ET.E
 
 
 def replace_marked_omml_with_generated(source: Path, target: Path, equations: list[GeneratedEquation | None]) -> int:
-    """Replace converted formulas with MathType objects, retaining OMML for failed previews."""
+    """Replace converted formulas with MathType objects, retaining OMML for failed conversions."""
     # Build the Word-side object shell in code so the real converter no longer
     # depends on a hand-made sample DOCX being present on disk.
     template = build_mathtype_template()
@@ -380,7 +380,7 @@ def replace_marked_omml_with_generated(source: Path, target: Path, equations: li
 
         for index, (binding, equation) in enumerate(zip(bindings, equations), start=1):
             if equation is None:
-                # A failed preview leaves the original visible formula, without its hidden marker.
+                # A failed conversion leaves the original visible formula, without its hidden marker.
                 remove_marker_run(parent_map, binding.marker_run, index)
                 continue
             if binding.latex != equation.latex:

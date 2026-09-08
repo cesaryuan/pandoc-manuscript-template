@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -20,26 +21,21 @@ class CustomBuildHook(BuildHookInterface):
     def initialize(self, version: str, build_data: dict[str, Any]) -> None:
         """Compile platform runtime tools before wheel file selection.
 
-        Rust executables are never copied into ``src/``, and the .NET helper is
+        Rust libraries are never copied into ``src/``, and the .NET helper is
         rebuilt into ``.pmt`` so wheel contents cannot become stale.
         """
         if self.target_name != "wheel" or version == "editable":
             return
 
         root = Path(self.root)
-        executables = [
-            self.build_native_executable(root, "mathtype-rust"),
-            self.build_native_executable(root, "latex2wmf"),
-        ]
-        if os.name == "nt":
-            executables.append(self.build_mathtype_ole_helper(root))
         force_include = build_data.setdefault("force_include", {})
-        for executable in executables:
-            if executable.name == "MathTypeOleHelper.exe":
-                destination = "pandoc_manuscript/mathtype/ole_helper/bin/Release/net48/MathTypeOleHelper.exe"
-            else:
-                destination = f"pandoc_manuscript/mathtype/bin/{executable.name}"
-            force_include[str(executable)] = destination
+        if os.name == "nt":
+            helper = self.build_mathtype_ole_helper(root)
+            force_include[str(helper)] = "pandoc_manuscript/mathtype/ole_helper/bin/Release/net48/MathTypeOleHelper.exe"
+
+        for project_name in ("mathtype-rust", "latex2wmf"):
+            library = self.build_native_library(root, project_name)
+            force_include[str(library)] = f"pandoc_manuscript/mathtype/bin/{library.name}"
 
         # XITS Math is compiled into latex2wmf; ship its OFL and upstream
         # notices so installed wheels retain the required attribution.
@@ -68,35 +64,24 @@ class CustomBuildHook(BuildHookInterface):
         build_data["pure_python"] = False
         build_data["tag"] = f"py3-none-{platform_tag}"
 
-    def build_native_executable(self, root: Path, project_name: str) -> Path:
-        """Build one release-mode Rust helper and return its executable path."""
+    def build_native_library(self, root: Path, project_name: str) -> Path:
+        """Compile only the shared library exposing the versioned C ABI."""
         manifest = root / "scripts" / project_name / "Cargo.toml"
-        if not manifest.exists():
+        if not manifest.is_file():
             raise FileNotFoundError(f"{project_name} manifest is missing: {manifest}")
         if shutil.which("cargo") is None:
-            raise RuntimeError("Building a wheel with MathType native helpers requires `cargo` on PATH.")
-
-        print(f"[pmt build] building {project_name} release helper with cargo", flush=True)
+            raise RuntimeError("Building native libraries requires `cargo` on PATH.")
+        print(f"[pmt build] building {project_name} release library with cargo", flush=True)
         subprocess.run(
-            [
-                "cargo",
-                "build",
-                "--manifest-path",
-                str(manifest),
-                "--bin",
-                project_name,
-                "--release",
-            ],
-            cwd=root,
-            check=True,
+            ["cargo", "rustc", "--crate-type", "cdylib", "--manifest-path", str(manifest), "--lib", "--features", "ffi", "--release"],
+            cwd=root, check=True,
         )
-
-        suffix = ".exe" if os.name == "nt" else ""
-        exe_name = f"{project_name}{suffix}"
-        executable = root / "scripts" / project_name / "target" / "release" / exe_name
-        if not executable.exists():
-            raise FileNotFoundError(f"cargo did not create expected executable: {executable}")
-        return executable
+        name = project_name.replace("-", "_")
+        filename = f"{name}.dll" if os.name == "nt" else f"lib{name}.{'dylib' if sys.platform == 'darwin' else 'so'}"
+        library = manifest.parent / "target" / "release" / filename
+        if not library.exists():
+            raise FileNotFoundError(f"cargo did not create expected library: {library}")
+        return library
 
     def build_mathtype_ole_helper(self, root: Path) -> Path:
         """Build the Windows SDK helper once while producing the wheel."""

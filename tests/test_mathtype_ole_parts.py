@@ -27,21 +27,11 @@ def test_missing_helper_is_not_built_during_conversion(monkeypatch, tmp_path) ->
 
 
 def test_auto_native_digest_does_not_build_rust_fallbacks(monkeypatch, tmp_path) -> None:
-    """Keep a successful auto set-data build from compiling unused Rust tools."""
-    monkeypatch.setattr(ole_parts, "MATHTYPE_RUST_EXE", tmp_path / "mathtype-rust.exe")
-    monkeypatch.setattr(ole_parts, "LATEX2WMF_EXE", tmp_path / "latex2wmf.exe")
-    monkeypatch.setattr(
-        ole_parts,
-        "build_mathtype_rust_converter",
-        lambda: pytest.fail("auto cache setup must not build mathtype-rust"),
-    )
-    monkeypatch.setattr(
-        ole_parts,
-        "build_latex2wmf_converter",
-        lambda: pytest.fail("auto cache setup must not build latex2wmf"),
-    )
-
-    assert ole_parts.native_exe_digest_for_method("auto") is None
+    """Keep a successful auto set-data build from compiling unused Rust libraries."""
+    monkeypatch.setattr(ole_parts, "MATHTYPE_RUST_LIBRARY", tmp_path / "missing-rust.dll")
+    monkeypatch.setattr(ole_parts, "LATEX2WMF_LIBRARY", tmp_path / "missing-wmf.dll")
+    monkeypatch.setattr(ole_parts.native, "get_converter", lambda name: pytest.fail("digest must not load native libraries"))
+    assert ole_parts.native_library_digest_for_method("auto") is None
 
 
 def test_decode_process_output_falls_back_for_localized_helper_errors() -> None:
@@ -77,65 +67,6 @@ def test_wmf_preview_validation_requires_window_mapping() -> None:
     assert ole_parts.has_placeable_wmf_header(minimal_wmf())
     assert ole_parts.wmf_has_window_mapping(minimal_wmf())
     assert not ole_parts.wmf_has_window_mapping(minimal_wmf(include_window_mapping=False))
-
-
-def test_make_ole_from_mathtype_rust_uses_file_input(monkeypatch, tmp_path) -> None:
-    """Pass normalized TeX files through mathtype-rust for Rust conversion."""
-    calls = []
-    rust_exe = tmp_path / "mathtype-rust.exe"
-    input_path = tmp_path / "eq.tex"
-    ole_path = tmp_path / "eq.ole.bin"
-    mtef_path = tmp_path / "eq.mtef.bin"
-    prefs_path = tmp_path / "size.eqp"
-
-    monkeypatch.setattr(ole_parts, "build_mathtype_rust_converter", lambda: rust_exe)
-    monkeypatch.setattr(ole_parts, "run", lambda command, **kwargs: calls.append((command, kwargs)))
-
-    ole_parts.make_ole_from_mathtype_rust(input_path, ole_path, mtef_path, prefs_file=prefs_path)
-
-    assert calls == [
-        (
-            [
-                str(rust_exe),
-                "--input",
-                str(input_path),
-                "--output",
-                str(ole_path),
-                "--mtef-output",
-                str(mtef_path),
-                "--prefs-file",
-                str(prefs_path),
-            ],
-            {"stderr_as_warning": False, "stdout_as_debug": True, "stderr_as_debug": True},
-        )
-    ]
-
-
-def test_cross_platform_wmf_passes_inline_math_style(monkeypatch, tmp_path) -> None:
-    """Pass marker context to latex2wmf so RaTeX selects text-style layout."""
-    calls = []
-    latex2wmf_exe = tmp_path / "latex2wmf.exe"
-    input_path = tmp_path / "eq.tex"
-    wmf_path = tmp_path / "eq.wmf"
-    metadata_path = tmp_path / "eq.json"
-
-    monkeypatch.setattr(ole_parts, "build_latex2wmf_converter", lambda: latex2wmf_exe)
-    def fake_run(command, **kwargs):
-        """Capture a successful renderer invocation."""
-        calls.append(command)
-        return subprocess.CompletedProcess(command, 0)
-
-    monkeypatch.setattr(ole_parts, "run", fake_run)
-
-    ole_parts.make_wmf_metadata_cross_platform(
-        input_path,
-        wmf_path,
-        metadata_path,
-        math_style="inline",
-    )
-
-    command = calls[0]
-    assert command[command.index("--math-style") + 1] == "inline"
 
 
 def test_marked_docx_preserves_inline_formula_context(tmp_path) -> None:
@@ -696,9 +627,12 @@ class FakeCompound:
         return b"DSMT"
 
 
-@pytest.mark.parametrize("method", ["rust", "auto", "both"])
+@pytest.mark.parametrize("method,failed_stage", [
+    ("rust", "wmf"), ("auto", "wmf"), ("both", "wmf"),
+    ("rust", "ole"), ("auto", "ole"), ("both", "ole"), ("rust-sdk", "ole"),
+])
 @pytest.mark.parametrize("failed_indices", [{2}, {1, 2, 3}])
-def test_failed_latex2wmf_continues_docx_build(monkeypatch, tmp_path, method, failed_indices) -> None:
+def test_failed_native_conversion_continues_docx_build(monkeypatch, tmp_path, method, failed_stage, failed_indices) -> None:
     """Preserve failed OMML, later formula alignment, and usable both-mode output."""
     warnings = []
     visited = []
@@ -722,20 +656,25 @@ def test_failed_latex2wmf_continues_docx_build(monkeypatch, tmp_path, method, fa
         archive.writestr("word/_rels/document.xml.rels", f'<Relationships xmlns="{marked_docx.NS["rel"]}"/>')
         archive.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
 
-    def fake_process(command, **kwargs):
-        """Fail selected renderer inputs after writing partial preview output."""
-        input_path = Path(command[command.index("--input") + 1])
-        output_path = Path(command[command.index("--output") + 1])
-        if command[0] == "rust-converter":
-            output_path.write_bytes(input_path.read_bytes())
-            Path(command[command.index("--mtef-output") + 1]).write_bytes(b"mtef")
-            return subprocess.CompletedProcess(command, 0, b"", b"")
-        index = int(input_path.stem.removeprefix("eq_"))
-        visited.append(index)
-        output_path.write_bytes(minimal_wmf())
-        Path(command[command.index("--metadata-output") + 1]).write_text("{}", encoding="utf-8")
-        code = 7 if index in failed_indices else 0
-        return subprocess.CompletedProcess(command, code, b"", b"unsupported formula" if code else b"")
+    class FakeConverter:
+        """Return native artifacts or report the selected formula's conversion failure."""
+
+        def __init__(self, project):
+            """Select OLE encoding or WMF rendering for this library double."""
+            self.project = project
+
+        def call(self, **request):
+            """Fail by formula identity so document alignment is independently checked."""
+            latex = request["latex"]
+            index = [ole_parts.mathtype_tex_payload(value) for value in formulas].index(latex) + 1
+            stage = "ole" if self.project == "mathtype-rust" else "wmf"
+            if stage == "ole":
+                visited.append(index)
+            if stage == failed_stage and index in failed_indices:
+                raise RuntimeError("unsupported formula")
+            if stage == "ole":
+                return {"ole": latex.encode(), "mtef": b"mtef"}
+            return {"wmf": minimal_wmf(), "metadata_json": "{}"}
 
     def fake_set_data(input_path, ole_path, wmf_path, metadata_path, **kwargs):
         """Provide native output independently of the failed Rust renderer."""
@@ -747,11 +686,10 @@ def test_failed_latex2wmf_continues_docx_build(monkeypatch, tmp_path, method, fa
     monkeypatch.setattr(ole_parts, "MATHTYPE_CACHE_DIR", cache)
     monkeypatch.setattr(ole_parts, "resolve_auto_conversion_methods", lambda: ("rust",))
     monkeypatch.setattr(ole_parts, "native_source_digest_for_method", lambda method: None)
-    monkeypatch.setattr(ole_parts, "native_exe_digest_for_method", lambda method: None)
-    monkeypatch.setattr(ole_parts, "build_mathtype_rust_converter", lambda: "rust-converter")
-    monkeypatch.setattr(ole_parts, "build_latex2wmf_converter", lambda: "wmf-converter")
-    monkeypatch.setattr(ole_parts.subprocess, "run", fake_process)
+    monkeypatch.setattr(ole_parts.native, "get_converter", FakeConverter)
+    monkeypatch.setattr(ole_parts, "native_library_digest_for_method", lambda method: None)
     monkeypatch.setattr(ole_parts, "make_ole_wmf_metadata_with_mathtype_set_data", fake_set_data)
+    monkeypatch.setattr(ole_parts, "make_wmf_metadata_from_mtef", fake_set_data)
     monkeypatch.setattr(ole_parts, "inspect_ole", lambda path: FakeCompound())
     monkeypatch.setattr(ole_parts, "mathtype_ole_mtef_sha256", lambda path: path.read_bytes())
     monkeypatch.setattr(ole_parts, "log_warning", warnings.append)
@@ -764,10 +702,13 @@ def test_failed_latex2wmf_continues_docx_build(monkeypatch, tmp_path, method, fa
     assert replaced == expected
     assert visited == [1, 2, 3]
     for index in failed_indices:
-        assert any("exit code 7" in message and formulas[index - 1] in message for message in warnings)
+        assert any("unsupported formula" in message and formulas[index - 1] in message for message in warnings)
         stem = f"eq_{index:03d}" + (".rust" if method == "both" else "")
         assert not (work / f"{stem}.wmf").exists()
         assert not (work / f"{stem}.json").exists()
+        if failed_stage == "ole":
+            assert not (work / f"{stem}.ole.bin").exists()
+            assert not (work / f"{stem}.mtef.bin").exists()
     assert len(list(cache.rglob("preview.wmf"))) == (6 - len(failed_indices) if method == "both" else expected)
     with zipfile.ZipFile(target) as archive:
         document = marked_docx.read_xml(archive, "word/document.xml")

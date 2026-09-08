@@ -21,6 +21,7 @@ from ..runtime.paths import PMT_MATHTYPE_CACHE_DIR
 from ..runtime.resources import package_resource_path, source_tree_root
 
 from .compound_file import CompoundFile
+from . import native
 
 
 def resource_path(path: str | Path) -> Path:
@@ -32,12 +33,6 @@ def resource_path(path: str | Path) -> Path:
 
 
 HELPER_EXE = resource_path("mathtype/ole_helper/bin/Release/net48/MathTypeOleHelper.exe")
-MATHTYPE_RUST_SOURCE_EXE_NAME = "mathtype-rust.exe" if os.name == "nt" else "mathtype-rust"
-MATHTYPE_RUST_PACKAGE_EXE_NAME = MATHTYPE_RUST_SOURCE_EXE_NAME
-MATHTYPE_RUST_PACKAGE_EXE = resource_path(Path("mathtype/bin") / MATHTYPE_RUST_PACKAGE_EXE_NAME)
-LATEX2WMF_SOURCE_EXE_NAME = "latex2wmf.exe" if os.name == "nt" else "latex2wmf"
-LATEX2WMF_PACKAGE_EXE_NAME = LATEX2WMF_SOURCE_EXE_NAME
-LATEX2WMF_PACKAGE_EXE = resource_path(Path("mathtype/bin") / LATEX2WMF_PACKAGE_EXE_NAME)
 MATHTYPE_PROG_ID = "Equation.DSMT4"
 MATHTYPE_MT6_RELATIVE_PATHS = (
     Path("System/64/MT6.dll"),
@@ -64,7 +59,11 @@ DEFAULT_MATHTYPE_CONVERSION_METHOD: MathTypeConversionMethod = "auto"
 DEFAULT_MATHTYPE_SVG_BACKEND: MathTypeSvgBackend = "typst"
 
 
-class FormulaPreviewError(RuntimeError):
+class FormulaConversionError(RuntimeError):
+    """Signal a failed formula conversion that allows the document build to continue."""
+
+
+class FormulaPreviewError(FormulaConversionError):
     """Signal a failed latex2wmf preview so the build can retain the original formula."""
 
 
@@ -80,13 +79,9 @@ def source_tree_path(path: str | Path) -> Path | None:
 
 
 MATHTYPE_RUST_PROJECT = source_tree_path("scripts/mathtype-rust/Cargo.toml")
-MATHTYPE_RUST_SOURCE_EXE = source_tree_path(Path("scripts/mathtype-rust/target/debug") / MATHTYPE_RUST_SOURCE_EXE_NAME)
-MATHTYPE_RUST_EXE = MATHTYPE_RUST_SOURCE_EXE or MATHTYPE_RUST_PACKAGE_EXE
 LATEX2WMF_PROJECT = source_tree_path("scripts/latex2wmf/Cargo.toml")
-LATEX2WMF_SOURCE_EXE = source_tree_path(Path("scripts/latex2wmf/target/debug") / LATEX2WMF_SOURCE_EXE_NAME)
-LATEX2WMF_EXE = LATEX2WMF_SOURCE_EXE or LATEX2WMF_PACKAGE_EXE
-MATHTYPE_RUST_BUILD_CHECKED = False
-LATEX2WMF_BUILD_CHECKED = False
+MATHTYPE_RUST_LIBRARY = native.library_path("mathtype-rust")
+LATEX2WMF_LIBRARY = native.library_path("latex2wmf")
 
 
 def normalize_conversion_method(value: object | None) -> MathTypeConversionMethod:
@@ -272,32 +267,32 @@ def find_mathtype_mt6_dll(server_path: Path | None = None) -> Path | None:
 def check_native_converter_availability(
     converters: tuple[tuple[str, Path | None, Path], ...],
 ) -> MathTypeAvailability:
-    """Check whether the requested native converters can be built or executed."""
+    """Check whether the requested native libraries can be built or loaded."""
     reasons: list[str] = []
     details: list[str] = []
-    for name, project, executable in converters:
+    for name, project, library in converters:
         if project is not None and project.exists():
             details.append(f"{name} source project found: {project}.")
-            if shutil.which("cargo") is None and not executable.exists():
+            if shutil.which("cargo") is None and not library.is_file():
                 reasons.append(
-                    f"{name} requires `cargo`, or a prebuilt executable at {executable}."
+                    f"{name} requires `cargo`, or a prebuilt library at {library}."
                 )
-        elif executable.exists():
-            details.append(f"Packaged {name} executable found: {executable}.")
+        elif library.is_file():
+            details.append(f"Packaged {name} library found: {library}.")
         else:
             reasons.append(
-                f"{name} executable is missing: {executable}. Install a platform wheel that bundles it, "
+                f"{name} library is missing: {library}. Install a platform wheel that bundles it, "
                 "or run from a source checkout with Cargo available."
             )
     return MathTypeAvailability(tuple(reasons), tuple(details))
 
 
 def check_cross_platform_mathtype_availability() -> MathTypeAvailability:
-    """Check the two Rust executables used by the cross-platform backend."""
+    """Check the two Rust libraries used by the cross-platform backend."""
     return check_native_converter_availability(
         (
-            ("mathtype-rust", MATHTYPE_RUST_PROJECT, MATHTYPE_RUST_EXE),
-            ("latex2wmf", LATEX2WMF_PROJECT, LATEX2WMF_EXE),
+            ("mathtype-rust", MATHTYPE_RUST_PROJECT, MATHTYPE_RUST_LIBRARY),
+            ("latex2wmf", LATEX2WMF_PROJECT, LATEX2WMF_LIBRARY),
         )
     )
 
@@ -324,7 +319,7 @@ def check_mathtype_availability(
     needs_cross_platform = method == "both"
     if method == "rust-sdk":
         native = check_native_converter_availability(
-            (("mathtype-rust", MATHTYPE_RUST_PROJECT, MATHTYPE_RUST_EXE),)
+            (("mathtype-rust", MATHTYPE_RUST_PROJECT, MATHTYPE_RUST_LIBRARY),)
         )
         needs_cross_platform = True
     reasons: list[str] = list(native.reasons) if needs_cross_platform else []
@@ -476,78 +471,8 @@ def require_helper_executable() -> Path:
     )
 
 
-def build_mathtype_rust_converter() -> Path:
-    """Ensure the Rust MTEF converter exists for the MathType Rust path."""
-    global MATHTYPE_RUST_BUILD_CHECKED
-    if MATHTYPE_RUST_PROJECT is not None and MATHTYPE_RUST_PROJECT.exists():
-        if shutil.which("cargo") is None:
-            if MATHTYPE_RUST_EXE.exists():
-                log_warning(
-                    "[mathtype] warning: cargo not found; using existing mathtype-rust executable "
-                    f"without rebuilding: {MATHTYPE_RUST_EXE}"
-                )
-                return MATHTYPE_RUST_EXE
-            raise RuntimeError(
-                f"mathtype-rust requires `cargo`, or a prebuilt executable at {MATHTYPE_RUST_EXE}"
-            )
-        if not MATHTYPE_RUST_BUILD_CHECKED:
-            log_info(f"[mathtype] building mathtype-rust converter: {MATHTYPE_RUST_PROJECT}")
-            run(
-                ["cargo", "build", "--manifest-path", str(MATHTYPE_RUST_PROJECT)],
-                stderr_as_warning=False,
-            )
-            MATHTYPE_RUST_BUILD_CHECKED = True
-        if not MATHTYPE_RUST_EXE.exists():
-            raise FileNotFoundError(f"Cargo build did not create expected executable: {MATHTYPE_RUST_EXE}")
-        return MATHTYPE_RUST_EXE
-
-    if MATHTYPE_RUST_EXE.exists():
-        log_debug(f"[mathtype] mathtype-rust executable found: {MATHTYPE_RUST_EXE}")
-        return MATHTYPE_RUST_EXE
-    if MATHTYPE_RUST_PROJECT is None or not MATHTYPE_RUST_PROJECT.exists():
-        raise FileNotFoundError(
-            f"mathtype-rust executable is missing: {MATHTYPE_RUST_EXE}. "
-            "Install a wheel that bundles mathtype-rust, or run from a source checkout with scripts/mathtype-rust."
-        )
-    raise FileNotFoundError(f"mathtype-rust executable is missing: {MATHTYPE_RUST_EXE}")
-
-
-def build_latex2wmf_converter() -> Path:
-    """Ensure the cross-platform SVG-to-WMF converter exists."""
-    global LATEX2WMF_BUILD_CHECKED
-    if LATEX2WMF_PROJECT is not None and LATEX2WMF_PROJECT.exists():
-        if shutil.which("cargo") is None:
-            if LATEX2WMF_EXE.exists():
-                log_warning(
-                    "[mathtype] warning: cargo not found; using existing latex2wmf executable "
-                    f"without rebuilding: {LATEX2WMF_EXE}"
-                )
-                return LATEX2WMF_EXE
-            raise RuntimeError(
-                f"latex2wmf requires `cargo`, or a prebuilt executable at {LATEX2WMF_EXE}"
-            )
-        if not LATEX2WMF_BUILD_CHECKED:
-            log_info(f"[mathtype] building latex2wmf converter: {LATEX2WMF_PROJECT}")
-            run(
-                ["cargo", "build", "--manifest-path", str(LATEX2WMF_PROJECT)],
-                stderr_as_warning=False,
-            )
-            LATEX2WMF_BUILD_CHECKED = True
-        if not LATEX2WMF_EXE.exists():
-            raise FileNotFoundError(f"Cargo build did not create expected executable: {LATEX2WMF_EXE}")
-        return LATEX2WMF_EXE
-
-    if LATEX2WMF_EXE.exists():
-        log_debug(f"[mathtype] latex2wmf executable found: {LATEX2WMF_EXE}")
-        return LATEX2WMF_EXE
-    raise FileNotFoundError(
-        f"latex2wmf executable is missing: {LATEX2WMF_EXE}. Install a platform wheel that bundles "
-        "latex2wmf, or run from a source checkout with scripts/latex2wmf."
-    )
-
-
-def native_exe_digest_for_method(conversion_method: MathTypeConversionMethod) -> str | None:
-    """Hash available native converters without compiling unused fallback tools."""
+def native_library_digest_for_method(conversion_method: MathTypeConversionMethod) -> str | None:
+    """Hash native libraries without building or loading unused conversion backends."""
     if conversion_method == "set-data":
         return None
     projects = (
@@ -556,19 +481,17 @@ def native_exe_digest_for_method(conversion_method: MathTypeConversionMethod) ->
         else (MATHTYPE_RUST_PROJECT, LATEX2WMF_PROJECT)
     )
     # Source checkouts already include a source digest in the cache key. Avoid
-    # changing that key after the first on-demand Cargo build creates an .exe.
+    # changing that key after the first on-demand Cargo build creates a library.
     if all(project is not None and project.exists() for project in projects):
         return None
-    executables = (
-        (MATHTYPE_RUST_EXE,)
+    libraries = (
+        (MATHTYPE_RUST_LIBRARY,)
         if conversion_method == "rust-sdk"
-        else (MATHTYPE_RUST_EXE, LATEX2WMF_EXE)
+        else (MATHTYPE_RUST_LIBRARY, LATEX2WMF_LIBRARY)
     )
-    if not all(executable.exists() for executable in executables):
+    if not all(library.is_file() for library in libraries):
         return None
-    if conversion_method == "rust-sdk":
-        return file_sha256(MATHTYPE_RUST_EXE)
-    return file_group_sha256(list(executables))
+    return file_group_sha256(list(libraries))
 
 
 def normalize_mathtype_latex(latex: str) -> str:
@@ -960,7 +883,7 @@ def generate_cached_equation_parts_auto(
         except (RuntimeError, FileNotFoundError) as exc:
             misses += 1
             if position + 1 == len(methods):
-                if isinstance(exc, FormulaPreviewError):
+                if isinstance(exc, FormulaConversionError):
                     raise
                 raise RuntimeError(
                     f"All MathType auto backends failed for equation {index}: {', '.join(methods)}"
@@ -1040,19 +963,21 @@ def make_ole_from_mathtype_rust(
     prefs_file: Path | None = None,
 ) -> None:
     """Generate MathType OLE and bare MTEF from LaTeX via the Rust converter."""
-    rust_exe = build_mathtype_rust_converter()
-    command = [
-        str(rust_exe),
-        "--input",
-        str(input_path),
-        "--output",
-        str(output_path),
-        "--mtef-output",
-        str(mtef_output),
-    ]
-    if prefs_file is not None:
-        command.extend(["--prefs-file", str(prefs_file)])
-    run(command, stderr_as_warning=False, stdout_as_debug=True, stderr_as_debug=True)
+    converter = native.get_converter("mathtype-rust")
+    latex = ""
+    try:
+        latex = input_path.read_text(encoding="utf-8-sig")
+        equation = converter.call(
+            latex=latex,
+            prefs_file=str(prefs_file) if prefs_file is not None else None,
+        )
+        output_path.write_bytes(equation["ole"])
+        mtef_output.write_bytes(equation["mtef"])
+    except (RuntimeError, OSError, ValueError) as exc:
+        output_path.unlink(missing_ok=True)
+        mtef_output.unlink(missing_ok=True)
+        log_warning(f"[mathtype] native conversion failed for {input_path.name}: {exc}; LaTeX: {latex}")
+        raise FormulaConversionError(f"mathtype-rust failed for {input_path.name}") from exc
 
 
 def make_wmf_metadata_from_mtef(
@@ -1085,35 +1010,23 @@ def make_wmf_metadata_cross_platform(
     math_font: str = "XITS Math",
 ) -> None:
     """Generate formula WMF and placement JSON without MathType or Windows."""
-    executable = build_latex2wmf_converter()
-    command = [
-        str(executable),
-        "--input",
-        str(input_path),
-        "--output",
-        str(wmf_output),
-        "--metadata-output",
-        str(metadata_output),
-        "--svg-backend",
-        svg_backend,
-        "--math-style",
-        math_style,
-        "--font-size",
-        format_font_size_pt(font_size_pt or 12.0),
-        "--math-font",
-        math_font,
-    ]
-    result = run(command, stderr_as_warning=False, stdout_as_debug=True, stderr_as_debug=True, check=False)
-    if result.returncode != 0:
-        # Remove partial or stale previews before bypassing cache storage and DOCX injection.
+    converter = native.get_converter("latex2wmf")
+    latex = ""
+    try:
+        latex = input_path.read_text(encoding="utf-8-sig")
+        preview = converter.call(
+            latex=latex, svg_backend=svg_backend,
+            math_style=math_style, font_size_pt=font_size_pt or 12.0, math_font=math_font,
+        )
+        wmf_output.parent.mkdir(parents=True, exist_ok=True)
+        metadata_output.parent.mkdir(parents=True, exist_ok=True)
+        wmf_output.write_bytes(preview["wmf"])
+        metadata_output.write_bytes(preview["metadata_json"].encode("utf-8"))
+    except (RuntimeError, OSError, ValueError) as exc:
         wmf_output.unlink(missing_ok=True)
         metadata_output.unlink(missing_ok=True)
-        latex = input_path.read_text(encoding="utf-8-sig")
-        log_warning(
-            f"[mathtype] warning: latex2wmf failed with exit code {result.returncode} "
-            f"for {input_path.name}; skipping Rust preview; LaTeX: {latex}"
-        )
-        raise FormulaPreviewError(f"latex2wmf failed for {input_path.name}")
+        log_warning(f"[mathtype] native preview failed for {input_path.name}: {exc}; LaTeX: {latex}")
+        raise FormulaPreviewError(f"latex2wmf failed for {input_path.name}") from exc
 
 
 def make_ole_wmf_metadata_with_mathtype_rust(
@@ -1260,7 +1173,7 @@ def generate_uncached_equation_parts(
             return
         except (RuntimeError, FileNotFoundError) as exc:
             if position + 1 == len(methods):
-                if isinstance(exc, FormulaPreviewError):
+                if isinstance(exc, FormulaConversionError):
                     raise
                 raise RuntimeError(
                     f"All MathType auto backends failed for equation {index}: {', '.join(methods)}"
@@ -1331,7 +1244,7 @@ def generate_equation_parts(
         else None
     )
     rust_source_digest = native_source_digest_for_method(conversion_method)
-    rust_exe_digest = native_exe_digest_for_method(conversion_method)
+    rust_exe_digest = native_library_digest_for_method(conversion_method)
     if needs_variable_sizes and prefs_template is None:
         log_warning(
             "[mathtype] warning: MathType preference template not found; "
@@ -1384,8 +1297,8 @@ def generate_equation_parts(
                         math_style,
                         math_font,
                     )
-                except FormulaPreviewError:
-                    # The valid Rust OLE can still be compared with the set-data result.
+                except FormulaConversionError:
+                    # Continue with set-data even when Rust could not produce an OLE object.
                     rust_hit = False
                 set_data_hit = generate_cached_equation_parts_for_method(
                     index,
@@ -1408,12 +1321,14 @@ def generate_equation_parts(
                 )
                 cache_hits += int(rust_hit) + int(set_data_hit)
                 cache_misses += int(not rust_hit) + int(not set_data_hit)
-                warn_if_conversion_outputs_differ(
-                    index,
-                    latex,
-                    rust_ole_path,
-                    ole_path,
-                )
+                # Preview-only failures still leave a valid OLE for comparison.
+                if rust_ole_path.exists():
+                    warn_if_conversion_outputs_differ(
+                        index,
+                        latex,
+                        rust_ole_path,
+                        ole_path,
+                    )
             elif conversion_method == "auto":
                 hits, misses = generate_cached_equation_parts_auto(
                     index,
@@ -1458,11 +1373,11 @@ def generate_equation_parts(
                 )
                 cache_hits += int(hit)
                 cache_misses += int(not hit)
-        except FormulaPreviewError:
+        except FormulaConversionError:
             # Keep an aligned slot so later formulas never replace the failed formula.
             cache_misses += 1
             equations.append(None)
-            log_warning(f"[mathtype] warning: retaining original Word formula for equation {index}; LaTeX: {latex}")
+            # log_warning(f"[mathtype] warning: retaining original Word formula for equation {index}")
             continue
         compound = inspect_ole(ole_path)
         if compound.read_stream("Equation Native").find(b"DSMT") < 0:

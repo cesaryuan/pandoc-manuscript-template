@@ -65,7 +65,7 @@ jobs:
           wheel="$(find dist -name '*.whl' -print -quit)"
           helper_dir="$(mktemp -d)"
           trap 'rm -rf "$helper_dir"' EXIT
-          unzip -q "$wheel" 'pandoc_manuscript/mathtype/bin/mathtype-rust' 'pandoc_manuscript/mathtype/bin/latex2wmf' -d "$helper_dir"
+          unzip -q "$wheel" 'pandoc_manuscript/mathtype/bin/libmathtype_rust.dylib' 'pandoc_manuscript/mathtype/bin/liblatex2wmf.dylib' -d "$helper_dir"
           for helper in "$helper_dir"/pandoc_manuscript/mathtype/bin/*; do
             min_os="$(otool -l "$helper" | awk '$1 == "minos" || $1 == "version" { print $2; exit }')"
             if [[ "$min_os" != 14.* ]]; then
@@ -80,6 +80,8 @@ jobs:
           $wheel = (Get-ChildItem dist/*.whl | Select-Object -First 1).FullName
           uv run --isolated --no-project --with $wheel pmt --help
           uv run --isolated --no-project --with $wheel python -c "from pandoc_manuscript.mathtype.ole_parts import check_mathtype_availability; assert check_mathtype_availability('rust').usable"
+          uv run --isolated --no-project --with $wheel python -c "from pandoc_manuscript.mathtype.native import latex_to_equation, render_latex_to_wmf; assert latex_to_equation('x_1')['ole']; assert render_latex_to_wmf('x_1')['wmf']"
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged native library conversion failed' }
 
       - name: Verify binary-only wheel contents
         shell: pwsh
@@ -98,8 +100,8 @@ jobs:
           with ZipFile(sys.argv[1]) as wheel:
               print("\n".join(wheel.namelist()))
           '@ $wheel
-          $suffix = if ($IsWindows) { '.exe' } else { '' }
-          foreach ($name in @("mathtype-rust$suffix", "latex2wmf$suffix")) {
+          $libraries = if ($IsWindows) { @('mathtype_rust.dll', 'latex2wmf.dll') } else { @('libmathtype_rust.dylib', 'liblatex2wmf.dylib') }
+          foreach ($name in $libraries) {
             if (-not ($entries -match "pandoc_manuscript/mathtype/bin/$name")) {
               throw "Wheel is missing native runtime: $name"
             }
@@ -108,6 +110,7 @@ jobs:
             throw 'Windows wheel is missing MathTypeOleHelper.exe'
           }
           $forbidden = $entries | Where-Object {
+            $_ -match '^pandoc_manuscript/mathtype/bin/(mathtype-rust|latex2wmf)(\.exe)?$' -or
             $_ -match 'scripts/(mathtype-rust|latex2wmf)/' -or
             $_ -match 'pandoc_manuscript/mathtype/ole_helper/.*\.(cs|csproj|pdb|config)$'
           }
@@ -133,7 +136,7 @@ jobs:
           token: ${{ secrets.PRIVATE_SUBMODULES_TOKEN }}
           submodules: recursive
 
-      # Build inside the manylinux container so the bundled Rust executables
+      # Build inside the manylinux container so the bundled Rust shared libraries
       # genuinely support glibc 2.28 instead of merely carrying an older tag.
       - name: Build Linux wheel
         uses: pypa/cibuildwheel@v4.1.0
@@ -166,6 +169,8 @@ jobs:
           $wheel = (Get-ChildItem dist/*.whl | Select-Object -First 1).FullName
           uv run --isolated --no-project --with $wheel pmt --help
           uv run --isolated --no-project --with $wheel python -c "from pandoc_manuscript.mathtype.ole_parts import check_mathtype_availability; assert check_mathtype_availability('rust').usable"
+          uv run --isolated --no-project --with $wheel python -c "from pandoc_manuscript.mathtype.native import latex_to_equation, render_latex_to_wmf; assert latex_to_equation('x_1')['ole']; assert render_latex_to_wmf('x_1')['wmf']"
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged native library conversion failed' }
 
       - name: Verify Linux wheel contents and compatibility tag
         shell: pwsh
@@ -181,12 +186,13 @@ jobs:
           with ZipFile(sys.argv[1]) as wheel:
               print("\n".join(wheel.namelist()))
           '@ $wheel.FullName
-          foreach ($name in @("mathtype-rust", "latex2wmf")) {
+          foreach ($name in @("libmathtype_rust.so", "liblatex2wmf.so")) {
             if (-not ($entries -match "pandoc_manuscript/mathtype/bin/$name")) {
               throw "Wheel is missing native runtime: $name"
             }
           }
           $forbidden = $entries | Where-Object {
+            $_ -match '^pandoc_manuscript/mathtype/bin/(mathtype-rust|latex2wmf)(\.exe)?$' -or
             $_ -match 'scripts/(mathtype-rust|latex2wmf)/' -or
             $_ -match 'pandoc_manuscript/mathtype/ole_helper/.*\.(cs|csproj|pdb|config)$'
           }

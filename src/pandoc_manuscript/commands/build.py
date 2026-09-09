@@ -371,7 +371,7 @@ def resolve_mathtype_build_enabled(requested: bool, conversion_method: object | 
     if not requested:
         return False
 
-    log_info("[INFO] MathType DOCX equations enabled by metadata: mathtype: true")
+    log_debug("[DEBUG] MathType DOCX equations enabled by metadata: mathtype: true")
     availability = check_mathtype_availability(conversion_method)
     if availability.usable:
         return True
@@ -387,7 +387,7 @@ def resolve_mathtype_build_enabled(requested: bool, conversion_method: object | 
 
 def run_mathtype_conversion(marked_docx: Path, target_docx: Path, pmt_settings: PmtSettings) -> None:
     """Convert a marked DOCX's OMML equations into MathType OLE equations."""
-    log_info("\n[DOCX] Converting equations to MathType OLE objects...\n")
+    log_debug("[DOCX] Converting equations to MathType OLE objects...")
     convert_marked_docx(
         source=marked_docx,
         target=target_docx,

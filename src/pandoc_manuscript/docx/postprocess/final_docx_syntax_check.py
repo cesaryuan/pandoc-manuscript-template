@@ -79,6 +79,15 @@ UNRENDERED_PANDOC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"\b(Section|Figure|Table|Equation)\s+\1\b"),
     ),
     (
+        "duplicated parenthesized reference label",
+        # A manual label before an already labeled reference can produce
+        # "Equation (Equation 6)" instead of "Equation (6)".
+        re.compile(
+            r"\b(Section|Figure|Table|Equation)\s*\(\s*\1\s+"
+            r"\d+(?:\.\d+)*\s*\)"
+        ),
+    ),
+    (
         "duplicated numbered reference label",
         # Some failures duplicate the full numbered prefix, such as
         # "Table 3 Table 3" or "Figure 2.1 Figure 2.1".

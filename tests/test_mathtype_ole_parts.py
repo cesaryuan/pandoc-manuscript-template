@@ -29,7 +29,6 @@ def test_missing_helper_is_not_built_during_conversion(monkeypatch, tmp_path) ->
 def test_auto_native_digest_does_not_build_rust_fallbacks(monkeypatch, tmp_path) -> None:
     """Keep a successful auto set-data build from compiling unused Rust libraries."""
     monkeypatch.setattr(ole_parts, "MATHTYPE_RUST_LIBRARY", tmp_path / "missing-rust.dll")
-    monkeypatch.setattr(ole_parts, "LATEX2WMF_LIBRARY", tmp_path / "missing-wmf.dll")
     monkeypatch.setattr(ole_parts.native, "get_converter", lambda name: pytest.fail("digest must not load native libraries"))
     assert ole_parts.native_library_digest_for_method("auto") is None
 
@@ -667,7 +666,7 @@ def test_failed_native_conversion_continues_docx_build(monkeypatch, tmp_path, me
             """Fail by formula identity so document alignment is independently checked."""
             latex = request["latex"]
             index = [ole_parts.mathtype_tex_payload(value) for value in formulas].index(latex) + 1
-            stage = "ole" if self.project == "mathtype-rust" else "wmf"
+            stage = "wmf" if request.get("operation") == "render_wmf" else "ole"
             if stage == "ole":
                 visited.append(index)
             if stage == failed_stage and index in failed_indices:

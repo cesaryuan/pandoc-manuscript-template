@@ -79,9 +79,7 @@ def source_tree_path(path: str | Path) -> Path | None:
 
 
 MATHTYPE_RUST_PROJECT = source_tree_path("scripts/mathtype-rust/Cargo.toml")
-LATEX2WMF_PROJECT = source_tree_path("scripts/latex2wmf/Cargo.toml")
 MATHTYPE_RUST_LIBRARY = native.library_path("mathtype-rust")
-LATEX2WMF_LIBRARY = native.library_path("latex2wmf")
 
 
 def normalize_conversion_method(value: object | None) -> MathTypeConversionMethod:
@@ -288,11 +286,10 @@ def check_native_converter_availability(
 
 
 def check_cross_platform_mathtype_availability() -> MathTypeAvailability:
-    """Check the two Rust libraries used by the cross-platform backend."""
+    """Check the single Rust library hosting OLE and WMF conversion."""
     return check_native_converter_availability(
         (
             ("mathtype-rust", MATHTYPE_RUST_PROJECT, MATHTYPE_RUST_LIBRARY),
-            ("latex2wmf", LATEX2WMF_PROJECT, LATEX2WMF_LIBRARY),
         )
     )
 
@@ -475,20 +472,12 @@ def native_library_digest_for_method(conversion_method: MathTypeConversionMethod
     """Hash native libraries without building or loading unused conversion backends."""
     if conversion_method == "set-data":
         return None
-    projects = (
-        (MATHTYPE_RUST_PROJECT,)
-        if conversion_method == "rust-sdk"
-        else (MATHTYPE_RUST_PROJECT, LATEX2WMF_PROJECT)
-    )
+    projects = (MATHTYPE_RUST_PROJECT,)
     # Source checkouts already include a source digest in the cache key. Avoid
     # changing that key after the first on-demand Cargo build creates a library.
     if all(project is not None and project.exists() for project in projects):
         return None
-    libraries = (
-        (MATHTYPE_RUST_LIBRARY,)
-        if conversion_method == "rust-sdk"
-        else (MATHTYPE_RUST_LIBRARY, LATEX2WMF_LIBRARY)
-    )
+    libraries = (MATHTYPE_RUST_LIBRARY,)
     if not all(library.is_file() for library in libraries):
         return None
     return file_group_sha256(list(libraries))
@@ -577,11 +566,7 @@ def native_source_digest_for_method(
     """Return a digest for native sources used by the selected backend."""
     if conversion_method == "set-data":
         return None
-    selected = (
-        (MATHTYPE_RUST_PROJECT,)
-        if conversion_method == "rust-sdk"
-        else (MATHTYPE_RUST_PROJECT, LATEX2WMF_PROJECT)
-    )
+    selected = (MATHTYPE_RUST_PROJECT,)
     projects = [project for project in selected if project is not None]
     if not projects:
         return None
@@ -1010,11 +995,12 @@ def make_wmf_metadata_cross_platform(
     math_font: str = "XITS Math",
 ) -> None:
     """Generate formula WMF and placement JSON without MathType or Windows."""
-    converter = native.get_converter("latex2wmf")
+    converter = native.get_converter("mathtype-rust")
     latex = ""
     try:
         latex = input_path.read_text(encoding="utf-8-sig")
         preview = converter.call(
+            operation="render_wmf",
             latex=latex, svg_backend=svg_backend,
             math_style=math_style, font_size_pt=font_size_pt or 12.0, math_font=math_font,
         )

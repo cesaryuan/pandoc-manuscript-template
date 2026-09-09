@@ -34,9 +34,8 @@ class CustomBuildHook(BuildHookInterface):
             helper = self.build_mathtype_ole_helper(root)
             force_include[str(helper)] = "pandoc_manuscript/mathtype/ole_helper/bin/Release/net48/MathTypeOleHelper.exe"
 
-        for project_name in ("mathtype-rust", "latex2wmf"):
-            library = self.build_native_library(root, project_name)
-            force_include[str(library)] = f"pandoc_manuscript/mathtype/bin/{library.name}"
+        library = self.build_native_library(root, "mathtype-rust")
+        force_include[str(library)] = f"pandoc_manuscript/mathtype/bin/{library.name}"
 
         # XITS Math is compiled into latex2wmf; ship its OFL and upstream
         # notices so installed wheels retain the required attribution.

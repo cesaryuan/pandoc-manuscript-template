@@ -220,8 +220,13 @@ equation preferences, rather than the Python package version. Only successful
 `main` builds save caches; tag builds restore them and still run Cargo with
 `--locked`, package the wheel, and verify its native libraries.
 
-CI sets `CARGO_TARGET_DIR` to share dependency artifacts between the two native
-builds. On Linux this directory and Cargo's download cache live on the host via
+The wheel builds and ships only the `mathtype-rust` shared library. Its versioned
+C ABI handles OLE/MTEF conversion and `operation="render_wmf"` requests, linking
+`latex2wmf` once as a pinned Git dependency. The renderer retains backend, style,
+font size, and math-font options. The standalone `latex2wmf` crate and CLI remain
+available for development; its dynamic library is not shipped.
+
+CI sets `CARGO_TARGET_DIR` to persist native build artifacts. On Linux this directory and Cargo's download cache live on the host via
 the container's `/host` mount, so they survive the manylinux container. Local
 builds retain their normal per-project target directories unless this environment
 variable is set. Build logs report elapsed time for each Rust library and the
@@ -265,7 +270,7 @@ This controls Typst SVG/WMF previews, not editable MathType OLE font preferences
 It has no effect on RaTeX or native MathType previews (`set-data` / `rust-sdk`).
 `auto` applies it only when using `rust`; `both` retains the native MathType result.
 
-If the `mathtype-rust` or `latex2wmf` native library reports a formula conversion error, the build warns with the
+If the `mathtype-rust` native library reports a formula conversion error, the build warns with the
 exit code and LaTeX input and continues. The affected formula retains its original
 Word equation (OMML); other formulas are converted normally. In `both` mode,
 conversion continues with the `set-data` result. Failed conversions are not cached.

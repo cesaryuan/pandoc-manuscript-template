@@ -113,8 +113,9 @@ def render_latex_to_wmf(
     font_size_pt: float = 12.0, math_font: str = "XITS Math",
 ) -> dict[str, Any]:
     """Return WMF bytes, SVG text, and the CLI-compatible metadata JSON string."""
-    converter = get_converter("latex2wmf")
+    converter = get_converter("mathtype-rust")
     return converter.call(
+        operation="render_wmf",
         latex=latex, svg_backend=svg_backend, math_style=math_style,
         font_size_pt=font_size_pt, math_font=math_font,
     )

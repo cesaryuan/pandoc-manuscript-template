@@ -108,7 +108,7 @@ jobs:
           wheel="$(find dist -name '*.whl' -print -quit)"
           helper_dir="$(mktemp -d)"
           trap 'rm -rf "$helper_dir"' EXIT
-          unzip -q "$wheel" 'pandoc_manuscript/mathtype/bin/libmathtype_rust.dylib' 'pandoc_manuscript/mathtype/bin/liblatex2wmf.dylib' -d "$helper_dir"
+          unzip -q "$wheel" 'pandoc_manuscript/mathtype/bin/libmathtype_rust.dylib' -d "$helper_dir"
           for helper in "$helper_dir"/pandoc_manuscript/mathtype/bin/*; do
             min_os="$(otool -l "$helper" | awk '$1 == "minos" || $1 == "version" { print $2; exit }')"
             if [[ "$min_os" != 14.* ]]; then
@@ -143,7 +143,7 @@ jobs:
           with ZipFile(sys.argv[1]) as wheel:
               print("\n".join(wheel.namelist()))
           '@ $wheel
-          $libraries = if ($IsWindows) { @('mathtype_rust.dll', 'latex2wmf.dll') } else { @('libmathtype_rust.dylib', 'liblatex2wmf.dylib') }
+          $libraries = if ($IsWindows) { @('mathtype_rust.dll') } else { @('libmathtype_rust.dylib') }
           foreach ($name in $libraries) {
             if (-not ($entries -match "pandoc_manuscript/mathtype/bin/$name")) {
               throw "Wheel is missing native runtime: $name"
@@ -154,6 +154,7 @@ jobs:
           }
           $forbidden = $entries | Where-Object {
             $_ -match '^pandoc_manuscript/mathtype/bin/(mathtype-rust|latex2wmf)(\.exe)?$' -or
+            $_ -match '^pandoc_manuscript/mathtype/bin/(lib)?latex2wmf\.(dll|so|dylib)$' -or
             $_ -match 'scripts/(mathtype-rust|latex2wmf)/' -or
             $_ -match 'pandoc_manuscript/mathtype/ole_helper/.*\.(cs|csproj|pdb|config)$'
           }
@@ -264,13 +265,14 @@ jobs:
           with ZipFile(sys.argv[1]) as wheel:
               print("\n".join(wheel.namelist()))
           '@ $wheel.FullName
-          foreach ($name in @("libmathtype_rust.so", "liblatex2wmf.so")) {
+          foreach ($name in @("libmathtype_rust.so")) {
             if (-not ($entries -match "pandoc_manuscript/mathtype/bin/$name")) {
               throw "Wheel is missing native runtime: $name"
             }
           }
           $forbidden = $entries | Where-Object {
             $_ -match '^pandoc_manuscript/mathtype/bin/(mathtype-rust|latex2wmf)(\.exe)?$' -or
+            $_ -match '^pandoc_manuscript/mathtype/bin/(lib)?latex2wmf\.(dll|so|dylib)$' -or
             $_ -match 'scripts/(mathtype-rust|latex2wmf)/' -or
             $_ -match 'pandoc_manuscript/mathtype/ole_helper/.*\.(cs|csproj|pdb|config)$'
           }

@@ -189,9 +189,11 @@ RaTeX uses text style for inline formulas and display style for display formulas
 so fractions, large operators, and limits keep the layout expected in prose.
 The RaTeX path treats `0.02em` as the minimum safety margin for glyph overshoot.
 It expands only transparent canvas space until the width and both baseline-side
-extents land on Word's half-point grid; the Typst path uses the same grid rule.
-The formula paths are not rescaled or trimmed, and the resulting baseline depth
-maps directly to Word's run position without a manual offset.
+extents land on Word's half-point grid; the Typst path starts with the same rule.
+After Typst's adaptive WMF clipping protection, inline previews receive any
+remaining bottom whitespace needed to put the final baseline depth back on that
+grid. Formula paths are not moved, rescaled, or trimmed by this final step, so
+Word's run position needs no rounding compensation. Display previews skip it.
 
 ## Subfigure Layouts
 

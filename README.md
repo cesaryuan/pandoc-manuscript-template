@@ -198,6 +198,36 @@ Add `--verbose` to any command, for example `pmt build docx --verbose`, to show
 detailed debug logs such as complete external command lines. Normal output keeps
 the main build stages, warnings, and results concise.
 
+## Maintainer releases and native build caches
+
+Release with `uvx bump-my-version bump patch` followed by
+`git push origin main --tags`. The **Publish to PyPI** workflow publishes only
+on `v*` tag pushes. Its `main` builds and manual runs build and verify the same
+three platform wheels without publishing them.
+
+Changes to either Rust submodule, the native build hook, helper inputs, or the
+publishing workflow trigger cache warming on `main`. To warm or refresh caches
+manually, run **Publish to PyPI** with **Run workflow**, selecting `main`.
+Complete the first warm-up before creating the next release tag: GitHub allows
+tags to restore default-branch caches, but not caches saved under other tags.
+Pushing `main` and a tag together does not make the tag wait for cache warming;
+it can use an older `main` cache and compile any changed dependencies.
+
+The workflow pins Rust to `1.98.0` and caches Cargo downloads and release build
+outputs separately for Windows, macOS 14, and manylinux 2.28. Cache keys include
+the toolchain, native lockfiles, submodule revisions, build configuration, and
+equation preferences, rather than the Python package version. Only successful
+`main` builds save caches; tag builds restore them and still run Cargo with
+`--locked`, package the wheel, and verify its native libraries.
+
+CI sets `CARGO_TARGET_DIR` to share dependency artifacts between the two native
+builds. On Linux this directory and Cargo's download cache live on the host via
+the container's `/host` mount, so they survive the manylinux container. Local
+builds retain their normal per-project target directories unless this environment
+variable is set. Build logs report elapsed time for each Rust library and the
+Windows .NET helper. A cold cache or a toolchain change still requires compilation;
+actual release speedups should be measured after a successful warm-up.
+
 ## Acknowledgments
 
 - [Pandoc](https://pandoc.org/)

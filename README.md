@@ -228,6 +228,11 @@ variable is set. Build logs report elapsed time for each Rust library and the
 Windows .NET helper. A cold cache or a toolchain change still requires compilation;
 actual release speedups should be measured after a successful warm-up.
 
+Before saving the Linux cache, the workflow transfers its container-created files
+to the runner user and checks directory sizes and readability. A lookup after
+saving requires the exact cache entry to exist remotely; an archive/upload failure
+therefore fails the warm-up instead of silently leaving future releases uncached.
+
 ## Acknowledgments
 
 - [Pandoc](https://pandoc.org/)

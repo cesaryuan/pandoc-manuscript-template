@@ -278,6 +278,32 @@ jobs:
             throw "Wheel contains native helper source/debug files: $($forbidden -join ', ')"
           }
 
+      - name: Prepare Linux cache for archiving
+        if: github.ref == 'refs/heads/main' && steps.rust-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          NATIVE_CACHE_DIR: ${{ runner.temp }}/pmt-native-cache
+        run: |
+          set -euo pipefail
+          # manylinux writes as root; the host cache action archives as runner.
+          # Restrict ownership changes to this job's cache, without following links.
+          test "$NATIVE_CACHE_DIR" = "$RUNNER_TEMP/pmt-native-cache"
+          test -d "$NATIVE_CACHE_DIR" && test ! -L "$NATIVE_CACHE_DIR"
+          sudo chown -R -P --no-dereference "$(id -u):$(id -g)" -- "$NATIVE_CACHE_DIR"
+          find "$NATIVE_CACHE_DIR" -type d -exec chmod u+rwx {} +
+          find "$NATIVE_CACHE_DIR" -type f -exec chmod u+rw {} +
+          for entry in cargo/registry cargo/git target; do
+            directory="$NATIVE_CACHE_DIR/$entry"
+            test -d "$directory"
+            stat -c '%U:%G %a %n' "$directory"
+            du -sh "$directory"
+            unreadable=$(find "$directory" \( -type f ! -readable \) -o \( -type d \( ! -readable -o ! -executable \) \))
+            if [[ -n "$unreadable" ]]; then
+              printf '::error::Cache contains inaccessible paths\n%s\n' "$unreadable"
+              exit 1
+            fi
+          done
+
       - name: Save Rust build cache
         if: github.ref == 'refs/heads/main' && steps.rust-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -287,6 +313,19 @@ jobs:
             ${{ runner.temp }}/pmt-native-cache/cargo/git
             ${{ runner.temp }}/pmt-native-cache/target
           key: ${{ steps.rust-cache.outputs.cache-primary-key }}
+
+      # save reports archive failures as warnings; require a remotely visible entry.
+      - name: Verify Linux cache was saved
+        if: github.ref == 'refs/heads/main' && steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/pmt-native-cache/cargo/registry
+            ${{ runner.temp }}/pmt-native-cache/cargo/git
+            ${{ runner.temp }}/pmt-native-cache/target
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
+          lookup-only: true
+          fail-on-cache-miss: true
 
       - name: Upload Linux wheel
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')

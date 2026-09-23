@@ -583,7 +583,9 @@ def build_docx(
     # Add filter for older Pandoc versions
     if should_use_mathbfit_filter():
         log_debug("[DEBUG] Using mathbfit filter (Pandoc <= 3.8.3.0)")
-        extra_args.extend(['--filter', to_pandoc_path(resource_path('pandoc/filters/to_mathbfit.py'))])
+        extra_args.extend(['--filter', to_pandoc_path(python_filter_wrapper(
+            resource_path('pandoc/filters/to_mathbfit.py'), 'to_mathbfit_filter',
+        ))])
 
     if use_mathtype:
         pandoc_output = mathtype_marked_docx_path()

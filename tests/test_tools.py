@@ -2,6 +2,11 @@ from pathlib import Path
 import io
 import shutil
 import sys
+import zipfile
+import tarfile
+from contextlib import nullcontext
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -58,6 +63,7 @@ def test_resolve_tool_prefers_system_path(monkeypatch, tmp_path) -> None:
     fake_executable.write_text("fake", encoding="utf-8")
 
     monkeypatch.setattr(shutil, "which", lambda command: str(fake_executable) if command == "pandoc" else None)
+    monkeypatch.setattr(tools, "subprocess_run_version", lambda executable: "pandoc 3.8")
     monkeypatch.setattr(
         tools,
         "install_release_tool",
@@ -185,6 +191,169 @@ def test_copy_response_with_progress_streams_body_and_finishes(monkeypatch) -> N
 
     assert output.getvalue() == b"abcdef"
     assert updates == [(3, 6, False), (6, 6, False), (6, 6, True)]
+
+
+@pytest.mark.parametrize("version,accepted", [("2.19", False), ("3.7.9", False), ("3.8", True), ("3.10.1", True)])
+def test_resolve_pandoc_enforces_minimum_version(monkeypatch, tmp_path, version, accepted) -> None:
+    """Use supported PATH versions and replace older ones with a managed install."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(tools, "TOOL_CACHE", {})
+    system = tmp_path / "system-pandoc.exe"
+    monkeypatch.setattr(tools.shutil, "which", lambda name: str(system))
+    monkeypatch.setattr(tools, "subprocess_run_version", lambda path: f"pandoc {version}")
+    managed = tools.ResolvedTool("pandoc", tmp_path / "managed-pandoc.exe", "managed")
+    monkeypatch.setattr(tools, "install_release_tool", lambda *args, **kwargs: managed)
+    resolved = tools.resolve_pandoc()
+    assert resolved.executable == (system if accepted else managed.executable)
+
+
+def test_old_crossref_does_not_pin_unsupported_pandoc(monkeypatch) -> None:
+    """An older crossref ABI must not cause installation of Pandoc below 3.8."""
+    monkeypatch.setattr(tools, "release_by_tag", lambda *args: pytest.fail("unsupported release requested"))
+    assert tools.pandoc_release_for_crossref("3.7.0.2") is None
+
+
+@pytest.mark.parametrize("failure", [KeyboardInterrupt, OSError])
+def test_interrupted_download_can_be_retried(monkeypatch, tmp_path, failure) -> None:
+    """Never reuse partial bytes after interruption or a network read failure."""
+    target = tmp_path / "release.zip"
+
+    class InterruptedResponse(FakeDownloadResponse):
+        """Fail after writing one chunk to emulate an interrupted transfer."""
+
+        def read(self, size):
+            """Return the initial bytes, then interrupt the download."""
+            if not self.chunks:
+                raise failure()
+            return super().read(size)
+
+    monkeypatch.setattr(tools, "open_download_url", lambda *args, **kwargs: nullcontext(InterruptedResponse([b"partial"])))
+    with pytest.raises(failure):
+        tools.download_asset("https://example.test/release.zip", target)
+    assert not target.exists()
+    assert not list(tmp_path.glob("*.part"))
+    monkeypatch.setattr(tools, "open_download_url", lambda *args, **kwargs: nullcontext(FakeDownloadResponse([b"complete"], 8)))
+    tools.download_asset("https://example.test/release.zip", target)
+    assert target.read_bytes() == b"complete"
+
+
+def test_short_download_preserves_existing_archive(monkeypatch, tmp_path) -> None:
+    """A forced refresh must retain the old archive until all new bytes arrive."""
+    target = tmp_path / "release.zip"
+    target.write_bytes(b"previous")
+    monkeypatch.setattr(tools, "open_download_url", lambda *args, **kwargs: nullcontext(FakeDownloadResponse([b"short"], 100)))
+    with pytest.raises(RuntimeError, match="Incomplete download"):
+        tools.download_asset("https://example.test/release.zip", target, force=True)
+    assert target.read_bytes() == b"previous"
+
+
+@pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tar.xz", ".7z"])
+def test_install_repairs_legacy_partial_archive(monkeypatch, tmp_path, suffix) -> None:
+    """Recover a cached truncated archive by redownloading and extracting afresh."""
+    monkeypatch.chdir(tmp_path)
+    archive_name = "release" + suffix
+    good = tmp_path / archive_name
+    executable = tmp_path / tools.executable_name("pandoc")
+    executable.write_bytes(b"complete executable")
+    if suffix == ".zip":
+        with zipfile.ZipFile(good, "w") as archive:
+            archive.write(executable, executable.name)
+    elif suffix == ".7z":
+        import py7zr
+        with py7zr.SevenZipFile(good, "w") as archive:
+            archive.write(executable, executable.name)
+    else:
+        with tarfile.open(good, "w:gz" if suffix == ".tar.gz" else "w:xz") as archive:
+            archive.add(executable, executable.name)
+    payload = good.read_bytes()
+    cached = tools.PMT_TOOLS_DOWNLOAD_DIR / archive_name
+    cached.parent.mkdir(parents=True)
+    cached.write_bytes(payload[:10])
+    monkeypatch.setattr(tools, "select_release_asset", lambda *args: {"name": archive_name, "url": "https://example.test/release"})
+    monkeypatch.setattr(tools, "subprocess_run_version", lambda path: "pandoc 3.8")
+    downloads = []
+
+    def response(*args, **kwargs):
+        """Supply one complete replacement archive and record network requests."""
+        downloads.append(1)
+        return nullcontext(FakeDownloadResponse([payload], len(payload)))
+
+    monkeypatch.setattr(tools, "open_download_url", response)
+    result = tools.install_release_tool("pandoc", {"tag_name": "3.8"})
+    assert result.executable.read_bytes() == executable.read_bytes()
+    assert downloads == [1]
+    assert not list(tools.PMT_TOOLS_EXTRACT_DIR.iterdir())
+
+
+def test_corrupt_managed_executable_is_reinstalled(monkeypatch, tmp_path) -> None:
+    """A nonempty but broken executable from an old interrupted install is replaced."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(tools, "TOOL_CACHE", {})
+    monkeypatch.setattr(tools.shutil, "which", lambda name: None)
+    managed = tools.managed_executable("pandoc-crossref")
+    managed.parent.mkdir(parents=True)
+    managed.write_bytes(b"partial executable")
+
+    def broken_version(path):
+        """Emulate Windows rejecting a truncated executable image."""
+        raise OSError("not a valid executable")
+
+    def install(tool, **kwargs):
+        """Replace the broken image and return the repaired tool."""
+        managed.write_bytes(b"repaired")
+        return tools.ResolvedTool(tool, managed, "managed")
+
+    monkeypatch.setattr(tools, "subprocess_run_version", broken_version)
+    monkeypatch.setattr(tools, "install_release_tool", install)
+    assert tools.resolve_tool("pandoc-crossref").executable.read_bytes() == b"repaired"
+
+
+def test_interrupted_install_preserves_existing_executable(monkeypatch, tmp_path) -> None:
+    """Interrupt the executable copy, then successfully rerun from the cached archive."""
+    monkeypatch.chdir(tmp_path)
+    cached = tools.PMT_TOOLS_DOWNLOAD_DIR / "release.zip"
+    cached.parent.mkdir(parents=True)
+    with zipfile.ZipFile(cached, "w") as archive:
+        archive.writestr(tools.executable_name("pandoc"), b"new executable")
+    installed = tools.managed_executable("pandoc")
+    installed.parent.mkdir(parents=True)
+    installed.write_bytes(b"old executable")
+    monkeypatch.setattr(tools, "select_release_asset", lambda *args: {"name": "release.zip", "url": "https://example.test/release"})
+    monkeypatch.setattr(tools, "subprocess_run_version", lambda path: "pandoc 3.8")
+    original_copy = tools.shutil.copy2
+
+    def interrupted_copy(source, target):
+        """Emulate Ctrl+C after only part of the executable has been copied."""
+        target.write_bytes(b"partial executable")
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(tools.shutil, "copy2", interrupted_copy)
+    with pytest.raises(KeyboardInterrupt):
+        tools.install_release_tool("pandoc", {"tag_name": "3.8"})
+    assert installed.read_bytes() == b"old executable"
+    assert not list(installed.parent.glob("*.part"))
+    monkeypatch.setattr(tools.shutil, "copy2", original_copy)
+    tools.install_release_tool("pandoc", {"tag_name": "3.8"})
+    assert installed.read_bytes() == b"new executable"
+
+
+def test_invalid_redownload_fails_without_poisoning_next_run(monkeypatch, tmp_path) -> None:
+    """Bound archive retries and remove unusable completed downloads before returning."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(tools, "select_release_asset", lambda *args: {"name": "release.zip", "url": "https://example.test/release"})
+    downloads = []
+
+    def response(*args, **kwargs):
+        """Return an HTML/error-like body instead of the requested archive."""
+        downloads.append(1)
+        return nullcontext(FakeDownloadResponse([b"not an archive"]))
+
+    monkeypatch.setattr(tools, "open_download_url", response)
+    with pytest.raises(RuntimeError, match="Could not unpack a usable pandoc"):
+        tools.install_release_tool("pandoc", {"tag_name": "3.8"})
+    assert downloads == [1, 1]
+    assert not (tools.PMT_TOOLS_DOWNLOAD_DIR / "release.zip").exists()
+    assert not tools.managed_executable("pandoc").exists()
 
 
 def test_setup_pandoc_tools_installs_managed_tools_even_when_path_exists(monkeypatch, tmp_path) -> None:

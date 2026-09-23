@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import shutil
 import stat
+import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.error
 import urllib.request
 import zipfile
@@ -192,6 +195,10 @@ def copy_response_with_progress(response: Any, handle: Any) -> None:
         downloaded += len(chunk)
         write_progress(downloaded, total)
     write_progress(downloaded, total, final=True)
+    if total is not None and downloaded != total:
+        raise RuntimeError(f"Incomplete download: expected {total} bytes, received {downloaded}")
+    if not downloaded:
+        raise RuntimeError("Download returned an empty response")
 
 
 def request_json(url: str) -> dict[str, Any]:
@@ -229,19 +236,25 @@ def select_release_asset(tool: str, release: dict[str, Any]) -> dict[str, str]:
 
 
 def download_asset(url: str, target: Path, *, force: bool = False) -> None:
-    """Download a release asset if it is not already cached."""
-    if force and target.exists():
-        target.unlink()
-    if target.exists() and target.stat().st_size > 0:
+    """Publish only complete downloads so interruptions cannot poison the cache."""
+    if not force and target.exists() and target.stat().st_size > 0:
         return
     target.parent.mkdir(parents=True, exist_ok=True)
     log_info(f"[TOOLS] Downloading {url} -> {target}")
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    temporary: Path | None = None
     try:
-        with open_download_url(request, timeout=300) as response, target.open("wb") as handle:
-            copy_response_with_progress(response, handle)
+        with tempfile.NamedTemporaryFile(dir=target.parent, prefix=target.name + ".", suffix=".part", delete=False) as handle:
+            temporary = Path(handle.name)
+            with open_download_url(request, timeout=300) as response:
+                copy_response_with_progress(response, handle)
+        temporary.replace(target)
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Could not download {url}: {exc}") from exc
+    finally:
+        # KeyboardInterrupt also reaches this cleanup; abandoned .part files are never reused.
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def extract_archive(archive: Path, target: Path) -> None:
@@ -291,14 +304,34 @@ def install_release_tool(
     archive = PMT_TOOLS_DOWNLOAD_DIR / asset["name"]
     download_asset(asset["url"], archive, force=force_download)
 
-    extract_dir = PMT_TOOLS_EXTRACT_DIR / f"{tool}-{tag}"
-    extract_archive(archive, extract_dir)
-    executable = find_executable(extract_dir, tool)
+    PMT_TOOLS_EXTRACT_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f"{tool}-{tag}-", dir=PMT_TOOLS_EXTRACT_DIR) as working:
+        extract_dir = Path(working)
+        for attempt in range(2):
+            try:
+                extract_archive(archive, extract_dir)
+                executable = find_executable(extract_dir, tool)
+                executable.chmod(executable.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                if not usable_tool(executable, tool):
+                    raise RuntimeError(f"Archive contains an unusable {tool} executable")
+                break
+            except Exception as exc:
+                # Repair legacy partial archives, including ZIP, tar and 7z failures.
+                archive.unlink(missing_ok=True)
+                if attempt:
+                    raise RuntimeError(f"Could not unpack a usable {tool} release from {asset['url']}: {exc}") from exc
+                log_info(f"[TOOLS] Invalid {tool} archive ({exc}); downloading again")
+                download_asset(asset["url"], archive, force=True)
 
-    PMT_TOOLS_BIN_DIR.mkdir(parents=True, exist_ok=True)
-    installed = PMT_TOOLS_BIN_DIR / executable_name(tool)
-    shutil.copy2(executable, installed)
-    installed.chmod(installed.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        PMT_TOOLS_BIN_DIR.mkdir(parents=True, exist_ok=True)
+        installed = PMT_TOOLS_BIN_DIR / executable_name(tool)
+        with tempfile.NamedTemporaryFile(dir=installed.parent, prefix=tool + ".", suffix=".part", delete=False) as handle:
+            staging = Path(handle.name)
+        try:
+            shutil.copy2(executable, staging)
+            staging.replace(installed)
+        finally:
+            staging.unlink(missing_ok=True)
 
     metadata = {
         "tool": tool,
@@ -325,7 +358,7 @@ def install_managed_tool(
 ) -> ResolvedTool:
     """Install or reuse a pmt-managed tool, ignoring system PATH."""
     managed = managed_executable(tool)
-    if managed.exists() and not force:
+    if not force and managed.exists() and usable_tool(managed, tool):
         log_info(f"[TOOLS] {tool} already installed in .pmt/tools: {managed}")
         return ResolvedTool(tool, managed, ".pmt/tools")
     return install_release_tool(tool, release=release, force_download=force)
@@ -335,7 +368,7 @@ def crossref_pandoc_version(crossref: Path) -> str | None:
     """Return the Pandoc version pandoc-crossref was compiled against, if reported."""
     try:
         result = subprocess_run_version(crossref)
-    except OSError:
+    except (OSError, subprocess.SubprocessError):
         return None
     marker = "built with Pandoc v"
     if marker not in result:
@@ -345,22 +378,40 @@ def crossref_pandoc_version(crossref: Path) -> str | None:
 
 def subprocess_run_version(executable: Path) -> str:
     """Run `--version` for a tool and return combined output."""
-    import subprocess
-
     result = subprocess.run(
         [str(executable), "--version"],
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
-        check=False,
+        check=True,
+        timeout=15,
     )
     return "\n".join(part for part in (result.stdout, result.stderr) if part)
+
+
+def usable_tool(executable: Path, tool: str) -> bool:
+    """Reject interrupted installs and Pandoc versions below the supported 3.8 floor."""
+    try:
+        output = subprocess_run_version(executable)
+        match = re.search(rf"(?im)^{re.escape(tool)}(?:\.exe)?\s+v?(\d+(?:\.\d+)*)", output)
+        if match is None:
+            raise ValueError("unrecognized version output")
+        version = tuple(int(part) for part in match.group(1).split("."))
+        if tool == "pandoc" and version < (3, 8):
+            raise ValueError(f"Pandoc {match.group(1)} is older than 3.8")
+        return True
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        log_info(f"[TOOLS] Ignoring unusable {tool} at {executable}: {exc}")
+        return False
 
 
 def pandoc_release_for_crossref(version: str | None) -> dict[str, Any] | None:
     """Return a Pandoc release matching pandoc-crossref's compiled version."""
     if not version:
+        return None
+    match = re.fullmatch(r"\d+(?:\.\d+)*", version)
+    if match is None or tuple(int(part) for part in version.split(".")) < (3, 8):
         return None
     try:
         return release_by_tag("pandoc", version)
@@ -375,19 +426,19 @@ def resolve_pandoc(required_version: str | None = None) -> ResolvedTool:
         return TOOL_CACHE["pandoc"]
 
     system_executable = shutil.which("pandoc")
-    if system_executable:
+    if system_executable and usable_tool(Path(system_executable), "pandoc"):
         resolved = ResolvedTool("pandoc", Path(system_executable), "PATH")
         TOOL_CACHE["pandoc"] = resolved
         return resolved
 
     managed = managed_executable("pandoc")
-    if managed.exists():
+    if managed.exists() and usable_tool(managed, "pandoc"):
         resolved = ResolvedTool("pandoc", managed, ".pmt/tools")
         TOOL_CACHE["pandoc"] = resolved
         return resolved
 
     release = pandoc_release_for_crossref(required_version)
-    log_info(f"[TOOLS] pandoc not found on PATH; installing into {PMT_TOOLS_BIN_DIR}")
+    log_info(f"[TOOLS] No usable Pandoc >= 3.8 found; installing into {PMT_TOOLS_BIN_DIR}")
     resolved = install_release_tool("pandoc", release=release)
     TOOL_CACHE["pandoc"] = resolved
     return resolved
@@ -401,13 +452,13 @@ def resolve_tool(tool: str) -> ResolvedTool:
         return TOOL_CACHE[tool]
 
     system_executable = shutil.which(tool)
-    if system_executable:
+    if system_executable and usable_tool(Path(system_executable), tool):
         resolved = ResolvedTool(tool, Path(system_executable), "PATH")
         TOOL_CACHE[tool] = resolved
         return resolved
 
     managed = managed_executable(tool)
-    if managed.exists():
+    if managed.exists() and usable_tool(managed, tool):
         resolved = ResolvedTool(tool, managed, ".pmt/tools")
         TOOL_CACHE[tool] = resolved
         return resolved

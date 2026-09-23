@@ -435,6 +435,7 @@ def test_generate_equation_parts_both_uses_independent_backend_caches(monkeypatc
     """Generate both backends with separate cache methods and keep set-data output."""
     calls = []
     warnings = []
+    monkeypatch.setattr(ole_parts, "preflight_set_data", lambda *args: True)
 
     monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
     monkeypatch.setattr(ole_parts, "iter_equation_requests_with_progress", lambda requests: enumerate(requests, start=1))
@@ -475,6 +476,99 @@ def test_generate_equation_parts_both_rejects_non_windows(monkeypatch, tmp_path)
 
     with pytest.raises(ValueError, match="only supported on Windows"):
         ole_parts.generate_equation_parts([], tmp_path, conversion_method="both")
+
+
+@pytest.mark.parametrize("probe_failures", [0, 1, 2])
+def test_both_preflight_retries_and_disables_set_data(monkeypatch, tmp_path, probe_failures) -> None:
+    """Retry a cold COM failure once and bypass COM formulas after two failed probes."""
+    probe_calls = []
+    formula_calls = []
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(ole_parts, "native_source_digest_for_method", lambda method: None)
+    monkeypatch.setattr(ole_parts, "native_library_digest_for_method", lambda method: None)
+    monkeypatch.setattr(ole_parts, "inspect_ole", lambda path: FakeCompound())
+    monkeypatch.setattr(ole_parts, "mathtype_ole_mtef_sha256", lambda path: "same")
+    monkeypatch.setattr(ole_parts, "restore_cached_equation", lambda *args: False)
+    monkeypatch.setattr(ole_parts, "store_cached_equation", lambda *args: None)
+
+    def probe(input_path, ole_path, wmf_path, metadata_path, **kwargs):
+        """Fail the requested uncached probes, then provide valid simple-formula parts."""
+        probe_calls.append(input_path.read_text(encoding="utf-8"))
+        if len(probe_calls) <= probe_failures:
+            ole_path.write_bytes(b"partial")
+            raise RuntimeError("COM activation failed")
+        ole_path.write_bytes(b"probe")
+        wmf_path.write_bytes(minimal_wmf())
+        metadata_path.write_text("{}", encoding="utf-8")
+
+    def generate(index, input_path, ole_path, wmf_path, metadata_path, mtef_path, **kwargs):
+        """Record the selected formula backend and emit distinguishable results."""
+        method = kwargs["conversion_method"]
+        formula_calls.append(method)
+        ole_path.write_bytes(method.encode())
+        wmf_path.write_bytes(minimal_wmf())
+        metadata_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(ole_parts, "make_ole_wmf_metadata_with_mathtype_set_data", probe)
+    monkeypatch.setattr(ole_parts, "generate_uncached_equation_parts", generate)
+    equations = ole_parts.generate_equation_parts(
+        [ole_parts.EquationRequest("a"), ole_parts.EquationRequest("b")], tmp_path, "both",
+    )
+    assert len(probe_calls) == min(probe_failures + 1, 2)
+    assert all("x+1" in formula for formula in probe_calls)
+    assert formula_calls == (["rust", "rust"] if probe_failures == 2 else ["rust", "set-data"] * 2)
+    assert [equation.ole_path.read_bytes() for equation in equations] == [b"rust" if probe_failures == 2 else b"set-data"] * 2
+    assert not list(tmp_path.glob("set-data-probe-*"))
+
+
+@pytest.mark.parametrize("failure", ["exception", "invalid-preview", "invalid-metadata", "both-fail"])
+def test_both_uses_rust_when_set_data_fails(monkeypatch, tmp_path, failure) -> None:
+    """Fallback must replace partial COM output and preserve later formula alignment."""
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(ole_parts, "preflight_set_data", lambda *args: True)
+    monkeypatch.setattr(ole_parts, "native_source_digest_for_method", lambda method: None)
+    monkeypatch.setattr(ole_parts, "native_library_digest_for_method", lambda method: None)
+    monkeypatch.setattr(ole_parts, "inspect_ole", lambda path: FakeCompound())
+    monkeypatch.setattr(ole_parts, "mathtype_ole_mtef_sha256", lambda path: "same")
+    monkeypatch.setattr(ole_parts, "restore_cached_equation", lambda *args: False)
+    cached = []
+    monkeypatch.setattr(ole_parts, "store_cached_equation", lambda key, ole, *args: cached.append(ole.read_bytes()))
+
+    def generate(index, input_path, ole_path, wmf_path, metadata_path, mtef_path, **kwargs):
+        """Emulate failures on formula one while leaving formula two usable."""
+        method = kwargs["conversion_method"]
+        ole_path.write_bytes(f"{method}:{index}".encode())
+        wmf_path.write_bytes(minimal_wmf())
+        metadata_path.write_text('{"method":"' + method + '"}', encoding="utf-8")
+        if index == 1 and (method == "set-data" or failure == "both-fail"):
+            if failure == "invalid-preview":
+                wmf_path.write_bytes(b"partial")
+            elif failure == "invalid-metadata":
+                metadata_path.write_text("{", encoding="utf-8")
+            else:
+                raise RuntimeError("backend failed after partial output")
+
+    monkeypatch.setattr(ole_parts, "generate_uncached_equation_parts", generate)
+    equations = ole_parts.generate_equation_parts(
+        [ole_parts.EquationRequest("a"), ole_parts.EquationRequest("b")], tmp_path, "both",
+    )
+    if failure == "both-fail":
+        assert equations[0] is None
+        assert b"rust:1" not in cached
+    else:
+        assert equations[0].ole_path.read_bytes() == b"rust:1"
+        assert equations[0].wmf_path.read_bytes() == minimal_wmf()
+        assert '"rust"' in equations[0].metadata_path.read_text(encoding="utf-8")
+    assert equations[1].ole_path.read_bytes() == b"set-data:2"
+    assert b"set-data:1" not in cached
+
+
+def test_both_availability_accepts_rust_without_com(monkeypatch) -> None:
+    """Do not skip DOCX conversion merely because MathType is absent."""
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(ole_parts, "check_cross_platform_mathtype_availability", lambda: ole_parts.MathTypeAvailability((), ()))
+    monkeypatch.setattr(ole_parts, "_read_hkcr_default", lambda key: pytest.fail("COM must not block Rust"))
+    assert ole_parts.check_mathtype_availability("both").usable
 
 
 def test_warn_if_conversion_outputs_differ_accepts_equal_mtef(monkeypatch, tmp_path) -> None:

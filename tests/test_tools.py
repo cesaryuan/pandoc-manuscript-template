@@ -4,6 +4,9 @@ import shutil
 import sys
 import zipfile
 import tarfile
+import threading
+import urllib.error
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import nullcontext
 
 import pytest
@@ -130,6 +133,43 @@ def test_download_proxy_direct_when_no_proxy(monkeypatch) -> None:
 
     assert proxy.proxy is None
     assert proxy.source == "direct"
+
+
+@pytest.mark.parametrize("url", [
+    "https://api.github.com/repos/jgm/pandoc/releases/latest",
+    "https://github.com/jgm/pandoc/releases/download/3.8/pandoc.zip",
+])
+def test_download_uses_detected_windows_system_proxy(monkeypatch, url) -> None:
+    """Route real HTTPS CONNECT requests through a detected proxy without internet access."""
+    destinations = []
+
+    class ProxyHandler(BaseHTTPRequestHandler):
+        """Record proxy requests and stop before connecting to the public internet."""
+
+        def do_CONNECT(self):
+            """Confirm the selected proxy received the HTTPS tunnel request."""
+            destinations.append(self.path)
+            self.send_error(502, "Test proxy stops here")
+
+        def log_message(self, format, *args):
+            """Suppress expected local proxy error logs."""
+            pass
+
+    for key in ("HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(tools.sys, "platform", "win32")
+    with ThreadingHTTPServer(("127.0.0.1", 0), ProxyHandler) as proxy:
+        address = f"http://127.0.0.1:{proxy.server_port}"
+        monkeypatch.setattr(tools.urllib.request, "getproxies_registry", lambda: {"https": address}, raising=False)
+        worker = threading.Thread(target=proxy.serve_forever, daemon=True)
+        worker.start()
+        try:
+            with pytest.raises(urllib.error.URLError, match="502"):
+                tools.open_download_url(tools.urllib.request.Request(url), timeout=5)
+        finally:
+            proxy.shutdown()
+            worker.join(timeout=5)
+    assert destinations == [tools.urllib.parse.urlsplit(url).hostname + ":443"]
 
 
 def test_progress_line_shows_percentage_for_known_size() -> None:

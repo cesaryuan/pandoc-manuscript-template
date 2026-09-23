@@ -77,6 +77,16 @@ discarded and downloaded again once; unusable managed executables are reinstalle
 Bundled Python filters, including the compatibility `to_mathbfit` filter, run with
 PMT's Python interpreter and its installed dependencies.
 
+Tool downloads automatically use `HTTPS_PROXY` (or `https_proxy`) when set,
+otherwise the configured Windows/macOS system HTTP/HTTPS proxy, and otherwise
+a direct connection. This applies to both GitHub release metadata and archive
+downloads during `pmt build docx`, `pmt setup`, and `pmt init --setup`.
+On Windows, enable your proxy application's **system proxy** option before
+building; no extra PMT setting is needed. PMT logs `[TOOLS] Using system proxy for
+downloads.` when it selects that route. An explicit `HTTPS_PROXY` takes precedence
+over the system setting. PAC scripts and automatic proxy discovery are not
+evaluated by this downloader.
+
 ### Rough Python Compatibility Check
 
 If you just want a quick syntax-level check against the project's minimum Python target, use Ruff:

@@ -23,5 +23,5 @@ PMT_MATHTYPE_CACHE_DIR = PMT_CACHE_DIR / "mathtype"
 
 
 def pmt_path(path: str | Path) -> str:
-    """Return a stable POSIX-style string for pmt default settings."""
+    """Return a stable POSIX-style string for papper default settings."""
     return Path(path).as_posix()

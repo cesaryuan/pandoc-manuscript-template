@@ -41,7 +41,7 @@ def test_available_update_returns_newer_pypi_release(monkeypatch) -> None:
 
 
 def test_available_update_ignores_network_failures(monkeypatch) -> None:
-    """Keep completed pmt commands successful when PyPI cannot be reached."""
+    """Keep completed papper commands successful when PyPI cannot be reached."""
     def fail(*args, **kwargs):
         """Simulate a failed PyPI request."""
         raise urllib.error.URLError("offline")
@@ -102,7 +102,7 @@ def test_notify_reads_cache_then_starts_a_stale_refresh(monkeypatch, capsys) -> 
 
     update_check.notify_and_schedule_update_check("0.5.3")
 
-    assert "pmt 0.5.4 is available" in capsys.readouterr().err
+    assert "Papper 0.5.4 is available" in capsys.readouterr().err
     assert worker_starts == [None]
 
 
@@ -152,5 +152,5 @@ def test_cli_checks_cached_updates_after_a_command(monkeypatch, capsys) -> None:
     assert cli.main(["--version"]) == 0
 
     captured = capsys.readouterr()
-    assert captured.out.startswith("pmt ")
+    assert captured.out.startswith("papper ")
     assert calls == [cli.__version__]

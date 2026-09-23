@@ -1,7 +1,7 @@
 This template converts Pandoc Markdown manuscripts to DOCX, with optional LaTeX source generation for advanced users.
 
 - Main file: `manuscript.md` — edit this to write the paper
-- Style file: `style.yml` — keep PMT build settings at the top level and Pandoc/cross-reference defaults under `pandocMetadata`
+- Style file: `style.yml` — keep Papper build settings at the top level and Pandoc/cross-reference defaults under `pandocMetadata`
 - Images: place in `images/` directory
 - References: `.bib` file specified in YAML header
 
@@ -9,7 +9,7 @@ For content syntax, formatting patterns, or writing fragments not covered in thi
 
 ## Style Metadata
 
-If the user wants to change reusable style behavior, update `style.yml`. PMT-owned settings such as `mathtype`, `docxStyle`, `docxPageMargins`, and `docxShowPageNumbers` stay at the top level. Pandoc, citeproc, and pandoc-crossref defaults such as `csl` and `subfigGrid` belong under `pandocMetadata`. The YAML header in `manuscript.md` overrides only `pandocMetadata`; it does not override PMT-owned settings. See the `Style Metadata` section in `.agents/manuscript-syntax.md` for details.
+If the user wants to change reusable style behavior, update `style.yml`. Papper-owned settings such as `mathtype`, `docxStyle`, `docxPageMargins`, and `docxShowPageNumbers` stay at the top level. Pandoc, citeproc, and pandoc-crossref defaults such as `csl` and `subfigGrid` belong under `pandocMetadata`. The YAML header in `manuscript.md` overrides only `pandocMetadata`; it does not override Papper-owned settings. See the `Style Metadata` section in `.agents/manuscript-syntax.md` for details.
 
 ## Pandoc Markdown Syntax
 

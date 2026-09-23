@@ -1,4 +1,4 @@
-"""`pmt init` command implementation."""
+"""`papper init` command implementation."""
 
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ IGNORE_NAMES = {
 
 AGENTS_TEMPLATE_DESTINATION = "AGENTS.md"
 AGENTS_DIRECTORY_DESTINATION = ".agents"
+# Keep the legacy markers so existing generated AGENTS.md blocks remain recognizable.
 AGENTS_TEMPLATE_START = "<!-- pmt template guidance: begin -->"
 AGENTS_TEMPLATE_END = "<!-- pmt template guidance: end -->"
 
@@ -106,7 +107,7 @@ def merge_template_directory(source: Path, destination: Path) -> tuple[int, int]
 
 
 class InitSettings(VerboseCommandSettings):
-    """Settings for `pmt init`."""
+    """Settings for `papper init`."""
 
     model_config = SettingsConfigDict(cli_kebab_case=True, cli_implicit_flags=True)
 
@@ -127,7 +128,7 @@ class InitSettings(VerboseCommandSettings):
         target = Path(self.directory).resolve()
 
         if self.force and self.merge:
-            raise RuntimeError("Use only one of --force or --merge for `pmt init`.")
+            raise RuntimeError("Use only one of --force or --merge for `papper init`.")
 
         target.mkdir(parents=True, exist_ok=True)
         template_entries = list(iter_project_template_entries())
@@ -181,5 +182,5 @@ class InitSettings(VerboseCommandSettings):
                 pandoc, crossref = setup_pandoc_tools()
             log(f"[OK] pandoc: {pandoc.executable} [{pandoc.source}]")
             log(f"[OK] pandoc-crossref: {crossref.executable} [{crossref.source}]")
-        log("Next: cd into the project and run `pmt doctor`, then `pmt build docx`.")
+        log("Next: cd into the project and run `papper doctor`, then `papper build docx`.")
         return 0

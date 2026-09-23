@@ -61,7 +61,7 @@ docxStyle:
       before: 0pt
       after: 0pt
 
-# 审稿回复输出的覆盖配置。`pmt build reply` 会将上方的顶层元数据与本节合并，
+# 审稿回复输出的覆盖配置。`papper build reply` 会将上方的顶层元数据与本节合并，
 # 并在生成回复时优先采用本节中的值。
 reply:
   docxStyle:

@@ -1,4 +1,4 @@
-"""CLI entry point for the Pandoc manuscript template package."""
+"""CLI entry point for Papper and its legacy command aliases."""
 
 from __future__ import annotations
 
@@ -20,10 +20,10 @@ from .runtime.update_check import notify_and_schedule_update_check
 
 
 class PmtCli(BaseSettings):
-    """Pandoc Manuscript Template CLI."""
+    """Papper command-line interface."""
 
     model_config = SettingsConfigDict(
-        cli_prog_name="pmt",
+        cli_prog_name="papper",
         cli_kebab_case=True,
         cli_implicit_flags=True,
         cli_hide_none_type=True,
@@ -43,14 +43,14 @@ class PmtCli(BaseSettings):
     _exit_code: int = PrivateAttr(default=0)
 
     def cli_cmd(self) -> None:
-        """Dispatch the selected pmt subcommand."""
+        """Dispatch the selected Papper subcommand."""
         if self.version_flag:
-            log(f"pmt {__version__}")
+            log(f"papper {__version__}")
             self._exit_code = 0
             return
         command = get_subcommand(self, is_required=False)
         if command is None:
-            log("Use `pmt --help` to see available commands.")
+            log("Use `papper --help` to see available commands.")
             self._exit_code = 1
             return
         with verbose_logging(command.verbose):
@@ -58,7 +58,7 @@ class PmtCli(BaseSettings):
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the pmt command-line interface."""
+    """Run the Papper command-line interface."""
     check_for_updates = True
     try:
         app = CliApp.run(PmtCli, cli_args=argv, cli_parse_args=True)

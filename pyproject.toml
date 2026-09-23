@@ -1,7 +1,7 @@
 [project]
-name = "pandoc-manuscript-template"
-version = "0.6.4"
-description = "Pandoc Markdown manuscript template with DOCX-focused post-processing"
+name = "papper"
+version = "0.6.5"
+description = "Papper: a Markdown-first academic manuscript workflow with DOCX-focused post-processing"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
@@ -40,7 +40,7 @@ target-version = "py311"
 select = ["E9"]
 
 [tool.bumpversion]
-current_version = "0.6.4"
+current_version = "0.6.5"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = true
@@ -52,10 +52,12 @@ allow_dirty = false
 
 [[tool.bumpversion.files]]
 filename = "uv.lock"
-search = "name = \"pandoc-manuscript-template\"\nversion = \"{current_version}\""
-replace = "name = \"pandoc-manuscript-template\"\nversion = \"{new_version}\""
+search = "name = \"papper\"\nversion = \"{current_version}\""
+replace = "name = \"papper\"\nversion = \"{new_version}\""
 
 [project.scripts]
+papper = "pandoc_manuscript.cli:main"
+# Retain the existing commands so installed projects and user scripts keep working.
 pmt = "pandoc_manuscript.cli:main"
 pandoc-manuscript = "pandoc_manuscript.cli:main"
 

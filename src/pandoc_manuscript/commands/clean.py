@@ -1,4 +1,4 @@
-"""`pmt clean` and `pmt distclean` command implementations."""
+"""`papper clean` and `papper distclean` command implementations."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def distclean(output_dir: str | Path = DEFAULT_OUTPUT_DIR) -> None:
 
 
 class CleanSettings(VerboseCommandSettings):
-    """Settings for `pmt clean` and `pmt distclean`."""
+    """Settings for `papper clean` and `papper distclean`."""
 
     model_config = SettingsConfigDict(
         cli_kebab_case=True,
@@ -107,6 +107,6 @@ class CleanSettings(VerboseCommandSettings):
 
 
 class DistcleanSettings(CleanSettings):
-    """Settings for `pmt distclean`."""
+    """Settings for `papper distclean`."""
 
     target: ClassVar[Literal["clean", "distclean"]] = "distclean"

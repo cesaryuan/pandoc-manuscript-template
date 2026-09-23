@@ -69,7 +69,7 @@ class FormulaPreviewError(FormulaConversionError):
 
 
 def source_tree_path(path: str | Path) -> Path | None:
-    """Resolve a repository path only when pmt is running from a source checkout."""
+    """Resolve a repository path only when papper is running from a source checkout."""
     path = Path(path)
     if path.is_absolute():
         return path

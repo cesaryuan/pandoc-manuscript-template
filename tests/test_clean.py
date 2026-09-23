@@ -9,7 +9,7 @@ from pandoc_manuscript.commands import build, clean as clean_command
 
 
 def test_clean_settings_calls_clean_directly(tmp_path, monkeypatch) -> None:
-    """Dispatch pmt clean without routing through the build command."""
+    """Dispatch papper clean without routing through the build command."""
     calls = []
 
     monkeypatch.setattr(build, "run_build_command", lambda **_: pytest.fail("build dispatch should not run"))
@@ -22,7 +22,7 @@ def test_clean_settings_calls_clean_directly(tmp_path, monkeypatch) -> None:
 
 
 def test_distclean_settings_calls_distclean_directly(tmp_path, monkeypatch) -> None:
-    """Dispatch pmt distclean without routing through the build command."""
+    """Dispatch papper distclean without routing through the build command."""
     calls = []
 
     monkeypatch.setattr(build, "run_build_command", lambda **_: pytest.fail("build dispatch should not run"))

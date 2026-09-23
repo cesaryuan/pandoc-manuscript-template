@@ -17,7 +17,7 @@ from packaging.tags import sys_tags
 class CustomBuildHook(BuildHookInterface):
     """Build and include binary-only MathType runtime tools in wheels."""
 
-    PLUGIN_NAME = "pmt-native-helpers"
+    PLUGIN_NAME = "papper-native-helpers"
 
     def initialize(self, version: str, build_data: dict[str, Any]) -> None:
         """Compile platform runtime tools before wheel file selection.
@@ -71,7 +71,7 @@ class CustomBuildHook(BuildHookInterface):
             raise FileNotFoundError(f"{project_name} manifest is missing: {manifest}")
         if shutil.which("cargo") is None:
             raise RuntimeError("Building native libraries requires `cargo` on PATH.")
-        print(f"[pmt build] building {project_name} release library with cargo", flush=True)
+        print(f"[papper build] building {project_name} release library with cargo", flush=True)
         started = time.monotonic()
         subprocess.run(
             ["cargo", "rustc", "--locked", "--crate-type", "cdylib", "--manifest-path", str(manifest), "--lib", "--features", "ffi", "--release"],
@@ -87,7 +87,7 @@ class CustomBuildHook(BuildHookInterface):
         library = target_dir / "release" / filename
         if not library.exists():
             raise FileNotFoundError(f"cargo did not create expected library: {library}")
-        print(f"[pmt build] {project_name} completed in {time.monotonic() - started:.1f}s", flush=True)
+        print(f"[papper build] {project_name} completed in {time.monotonic() - started:.1f}s", flush=True)
         return library
 
     def build_mathtype_ole_helper(self, root: Path) -> Path:
@@ -100,7 +100,7 @@ class CustomBuildHook(BuildHookInterface):
 
         # Keep wheel builds from rewriting the tracked source-checkout fallback binary.
         output_dir = root / ".pmt" / "native-wheel" / "MathTypeOleHelper"
-        print("[pmt build] building MathTypeOleHelper release executable with dotnet", flush=True)
+        print("[papper build] building MathTypeOleHelper release executable with dotnet", flush=True)
         started = time.monotonic()
         subprocess.run(
             [
@@ -119,5 +119,5 @@ class CustomBuildHook(BuildHookInterface):
         executable = output_dir / "MathTypeOleHelper.exe"
         if not executable.exists():
             raise FileNotFoundError(f"dotnet did not create expected executable: {executable}")
-        print(f"[pmt build] MathTypeOleHelper completed in {time.monotonic() - started:.1f}s", flush=True)
+        print(f"[papper build] MathTypeOleHelper completed in {time.monotonic() - started:.1f}s", flush=True)
         return executable

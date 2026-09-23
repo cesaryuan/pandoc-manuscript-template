@@ -1,4 +1,4 @@
-"""Thin command entry points for `pmt build-reply`."""
+"""Thin command entry points for `papper build-reply`."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def run_build_reply_command(
     reference_doc: str | None = None,
     output_file: str | None = None,
 ) -> int:
-    """Apply parsed `pmt build-reply` settings and run the reply build."""
+    """Apply parsed `papper build-reply` settings and run the reply build."""
     reply = checked_markdown_path(markdown)
 
     try:

@@ -1,4 +1,4 @@
-"""Shared helpers used by multiple pmt command modules."""
+"""Shared helpers used by multiple papper command modules."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ PANDOC_CROSSREF_VERSION_WARNING_PATTERN = re.compile(
 
 
 class VerboseCommandSettings(BaseSettings):
-    """Base settings shared by pmt subcommands that support detailed logging."""
+    """Base settings shared by papper subcommands that support detailed logging."""
 
     verbose: bool = Field(default=False, description="Enable detailed debug logging.")
 
@@ -104,7 +104,7 @@ def run_streaming_command(
 
 
 def log(message: str) -> None:
-    """Print a pmt CLI status line."""
+    """Print a papper CLI status line."""
     print(message)
 
 

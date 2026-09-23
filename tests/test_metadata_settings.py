@@ -13,7 +13,7 @@ from pandoc_manuscript.runtime.metadata import (
 
 
 def test_new_style_structure_separates_pmt_and_pandoc_metadata(tmp_path: Path) -> None:
-    """Keep PMT-owned settings out of the mapping supplied to Pandoc."""
+    """Keep Papper-owned settings out of the mapping supplied to Pandoc."""
     style = tmp_path / "style.yml"
     style.write_text(
         """mathtype: true
@@ -38,7 +38,7 @@ pandocMetadata:
 
 
 def test_manuscript_header_only_overrides_pandoc_metadata(tmp_path: Path) -> None:
-    """Do not let manuscript YAML implicitly change PMT-owned settings."""
+    """Do not let manuscript YAML implicitly change Papper-owned settings."""
     style = tmp_path / "style.yml"
     style.write_text(
         """mathtype: false
@@ -92,7 +92,7 @@ def test_empty_style_metadata_keeps_defaults_and_allows_overrides(tmp_path: Path
 
 
 def test_reply_overrides_both_domains_before_reply_header(tmp_path: Path) -> None:
-    """Apply reply PMT and Pandoc overrides while keeping the domains separate."""
+    """Apply reply Papper and Pandoc overrides while keeping the domains separate."""
     style = tmp_path / "style.yml"
     style.write_text(
         """docxStyle:
@@ -177,7 +177,7 @@ def test_invalid_nested_sections_report_the_source_path(tmp_path: Path) -> None:
 
 
 def test_invalid_known_field_reports_the_source_path(tmp_path: Path) -> None:
-    """Include the style path when a typed PMT field fails validation."""
+    """Include the style path when a typed Papper field fails validation."""
     style = tmp_path / "style.yml"
     style.write_text("mathtype: definitely\n", encoding="utf-8")
 
@@ -220,7 +220,7 @@ def test_environment_variables_do_not_override_style_settings(
 
 
 def test_pmt_settings_validate_nested_mappings_and_svg_controls() -> None:
-    """Reject invalid PMT structures before any DOCX helper receives them."""
+    """Reject invalid Papper structures before any DOCX helper receives them."""
     with pytest.raises(ValueError, match="docxStyle"):
         PmtSettings.model_validate({"docxStyle": {"Body Text": "invalid"}})
 

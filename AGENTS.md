@@ -1,4 +1,4 @@
-This repository is the `pmt` tool, not a manuscript project.
+This repository is the `papper` tool, not a manuscript project.
 
 - Core implementation lives in `src/pandoc_manuscript/`.
 - Template content for generated paper projects lives in `template/`.

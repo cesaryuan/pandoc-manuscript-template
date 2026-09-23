@@ -1,4 +1,4 @@
-"""Locate pmt package resources from a source tree or an installed wheel."""
+"""Locate papper package resources from a source tree or an installed wheel."""
 
 from __future__ import annotations
 
@@ -16,12 +16,12 @@ def package_root() -> Path:
 
 
 def package_resource_path(relative_path: str | Path) -> Path:
-    """Return a filesystem path for a resource bundled inside the pmt package."""
+    """Return a filesystem path for a resource bundled inside the papper package."""
     return package_root() / Path(relative_path)
 
 
 def source_tree_root() -> Path | None:
-    """Return the pmt repository root when running from this source checkout."""
+    """Return the papper repository root when running from this source checkout."""
     # runtime/resources.py lives one level deeper than the package root after
     # the support-module layout refactor, so the source checkout root is +1 up.
     root = Path(__file__).resolve().parents[3]
@@ -44,7 +44,7 @@ def template_root() -> Path:
 
 
 def project_template_root() -> Path:
-    """Return the root copied by `pmt init` into generated manuscript projects."""
+    """Return the root copied by `papper init` into generated manuscript projects."""
     source_root = source_tree_root()
     if source_root is not None:
         return source_root / "template"
@@ -56,7 +56,7 @@ def project_template_root() -> Path:
 
 
 def iter_project_template_entries() -> Iterable[tuple[str, str]]:
-    """Yield source and destination pairs copied by `pmt init` into a new paper project."""
+    """Yield source and destination pairs copied by `papper init` into a new paper project."""
     yield from (
         ("AGENTS.md", "AGENTS.md"),
         (".agents", ".agents"),

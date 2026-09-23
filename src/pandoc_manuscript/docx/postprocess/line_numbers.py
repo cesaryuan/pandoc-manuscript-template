@@ -88,7 +88,7 @@ def normalize_line_number_setting(value: Any) -> str | None:
 
 
 def line_number_setting_from_settings(settings: PmtSettings) -> str | None:
-    """Return the normalized line-number mode from typed PMT settings."""
+    """Return the normalized line-number mode from typed Papper settings."""
     return normalize_line_number_setting(settings.docx_show_line_numbers)
 
 

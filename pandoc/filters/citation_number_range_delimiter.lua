@@ -1,4 +1,4 @@
--- Apply the PMT-configured delimiter to citeproc numeric citation ranges.
+-- Apply the Papper-configured delimiter to citeproc numeric citation ranges.
 -- CSL requires collapsed citation-number ranges to use an en dash, so this
 -- narrowly adjusts the rendered citation output after citeproc has run.
 
@@ -11,7 +11,7 @@ local function trim(value)
 end
 
 local function environment_string(name)
-  -- PMT-owned filter settings stay outside the Pandoc metadata namespace.
+  -- Papper-owned filter settings stay outside the Pandoc metadata namespace.
   local value = os.getenv(name)
   if value == nil then
     return nil

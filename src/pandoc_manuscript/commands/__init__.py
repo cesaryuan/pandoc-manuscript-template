@@ -1,1 +1,1 @@
-"""Command implementations for the pmt CLI."""
+"""Command implementations for the papper CLI."""

@@ -1,4 +1,4 @@
-"""Settings and CLI defaults for `pmt build-reply`."""
+"""Settings and CLI defaults for `papper build-reply`."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ BUILD_REPLY_CLI_CONFIG = SettingsConfigDict(
 
 
 class BuildReplySettings(VerboseCommandSettings):
-    """Settings for `pmt build-reply`."""
+    """Settings for `papper build-reply`."""
 
     model_config = BUILD_REPLY_CLI_CONFIG
 

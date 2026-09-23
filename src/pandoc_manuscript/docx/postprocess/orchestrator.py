@@ -104,7 +104,7 @@ def postprocess_docx(
 
     Args:
         docx_path: Path to the DOCX file to process
-        pmt_settings: Typed PMT-owned DOCX and build settings
+        pmt_settings: Typed Papper-owned DOCX and build settings
         pandoc_metadata: Manuscript metadata such as authors and affiliations
         skip_author_info: Skip author insertion for non-manuscript outputs
         reply_style_formatting: Apply reply-only blue formatting
@@ -126,7 +126,7 @@ def postprocess_docx(
     log_debug("[postprocess] Starting DOCX post-processing pipeline")
     log_debug(f"[postprocess] Target file: {docx_path_abs}")
     log_debug(
-        f"[postprocess] PMT settings: {len(pmt_settings.model_fields_set)}, "
+        f"[postprocess] Papper settings: {len(pmt_settings.model_fields_set)}, "
         f"Pandoc metadata: {len(pandoc_metadata)}"
     )
 
@@ -304,14 +304,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  Prefer calling postprocess_docx with typed PMT settings and Pandoc metadata.
+  Prefer calling postprocess_docx with typed Papper settings and Pandoc metadata.
   For standalone debugging, pass the corresponding JSON files explicitly.
 
 Processing steps:
   - Insert author information from Pandoc metadata (if provided)
-  - Apply DOCX paragraph styles from PMT settings (if configured)
-  - Apply line numbers from PMT settings (if configured)
-  - Apply page numbers from PMT settings (if configured)
+  - Apply DOCX paragraph styles from Papper settings (if configured)
+  - Apply line numbers from Papper settings (if configured)
+  - Apply page numbers from Papper settings (if configured)
   - Merge table cells based on markers (!<! and !^!)
   - Clear formatting for tables above 'Image Caption' paragraphs
   - Convert table text style from 'Compact' to 'Table Text'
@@ -330,7 +330,7 @@ This script applies all post-processing steps in sequence.
     parser.add_argument("docx_path", help="Path to the DOCX file to process")
     parser.add_argument(
         "--pmt-settings-json",
-        help="Path to a JSON object containing PMT-owned settings",
+        help="Path to a JSON object containing Papper-owned settings",
     )
     parser.add_argument(
         "--pandoc-metadata-json",

@@ -1,4 +1,4 @@
-"""Cache and refresh PyPI update information without delaying pmt commands.
+"""Cache and refresh PyPI update information without delaying Papper commands.
 
 The CLI reads the local cache after a command completes. When the cache is
 stale, it starts this module in a detached worker process, which refreshes the
@@ -24,7 +24,7 @@ from packaging.version import InvalidVersion, Version
 from .logging import log_warning
 
 
-DIST_NAME = "pandoc-manuscript-template"
+DIST_NAME = "papper"
 PYPI_JSON_URL = f"https://pypi.org/pypi/{DIST_NAME}/json"
 UPDATE_CACHE_FILENAME = "update.json"
 UPDATE_CACHE_TTL_SECONDS = 60 * 60
@@ -176,7 +176,7 @@ def notify_and_schedule_update_check(installed_version: str) -> None:
     latest_version = cached_available_update(installed_version, cache)
     if latest_version is not None:
         log_warning(
-            f"[UPDATE] pmt {latest_version} is available, upgrade with "
+            f"[UPDATE] Papper {latest_version} is available, upgrade with "
             f"`uv tool upgrade {DIST_NAME}`"
         )
     if update_cache_needs_refresh(cache):
@@ -184,7 +184,7 @@ def notify_and_schedule_update_check(installed_version: str) -> None:
 
 
 def run_update_worker() -> None:
-    """Fetch PyPI once and persist the result for the next pmt invocation."""
+    """Fetch PyPI once and persist the result for the next Papper invocation."""
     previous_cache = read_update_cache()
     now = time.time()
     latest_version = latest_pypi_version()

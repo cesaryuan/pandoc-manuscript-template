@@ -132,7 +132,7 @@ def sync_eqn_block_template_with_page_margins(
     pandoc_metadata: dict[str, Any],
     pmt_settings: PmtSettings,
 ) -> tuple[dict[str, Any], tuple[int, int] | None]:
-    """Sync Pandoc's equation template from the separately owned PMT margins."""
+    """Sync Pandoc's equation template from the separately owned Papper margins."""
     tab_stops = equation_tab_stops_from_settings(pmt_settings)
     template = pandoc_metadata.get(EQN_BLOCK_TEMPLATE_KEY)
     if tab_stops is None or not isinstance(template, str) or "w:pos=" not in template:

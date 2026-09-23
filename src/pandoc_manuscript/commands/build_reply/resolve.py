@@ -78,7 +78,7 @@ def to_pandoc_path(path: Path) -> str:
 
 
 def load_reply_metadata(reply: Path, style: Path) -> EffectiveMetadata:
-    """Load reply-specific PMT settings and effective Pandoc metadata once."""
+    """Load reply-specific Papper settings and effective Pandoc metadata once."""
     return load_effective_metadata(
         reply,
         style,
@@ -92,7 +92,7 @@ def write_reply_style_metadata_file(
     *,
     use_mathtype: bool = False,
 ) -> Path:
-    """Write reply Pandoc metadata without leaking PMT-owned settings."""
+    """Write reply Pandoc metadata without leaking Papper-owned settings."""
     metadata = derive_docx_equation_layout(
         effective.pandoc_metadata,
         use_mathtype=use_mathtype,
@@ -276,7 +276,7 @@ def extract_probe_map(
 
 
 def write_probe_file(name: str, lines: list[str]) -> Path:
-    """Write a stable probe file under .pmt without relying on tempfile ACLs."""
+    """Write a stable probe file under .papper without relying on tempfile ACLs."""
     REPLY_PROBE_DIR.mkdir(parents=True, exist_ok=True)
     probe_path = REPLY_PROBE_DIR / name
     probe_path.write_text("\n\n".join(lines) + "\n", encoding="utf-8")

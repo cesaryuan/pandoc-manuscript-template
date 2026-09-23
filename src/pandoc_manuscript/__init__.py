@@ -1,11 +1,11 @@
-"""Command-line helpers for the Pandoc manuscript template."""
+"""Command-line helpers for Papper's Markdown-first manuscript workflow."""
 
 from __future__ import annotations
 
 import importlib.metadata as importlib_metadata
 import json
 
-_DIST_NAME = "pandoc-manuscript-template"
+_DIST_NAME = "papper"
 _UNKNOWN_VERSION = "0+unknown"
 
 

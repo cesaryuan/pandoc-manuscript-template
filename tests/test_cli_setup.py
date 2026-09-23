@@ -10,7 +10,7 @@ from pandoc_manuscript.commands.setup import ResolvedTool
 
 
 def test_setup_command_runs_in_project_directory(tmp_path, monkeypatch) -> None:
-    """Run pmt setup from the selected project directory."""
+    """Run papper setup from the selected project directory."""
     calls = []
 
     def fake_setup_pandoc_tools(*, force=False):

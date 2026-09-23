@@ -32,7 +32,7 @@ def disable_update_check(monkeypatch) -> None:
     ],
 )
 def test_all_commands_accept_verbose(settings_class, arguments, monkeypatch) -> None:
-    """Expose the same verbose flag on every public pmt subcommand."""
+    """Expose the same verbose flag on every public papper subcommand."""
     observed: list[bool] = []
 
     def fake_run(self) -> int:

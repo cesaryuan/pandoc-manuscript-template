@@ -1,5 +1,5 @@
 """
-Build normal manuscript targets for the Pandoc manuscript template.
+Build manuscript targets through Papper's Pandoc workflow.
 """
 
 import errno
@@ -78,7 +78,7 @@ SETTINGS = BuildSettings()
 
 
 class BuildCommandSettings(VerboseCommandSettings):
-    """Settings for `pmt build`."""
+    """Settings for `papper build`."""
 
     model_config = BUILD_CLI_CONFIG
 
@@ -186,7 +186,7 @@ def to_pandoc_path(path: Path) -> str:
 
 
 def resource_path(path: str | Path) -> Path:
-    """Resolve a bundled pmt template or package runtime resource path."""
+    """Resolve a bundled papper template or package runtime resource path."""
     path = Path(path)
     if path.is_absolute():
         return path
@@ -295,7 +295,7 @@ def ensure_docx_target_writable(target: Path) -> None:
 
 
 def load_build_metadata() -> EffectiveMetadata:
-    """Load separated PMT settings and effective Pandoc metadata once."""
+    """Load separated Papper settings and effective Pandoc metadata once."""
     effective = load_effective_metadata(
         SETTINGS.manuscript_file,
         SETTINGS.style_file if should_use_style_metadata_file() else None,
@@ -435,7 +435,7 @@ def default_docx_csl() -> Path:
 
 
 def pandoc_filter_env(pmt_settings: PmtSettings) -> dict[str, str]:
-    """Return PMT settings passed to bundled Pandoc filters via the environment."""
+    """Return Papper settings passed to bundled Pandoc filters via the environment."""
     delimiter = pmt_settings.citation_number_range_delimiter
     # Pandoc citeproc already emits an en dash. Passing it through Lua's Windows
     # environment boundary corrupts the Unicode value before the filter reads it.
@@ -519,7 +519,7 @@ def style_metadata_args(
     sync_docx_layout: bool = False,
     use_mathtype: bool = False,
 ) -> list[str]:
-    """Return a generated metadata file containing no PMT-owned settings."""
+    """Return a generated metadata file containing no Papper-owned settings."""
     metadata_file = generated_pandoc_metadata_file(
         effective,
         sync_docx_layout=sync_docx_layout,

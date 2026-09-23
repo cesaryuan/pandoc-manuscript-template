@@ -1,4 +1,4 @@
-"""Centralized loading and merging for PMT settings and Pandoc metadata."""
+"""Centralized loading and merging for Papper settings and Pandoc metadata."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ DEFAULT_PANDOC_METADATA: dict[str, Any] = {
 
 
 def default_pandoc_metadata() -> dict[str, Any]:
-    """Return an independent copy of PMT's built-in Pandoc metadata defaults."""
+    """Return an independent copy of Papper's built-in Pandoc metadata defaults."""
     return dict(DEFAULT_PANDOC_METADATA)
 
 
@@ -124,7 +124,7 @@ def _split_style_mapping(
     section: str = "style.yml",
     include_pandoc_defaults: bool = True,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
-    """Split one style mapping into PMT fields, Pandoc metadata, and reply overrides."""
+    """Split one style mapping into Papper fields, Pandoc metadata, and reply overrides."""
     pmt_values: dict[str, Any] = {}
     legacy_pandoc: dict[str, Any] = {}
     legacy_body_text: dict[str, Any] | None = None
@@ -214,7 +214,7 @@ class ReplySettings(BaseModel):
 
 
 class PmtSettings(BaseSettings):
-    """Typed PMT-owned settings loaded from the top level of style.yml."""
+    """Typed Papper-owned settings loaded from the top level of style.yml."""
 
     model_config = SettingsConfigDict(extra="forbid", populate_by_name=True)
 
@@ -412,7 +412,7 @@ class PmtSettings(BaseSettings):
             raise ValueError(f"Invalid style settings in {path}: {exc}") from exc
 
     def to_mapping(self, *, exclude_unset: bool = False) -> dict[str, Any]:
-        """Return canonical PMT fields for existing dictionary-based consumers."""
+        """Return canonical Papper fields for existing dictionary-based consumers."""
         return self.model_dump(
             by_alias=True,
             exclude={"pandoc_metadata", "reply"},
@@ -436,7 +436,7 @@ class PmtSettings(BaseSettings):
 
 @dataclass(frozen=True)
 class EffectiveMetadata:
-    """Keep PMT settings separate from the metadata supplied to Pandoc."""
+    """Keep Papper settings separate from the metadata supplied to Pandoc."""
 
     pmt_settings: PmtSettings
     pandoc_metadata: dict[str, Any]
@@ -483,7 +483,7 @@ def load_effective_metadata(
     allow_missing_header: bool = False,
     reply: bool = False,
 ) -> EffectiveMetadata:
-    """Load separated PMT settings and effective Pandoc metadata once."""
+    """Load separated Papper settings and effective Pandoc metadata once."""
     style = Path(style_path) if style_path is not None else None
     settings = PmtSettings.load(style) if style is not None and style.exists() else PmtSettings.model_validate({})
     if reply:
@@ -511,7 +511,7 @@ def load_effective_metadata(
 
 
 def load_pmt_settings_files(style_files: list[str | Path] | None = None) -> PmtSettings:
-    """Load and recursively overlay PMT settings from standalone style files."""
+    """Load and recursively overlay Papper settings from standalone style files."""
     merged: dict[str, Any] = {}
     for style_file in style_files or []:
         path = Path(style_file)

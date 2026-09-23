@@ -515,7 +515,7 @@ def format_applied_style_summary(applied: dict[str, Any]) -> str:
 
 
 def apply_docx_style_settings(doc: DocumentObject, settings: PmtSettings) -> dict[str, Any] | None:
-    """Apply all paragraph styles configured in typed PMT settings."""
+    """Apply all paragraph styles configured in typed Papper settings."""
     normalized_styles = normalize_docx_style_settings(settings)
     if normalized_styles is None:
         return None

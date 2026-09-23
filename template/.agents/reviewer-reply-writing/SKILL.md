@@ -12,7 +12,7 @@ description: 当需要撰写、修改或检查论文回复信、reply to reviewe
 1. Quote 文章原文时，用 `_强调_` 包裹，并确保 Quote 内容与文章完全一致。
 2. 图片 Quote 不要用 `_强调_` 包裹，否则 pandoc 无法解析图片。
 3. 审稿意见原文不要用 `_强调_` 包裹，保持原样。
-4. Quote 的原文如果是图片或表格，保留与手稿一致的 `{#fig:...}` 或 `{#tbl:...}` 标签，`pmt build-reply` 会按手稿编号自动补齐题注前缀。
+4. Quote 的原文如果是图片或表格，保留与手稿一致的 `{#fig:...}` 或 `{#tbl:...}` 标签，`papper build-reply` 会按手稿编号自动补齐题注前缀。
 5. 每段回复都用 `::: {custom-style="Reply to Reviewers"}` 包裹，以便 DOCX 应用回复样式。
 6. 用 `(Line `regex`)` reference 手稿修改位置，不要手写固定行号。
 

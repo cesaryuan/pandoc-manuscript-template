@@ -1,4 +1,4 @@
-"""`pmt doctor` command implementation."""
+"""`papper doctor` command implementation."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def import_status(module_name: str) -> tuple[bool, str]:
 
 
 class DoctorSettings(VerboseCommandSettings):
-    """Settings for `pmt doctor`."""
+    """Settings for `papper doctor`."""
 
     model_config = SettingsConfigDict(cli_kebab_case=True, cli_implicit_flags=True)
 
@@ -66,10 +66,10 @@ class DoctorSettings(VerboseCommandSettings):
 
         checks.extend(
             [
-                ("pmt package build module", True, "pandoc_manuscript.commands.build"),
-                ("pmt pandoc defaults", (root / "pandoc" / "pandoc-docx.yml").exists(), str(root / "pandoc")),
+                ("papper package build module", True, "pandoc_manuscript.commands.build"),
+                ("papper pandoc defaults", (root / "pandoc" / "pandoc-docx.yml").exists(), str(root / "pandoc")),
                 (
-                    "pmt DOCX metadata filter",
+                    "papper DOCX metadata filter",
                     (root / "pandoc" / "filters" / "docx_metadata.lua").exists(),
                     str(root / "pandoc" / "filters" / "docx_metadata.lua"),
                 ),

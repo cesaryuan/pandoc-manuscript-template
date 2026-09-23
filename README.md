@@ -1,18 +1,18 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-# Pandoc Manuscript Template
+# Papper
 
 Write in Markdown. Submit in Word.
 
-PMT is a DOCX-first academic writing workflow built for the AI era. AI tools are already great at drafting, revising, and restructuring Markdown. The problem is that many journals, editors, and collaborators still expect `.docx`. PMT bridges that gap: you keep the clarity and version-control friendliness of Markdown, while generating submission-ready Word documents when it is time to deliver.
+Papper is a DOCX-first academic writing workflow built for the AI era. AI tools are already great at drafting, revising, and restructuring Markdown. The problem is that many journals, editors, and collaborators still expect `.docx`. Papper bridges that gap: you keep the clarity and version-control friendliness of Markdown, while generating submission-ready Word documents when it is time to deliver.
 
 <!--
 Hero image idea for the README:
 - Use a wide 3-panel workflow graphic instead of a logo-only banner.
 - Left panel: a clean Markdown manuscript in an editor, with citations, cross-references, and a short AI chat prompt visible.
-- Middle panel: a terminal running `pmt build docx` and `pmt build-reply`.
+- Middle panel: a terminal running `papper build docx` and `papper build-reply`.
 - Right panel: a polished Word manuscript page plus a reviewer-reply DOCX page.
-- Add 3 short callouts on top of the image: "AI writes Markdown well", "PMT turns it into DOCX", "Journal-ready output".
+- Add 3 short callouts on top of the image: "AI writes Markdown well", "Papper turns it into DOCX", "Journal-ready output".
 - The most eye-catching version will show the same content flowing from raw Markdown to polished Word, not abstract icons.
 -->
 
@@ -22,32 +22,32 @@ Markdown has become a very natural writing format for research teams, especially
 
 DOCX, however, is still the format a lot of publishers, editors, and co-authors want.
 
-PMT is built around that reality:
+Papper is built around that reality:
 
 - Write the manuscript in Markdown.
 - Keep sources easy for humans and AI to edit.
 - Generate Word-first output for submission.
 - Preserve the pieces academic writing actually needs: citations, equations, tables, figures, cross-references, and reviewer replies.
 
-## Why PMT
+## Why Papper
 
-PMT is not just a generic Pandoc wrapper. It is a manuscript workflow with opinionated support for the annoying parts of real submission work.
+Papper is not just a generic Pandoc wrapper. It is a manuscript workflow with opinionated support for the annoying parts of real submission work.
 
 - **DOCX-first workflow**: the primary target is a polished Word manuscript, not DOCX as an afterthought.
 - **AI-friendly authoring**: Markdown is easier for LLMs to generate and easier for humans to review in Git.
-- **One-command project bootstrap**: `pmt init` creates a reusable paper workspace with manuscript files, style metadata, references, and agent guidance.
-- **Submission-oriented post-processing**: PMT applies DOCX-specific cleanup and formatting after Pandoc runs.
+- **One-command project bootstrap**: `papper init` creates a reusable paper workspace with manuscript files, style metadata, references, and agent guidance.
+- **Submission-oriented post-processing**: Papper applies DOCX-specific cleanup and formatting after Pandoc runs.
 - **Reviewer reply support**: build response letters as DOCX or TXT, while resolving manuscript references and citations.
-- **Managed Pandoc tools**: if `pandoc` or `pandoc-crossref` are missing, PMT can install project-local copies under `.pmt/tools`.
+- **Managed Pandoc tools**: if `pandoc` or `pandoc-crossref` are missing, Papper can install project-local copies under `.pmt/tools`.
 - **Optional LaTeX and JSON output**: keep a Markdown-centered workflow without giving up other export targets.
 
 ## What You Get
 
-- Manuscript scaffolding with `pmt init`
-- Environment checks with `pmt doctor`
-- Project-local tool setup with `pmt setup`
-- DOCX, LaTeX, and JSON builds with `pmt build`
-- Reviewer reply builds with `pmt build-reply`
+- Manuscript scaffolding with `papper init`
+- Environment checks with `papper doctor`
+- Project-local tool setup with `papper setup`
+- DOCX, LaTeX, and JSON builds with `papper build`
+- Reviewer reply builds with `papper build-reply`
 - Cross-references for figures, tables, equations, and sections
 - CSL-based citations
 - Reference DOCX support for Word styling
@@ -68,21 +68,21 @@ Install these tools first:
 3. Optional: Microsoft Word or `soffice` for line-number source workflows
 4. Optional: MathType on Windows only if you select `rust-sdk`, `set-data`, `auto`, or `both`; the default `rust` path is self-contained
 
-PMT requires Pandoc 3.8 or newer. Older or unusable `pandoc` executables on `PATH`
-are ignored; PMT downloads a managed project-local copy into `.pmt/tools` instead.
+Papper requires Pandoc 3.8 or newer. Older or unusable `pandoc` executables on `PATH`
+are ignored; Papper downloads a managed project-local copy into `.pmt/tools` instead.
 Missing or unusable `pandoc-crossref` executables are also installed automatically.
 Downloads and executable installation use temporary files followed by atomic
 replacement, so an interrupted build can be rerun. Invalid cached archives are
 discarded and downloaded again once; unusable managed executables are reinstalled.
 Bundled Python filters, including the compatibility `to_mathbfit` filter, run with
-PMT's Python interpreter and its installed dependencies.
+Papper's Python interpreter and its installed dependencies.
 
 Tool downloads automatically use `HTTPS_PROXY` (or `https_proxy`) when set,
 otherwise the configured Windows/macOS system HTTP/HTTPS proxy, and otherwise
 a direct connection. This applies to both GitHub release metadata and archive
-downloads during `pmt build docx`, `pmt setup`, and `pmt init --setup`.
+downloads during `papper build docx`, `papper setup`, and `papper init --setup`.
 On Windows, enable your proxy application's **system proxy** option before
-building; no extra PMT setting is needed. PMT logs `[TOOLS] Using system proxy for
+building; no extra Papper setting is needed. Papper logs `[TOOLS] Using system proxy for
 downloads.` when it selects that route. An explicit `HTTPS_PROXY` takes precedence
 over the system setting. PAC scripts and automatic proxy discovery are not
 evaluated by this downloader.
@@ -100,16 +100,16 @@ This is only a rough version-compatibility check. It can catch syntax that does 
 ### Create Your First Project
 
 ```bash
-uvx --from pandoc-manuscript-template pmt init my-paper
+uvx --from papper papper init my-paper
 cd my-paper
-pmt doctor
-pmt build docx
+papper doctor
+papper build docx
 ```
 
 To initialize the manuscript project in the current directory, omit the target directory:
 
 ```bash
-pmt init
+papper init
 ```
 
 That produces:
@@ -121,48 +121,59 @@ output/docx/manuscript.docx
 If you prefer installing the tool once:
 
 ```bash
-uv tool install --upgrade pandoc-manuscript-template
-pmt init my-paper
+uv tool install --upgrade papper
+papper init my-paper
 ```
 
-After each `pmt` invocation, PMT reads its cached PyPI update status and prints an upgrade hint when one is available. A silent background worker refreshes that cache at most once every hour, so commands do not wait for network I/O. Upgrade an installed PMT tool with:
+After each `papper` invocation, Papper reads its cached PyPI update status and prints an upgrade hint when one is available. A silent background worker refreshes that cache at most once every hour, so commands do not wait for network I/O. Upgrade an installed Papper tool with:
 
 ```bash
-uv tool upgrade pandoc-manuscript-template
+uv tool upgrade papper
 ```
+
+### Upgrade from the previous package name
+
+PyPI treats `papper` as a new project name. To move an existing tool installation from `pandoc-manuscript-template`, remove the old tool and install Papper:
+
+```bash
+uv tool uninstall pandoc-manuscript-template
+uv tool install papper
+```
+
+The `pmt` and `pandoc-manuscript` commands remain available as compatibility aliases. Existing manuscript projects keep their `.pmt` working directory and `PMT_*` settings.
 
 ## Typical Workflow
 
 ```bash
 # Create a new manuscript project
-pmt init my-paper --setup
+papper init my-paper --setup
 
 # Check dependencies and project files
-pmt doctor
+papper doctor
 
 # Build the main manuscript
-pmt build docx
+papper build docx
 
 # Build another Markdown file explicitly
-pmt build docx paper.md -o build/paper.docx
+papper build docx paper.md -o build/paper.docx
 
 # Build a reviewer reply
-pmt build-reply reply.md --reply-manuscript manuscript.md -o output/docx/reply.docx
+papper build-reply reply.md --reply-manuscript manuscript.md -o output/docx/reply.docx
 ```
 
 ## Standout Features
 
 ### 1. Markdown that stays pleasant to edit
 
-PMT leans into plain-text authoring instead of fighting it. Your manuscript remains easy to diff, refactor, prompt into AI tools, and review collaboratively.
+Papper leans into plain-text authoring instead of fighting it. Your manuscript remains easy to diff, refactor, prompt into AI tools, and review collaboratively.
 
 ### 2. DOCX output that is actually the point
 
-Many academic writing pipelines treat DOCX as a secondary export. PMT treats it as the main delivery format, with Word-oriented defaults and post-processing built into the workflow.
+Many academic writing pipelines treat DOCX as a secondary export. Papper treats it as the main delivery format, with Word-oriented defaults and post-processing built into the workflow.
 
 ### 3. Better fit for real submission tasks
 
-PMT goes beyond "convert Markdown to Word" by helping with the parts that tend to break late in the process:
+Papper goes beyond "convert Markdown to Word" by helping with the parts that tend to break late in the process:
 
 - reviewer replies
 - figure and table references
@@ -181,13 +192,13 @@ The output is scripted, reproducible, and version-controlled, but the source pro
 - [`template/manuscript.md`](template/manuscript.md): example manuscript content
 - [`AGENTS.md`](AGENTS.md): repository-specific guidance for coding agents
 
-In generated projects, `style.yml` keeps PMT-owned build settings at the top
+In generated projects, `style.yml` keeps Papper-owned build settings at the top
 level and places metadata sent to Pandoc under `pandocMetadata`. Manuscript YAML
 overrides only the Pandoc metadata domain.
 
-## When PMT Is a Good Fit
+## When Papper Is a Good Fit
 
-PMT is especially useful if:
+Papper is especially useful if:
 
 - you draft heavily with AI and want a format AI handles naturally
 - you want Git-friendly manuscript sources instead of editing Word binaries directly
@@ -198,20 +209,20 @@ PMT is especially useful if:
 ## Commands at a Glance
 
 ```bash
-pmt init [directory]
-pmt setup
-pmt doctor
-pmt build docx
-pmt build latex
-pmt build json
-pmt build-reply reply.md -o output/docx/reply.docx
-pmt clean
-pmt distclean
+papper init [directory]
+papper setup
+papper doctor
+papper build docx
+papper build latex
+papper build json
+papper build-reply reply.md -o output/docx/reply.docx
+papper clean
+papper distclean
 ```
 
-Use `pmt --help` to see the full CLI.
+Use `papper --help` to see the full CLI.
 
-Add `--verbose` to any command, for example `pmt build docx --verbose`, to show
+Add `--verbose` to any command, for example `papper build docx --verbose`, to show
 detailed debug logs such as complete external command lines. Normal output keeps
 the main build stages, warnings, and results concise.
 
@@ -292,7 +303,7 @@ If the `mathtype-rust` native library reports a formula conversion error, the bu
 exit code and LaTeX input and continues. The affected formula retains its original
 Word equation (OMML); other formulas are converted normally. In `both` mode,
 conversion continues with the `set-data` result if available. Before converting in
-`both` mode, PMT probes `set-data` with an uncached `x+1` formula (30-second timeout,
+`both` mode, Papper probes `set-data` with an uncached `x+1` formula (30-second timeout,
 up to two attempts). If both attempts fail, every formula in that build uses Rust;
 the next build probes again. If the probe succeeds but an individual `set-data`
 conversion fails or produces invalid output, that formula uses the Rust result.

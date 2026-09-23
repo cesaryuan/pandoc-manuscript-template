@@ -424,7 +424,7 @@ def expected_cache_metadata(
     pmt_version: str,
     resources: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    """Build cache metadata that changes when source, options, or PMT version change."""
+    """Build cache metadata that changes when source, options, or Papper version change."""
     stat_result = source.stat()
     return {
         "version": CACHE_METADATA_VERSION,
@@ -453,7 +453,7 @@ def cache_metadata_matches(target: Path, expected: dict[str, object]) -> bool:
 
 
 def write_cache_metadata(target: Path, metadata: dict[str, object], converter: str) -> None:
-    """Write sidecar metadata so option and PMT version changes invalidate old PNGs."""
+    """Write sidecar metadata so option and Papper version changes invalidate old PNGs."""
     payload = {**metadata, "converter": converter}
     cache_metadata_path(target).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",

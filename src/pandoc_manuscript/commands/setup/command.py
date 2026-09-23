@@ -1,4 +1,4 @@
-"""`pmt setup` command implementation."""
+"""`papper setup` command implementation."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .pandoc_tools import setup_pandoc_tools
 
 
 class SetupSettings(VerboseCommandSettings):
-    """Settings for `pmt setup`."""
+    """Settings for `papper setup`."""
 
     model_config = SettingsConfigDict(cli_kebab_case=True, cli_implicit_flags=True)
 

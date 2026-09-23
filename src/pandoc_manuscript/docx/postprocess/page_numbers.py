@@ -172,7 +172,7 @@ def remove_page_numbers(doc: DocumentObject) -> int:
 
 
 def apply_page_number_settings(doc: DocumentObject, settings: PmtSettings) -> dict[str, Any] | None:
-    """Apply docxShowPageNumbers when explicitly configured in PMT metadata."""
+    """Apply docxShowPageNumbers when explicitly configured in Papper metadata."""
     visible = settings.docx_show_page_numbers
     if visible is None:
         return None

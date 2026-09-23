@@ -1,4 +1,4 @@
-"""`pmt build-reply` package split by settings, resolution, line sources, and output."""
+"""`papper build-reply` package split by settings, resolution, line sources, and output."""
 
 from . import line_source, output, resolve, settings
 from .command import checked_markdown_path, run_build_reply_command

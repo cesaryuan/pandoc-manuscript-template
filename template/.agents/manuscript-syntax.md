@@ -157,7 +157,7 @@ See @fig:results for details. As shown in @tbl:comparison and @eq:model...
 When a formula needs both `\hat{...}` and a style macro such as `\mathbf{...}`,
 write the hat inside the style macro, for example `\mathbf{\hat{C}}` rather
 than `\hat{\mathbf{C}}`. When a DOCX build actually starts MathType conversion,
-`pmt build` and `pmt build-reply` warn about the latter form because
+`papper build` and `papper build-reply` warn about the latter form because
 MathType-exported PDFs may hide the hat.
 
 Set `mathtypeConversionMethod` in `style.yml` to choose the MathType backend:
@@ -269,7 +269,7 @@ embedding enabled in `style.yml`:
 docxEmbedSvgImages: true
 ```
 
-With this option, `pmt build docx` converts local Markdown image references such
+With this option, `papper build docx` converts local Markdown image references such
 as `figures/model-comparison.svg` to cached self-contained SVG files under
 `.pmt/cache/svg-embedded/`. The linked child panels are embedded into the cached
 SVG as data URIs, while SVG text and vector elements remain SVG. The source
@@ -342,7 +342,7 @@ For tables, use revision attributes on the table caption. Use `revision-rows="*"
 
 The underscore forms `revision_rows` and `revision_columns` are equivalent and are documented with the other DOCX table attributes below.
 
-For native Word display equations, add `revision=true` in the equation attribute list. `pmt build docx` strips that custom attribute before `pandoc-crossref` runs, keeps labels such as `#eq:model`, and then colors the generated Word equation red during DOCX post-processing.
+For native Word display equations, add `revision=true` in the equation attribute list. `papper build docx` strips that custom attribute before `pandoc-crossref` runs, keeps labels such as `#eq:model`, and then colors the generated Word equation red during DOCX post-processing.
 
 ```markdown
 $$
@@ -430,7 +430,7 @@ When generating DOCX output, three post-processing scripts automatically enhance
 
 ### 1. Table Attributes
 
-Add standard Pandoc attributes to table captions to control DOCX table properties. Pandoc does not preserve arbitrary table attributes in the generated DOCX, so `pmt build docx` runs a Lua filter that embeds a hidden WordprocessingML marker before conversion. The DOCX post-processor reads the marker, applies the settings, and removes it before saving the final document.
+Add standard Pandoc attributes to table captions to control DOCX table properties. Pandoc does not preserve arbitrary table attributes in the generated DOCX, so `papper build docx` runs a Lua filter that embeds a hidden WordprocessingML marker before conversion. The DOCX post-processor reads the marker, applies the settings, and removes it before saving the final document.
 
 **Syntax**: Add attributes at the end of the Pandoc table caption.
 For tables that should not have a visible caption, use an attribute-only caption line such as `: {revision_rows="*"}`.
@@ -496,7 +496,7 @@ All tables are automatically fitted to window width and centered. This can be ov
 - `merge_table_cells.py` - Merges cells based on markers
 - `autofit_tables.py` - Auto-fits tables to window
 
-These modules run automatically during `pmt build docx` and `pmt build-reply` when DOCX post-processing is enabled.
+These modules run automatically during `papper build docx` and `papper build-reply` when DOCX post-processing is enabled.
 
 # Style Metadata
 
@@ -506,33 +506,33 @@ formatting, citation, cross-reference, and DOCX style defaults here.
 
 ## Output Style Metadata
 
-`style.yml` separates two configuration domains. Its top-level PMT settings control
+`style.yml` separates two configuration domains. Its top-level Papper settings control
 build behavior such as MathType conversion, SVG handling, page margins, line
 numbers, and DOCX styles. Metadata consumed by Pandoc, citeproc, or
 pandoc-crossref belongs under `pandocMetadata`, including CSL, reference titles,
 cross-reference labels and prefixes, numbering, and subfigure layout.
 
 The YAML header in `manuscript.md` is manuscript/Pandoc metadata. It recursively
-overrides `style.yml:pandocMetadata`, but it does not override PMT-owned top-level
-settings. The optional `reply:` section can override both PMT settings and its own
-`reply.pandocMetadata` for `pmt build-reply`.
+overrides `style.yml:pandocMetadata`, but it does not override Papper-owned top-level
+settings. The optional `reply:` section can override both Papper settings and its own
+`reply.pandocMetadata` for `papper build-reply`.
 
-Older projects may still keep Pandoc keys at the top level of `style.yml`. PMT
+Older projects may still keep Pandoc keys at the top level of `style.yml`. Papper
 continues to load those keys and prints a deprecation warning, but new and updated
-projects should move them under `pandocMetadata`. PMT never rewrites the source
+projects should move them under `pandocMetadata`. Papper never rewrites the source
 `style.yml`; generated Pandoc-only metadata is written under `.pmt/work/`.
 
-In reviewer replies, `pmt build-reply` resolves `@fig:...`, `@tbl:...`, `@sec:...`, and `@eq:...` references from the manuscript before writing the reply output. When a copied figure or table keeps its manuscript label, such as `![Caption](image.png){#fig:model}` or `: Caption {#tbl:results}`, the reply build automatically prefixes its caption with the matching manuscript number. DOCX output is selected with an `.docx` output path. A labeled display equation copied into the reply, for example `$$ ... $$ {#eq:model}`, is assigned the matching manuscript equation number and rewritten to the DOCX tab-stop equation layout. If a figure, table, or equation label cannot be resolved from the manuscript, the original Markdown is left unchanged so the missing mapping remains visible.
+In reviewer replies, `papper build-reply` resolves `@fig:...`, `@tbl:...`, `@sec:...`, and `@eq:...` references from the manuscript before writing the reply output. When a copied figure or table keeps its manuscript label, such as `![Caption](image.png){#fig:model}` or `: Caption {#tbl:results}`, the reply build automatically prefixes its caption with the matching manuscript number. DOCX output is selected with an `.docx` output path. A labeled display equation copied into the reply, for example `$$ ... $$ {#eq:model}`, is assigned the matching manuscript equation number and rewritten to the DOCX tab-stop equation layout. If a figure, table, or equation label cannot be resolved from the manuscript, the original Markdown is left unchanged so the missing mapping remains visible.
 
-TXT reply output is selected with an `.txt` output path, for example `pmt build-reply reply.md -o output/txt/reply.txt`. It keeps Markdown syntax for `**bold**`, `_emphasis_`, tables, and formulas, replaces images with `[Image: ...]` placeholders, resolves ``(Line `regex`)`` placeholders and manuscript cross-references, removes trailing `{#eq:...}`, `{#fig:...}`, and `{#tbl:...}` label attributes from formulas, images, and tables, strips reply-only `::: {custom-style="Reply to Reviewers"}` wrappers plus `<br>` tags, collapses the resulting extra blank lines to at most one blank line, and restores escaped ordered-list markers such as `1\.` to `1.`.
+TXT reply output is selected with an `.txt` output path, for example `papper build-reply reply.md -o output/txt/reply.txt`. It keeps Markdown syntax for `**bold**`, `_emphasis_`, tables, and formulas, replaces images with `[Image: ...]` placeholders, resolves ``(Line `regex`)`` placeholders and manuscript cross-references, removes trailing `{#eq:...}`, `{#fig:...}`, and `{#tbl:...}` label attributes from formulas, images, and tables, strips reply-only `::: {custom-style="Reply to Reviewers"}` wrappers plus `<br>` tags, collapses the resulting extra blank lines to at most one blank line, and restores escaped ordered-list markers such as `1\.` to `1.`.
 
-Collapsed numeric citation ranges can use a journal-specific delimiter after Pandoc citeproc renders them. This is a PMT filter setting rather than Pandoc metadata, so configure it at the top level of `style.yml`:
+Collapsed numeric citation ranges can use a journal-specific delimiter after Pandoc citeproc renders them. This is a Papper filter setting rather than Pandoc metadata, so configure it at the top level of `style.yml`:
 
 ```yaml
 citationNumberRangeDelimiter: "-"  # [1-3]
 ```
 
-PMT passes this value to its Lua filter through the
+Papper passes this value to its Lua filter through the
 `PMT_CITATION_NUMBER_RANGE_DELIMITER` environment variable; it is not written
 into generated Pandoc metadata and cannot be overridden from manuscript YAML.
 
@@ -571,12 +571,12 @@ docxSvgToPngWidth: 1600
 # docxSvgToPngScale: 1
 ```
 
-During `pmt build docx`, self-contained SVG cache files are written under
+During `papper build docx`, self-contained SVG cache files are written under
 `.pmt/cache/svg-embedded/`, and PNG rasterization outputs are written under
 `.pmt/cache/svg-png/`. The original Markdown and SVG files are not rewritten.
 The PNG converter uses the Python `resvg-py` dependency.
 
-The DOCX post-processing step can update paragraph styles from PMT settings. Add style names under the top-level `docxStyle`; each key is matched against an existing DOCX style name, and missing styles are reported as warnings without stopping the build. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
+The DOCX post-processing step can update paragraph styles from Papper settings. Add style names under the top-level `docxStyle`; each key is matched against an existing DOCX style name, and missing styles are reported as warnings without stopping the build. The default template uses a two-character first-line indent and no spacing before or after body paragraphs:
 
 Set DOCX page margins under `docxPageMargins`. The values are written into the
 reference DOCX before Pandoc conversion, so Pandoc calculates image widths from
@@ -594,8 +594,8 @@ docxPageMargins:
 To control automatic page numbers in DOCX footers, set `docxShowPageNumbers`.
 `true` adds a Word `PAGE` field to each defined footer using the reference
 DOCX's `page number` character style; `false` removes `PAGE` fields while
-retaining any other footer text. PMT does not request a document-wide field
-update when Word opens the file. If the setting is omitted, PMT leaves the
+retaining any other footer text. Papper does not request a document-wide field
+update when Word opens the file. If the setting is omitted, Papper leaves the
 reference DOCX footer unchanged:
 
 ```yaml
@@ -604,9 +604,9 @@ docxShowPageNumbers: true
 
 For DOCX builds, `pmt` derives the pandoc-crossref equation layout automatically;
 do not add `tableEqns`, `eqnBlockTemplate`, or `eqnBlockInlineMath` to
-`pandocMetadata`. When MathType conversion is active, PMT uses an inline
+`pandocMetadata`. When MathType conversion is active, Papper uses an inline
 OpenXML tab-stop template and derives its two `w:pos` values from the left/right
-margins. When MathType conversion is inactive or unavailable, PMT uses the
+margins. When MathType conversion is inactive or unavailable, Papper uses the
 three-column table template so native Word display equations remain centered
 with their numbers right-aligned.
 
@@ -614,12 +614,12 @@ For a one-off DOCX build, the command line can override the top-level
 `mathtype` setting without editing `style.yml`:
 
 ```powershell
-pmt build docx --mathtype
-pmt build docx --no-mathtype
+papper build docx --mathtype
+papper build docx --no-mathtype
 ```
 
 The command-line value has higher priority than `style.yml`. These flags apply
-only to `pmt build docx`.
+only to `papper build docx`.
 
 Common Chinese built-in names such as `标题 1`, `正文文本`, and `正文` are automatically mapped to the corresponding Word built-in style names like `Heading 1`, `Body Text`, and `Normal`. Custom styles still need to use their exact DOCX style names.
 

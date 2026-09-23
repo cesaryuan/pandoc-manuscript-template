@@ -24,7 +24,7 @@ from ...runtime.paths import PMT_TOOLS_BIN_DIR, PMT_TOOLS_DOWNLOAD_DIR, PMT_TOOL
 
 
 GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"
-USER_AGENT = "pandoc-manuscript-template"
+USER_AGENT = "papper"
 TOOL_REPOS = {
     "pandoc": "jgm/pandoc",
     "pandoc-crossref": "lierdakil/pandoc-crossref",

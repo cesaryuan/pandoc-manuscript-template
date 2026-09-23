@@ -8,11 +8,11 @@ from pandoc_manuscript import cli
 
 
 def test_cli_version_uses_distribution_metadata(monkeypatch, capsys) -> None:
-    """Keep `pmt --version` synchronized with the installed package metadata."""
-    expected = importlib_metadata.version("pandoc-manuscript-template")
+    """Keep `papper --version` synchronized with the installed package metadata."""
+    expected = importlib_metadata.version("papper")
     monkeypatch.setattr(cli, "notify_and_schedule_update_check", lambda version: None)
 
     result = cli.main(["--version"])
 
     assert result == 0
-    assert capsys.readouterr().out.strip() == f"pmt {expected}"
+    assert capsys.readouterr().out.strip() == f"papper {expected}"

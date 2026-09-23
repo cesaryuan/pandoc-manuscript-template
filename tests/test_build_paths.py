@@ -24,7 +24,7 @@ from pandoc_manuscript.runtime.paths import (
 
 
 def test_generated_work_and_cache_paths_are_under_pmt() -> None:
-    """Keep pmt's temporary files and reusable caches in one hidden project directory."""
+    """Keep Papper's temporary files and reusable caches in one hidden project directory."""
     paths = [
         Path(build.SETTINGS.mathtype_work_dir),
         reply_build.LINE_SOURCE_PDF_DIR,
@@ -48,7 +48,7 @@ def test_svg_to_png_cache_uses_pmt_cache(monkeypatch) -> None:
 
 
 def test_citation_range_delimiter_uses_filter_environment() -> None:
-    """Pass the PMT-owned citation delimiter without adding Pandoc metadata."""
+    """Pass the Papper-owned citation delimiter without adding Pandoc metadata."""
     settings = PmtSettings.model_validate({"citationNumberRangeDelimiter": "-"})
 
     env = build.pandoc_filter_env(settings)
@@ -149,7 +149,7 @@ def test_svg_embed_env_disables_embedding_when_global_png_conversion_is_enabled(
 
 
 def test_reply_svg_embed_env_uses_shared_cache(tmp_path) -> None:
-    """Route reply self-contained SVG cache files through the shared pmt cache."""
+    """Route reply self-contained SVG cache files through the shared papper cache."""
     reply = tmp_path / "reply.md"
 
     env = reply_build.svg_embed_images_filter_env(
@@ -163,7 +163,7 @@ def test_reply_svg_embed_env_uses_shared_cache(tmp_path) -> None:
 
 
 def test_reply_svg_to_png_env_uses_shared_cache(tmp_path) -> None:
-    """Route reply SVG rasterization cache files through the shared pmt cache."""
+    """Route reply SVG rasterization cache files through the shared papper cache."""
     reply = tmp_path / "reply.md"
 
     env = reply_build.svg_to_png_filter_env(
@@ -215,7 +215,7 @@ def test_svg_to_png_size_controls_are_mutually_exclusive(monkeypatch, metadata: 
 
 
 def test_python_filter_wrapper_uses_pmt_work_dir(monkeypatch, tmp_path) -> None:
-    """Place generated Pandoc filter launchers under the pmt work directory."""
+    """Place generated Pandoc filter launchers under the papper work directory."""
     filter_path = tmp_path / "filter.py"
     filter_path.write_text("print('ok')\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -226,7 +226,7 @@ def test_python_filter_wrapper_uses_pmt_work_dir(monkeypatch, tmp_path) -> None:
 
 
 def test_reply_line_source_cache_uses_pmt_cache() -> None:
-    """Keep reusable reply line-source artifacts under the shared pmt cache."""
+    """Keep reusable reply line-source artifacts under the shared papper cache."""
     assert reply_build.LINE_SOURCE_CACHE_DIR == PMT_REPLY_LINE_SOURCE_CACHE_DIR
     assert reply_build.LINE_SOURCE_CACHE_DIR.parts[: len(PMT_CACHE_DIR.parts)] == PMT_CACHE_DIR.parts
 

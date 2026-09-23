@@ -1,4 +1,4 @@
-"""`pmt setup` command package and managed Pandoc tool helpers."""
+"""`papper setup` command package and managed Pandoc tool helpers."""
 
 from .command import SetupSettings
 from .pandoc_tools import (

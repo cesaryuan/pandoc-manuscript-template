@@ -137,6 +137,6 @@ def test_cached_typst_observes_font_file_replacement(converters, tmp_path):
     with pytest.raises(RuntimeError, match="failed to read math font"):
         converter.call(**request)
     with pytest.raises(RuntimeError, match="not installed"):
-        converter.call(operation="render_wmf", latex="x", math_font="PMT nonexistent math font 20260908")
+        converter.call(operation="render_wmf", latex="x", math_font="Papper nonexistent math font 20260908")
     font.write_bytes(original)
     assert converter.call(**request)["wmf"] == expected

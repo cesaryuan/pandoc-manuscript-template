@@ -17,11 +17,11 @@
   <rect x="0" y="0" width="1600" height="760" fill="#ffffff"/>
 
   <image href="./example.svg"
-         xlink:href="../examples/images/subfigure-a-example.png"
+         xlink:href="./subfigure-a-example.png"
          x="60" y="40" width="680" height="520"
          preserveAspectRatio="xMidYMid meet"/>
-  <image href="../examples/images/subfigure-b-example.png"
-         xlink:href="../examples/images/subfigure-b-example.png"
+  <image href="./subfigure-b-example.png"
+         xlink:href="./subfigure-b-example.png"
          x="860" y="40" width="680" height="520"
          preserveAspectRatio="xMidYMid meet"/>
 

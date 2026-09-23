@@ -127,7 +127,7 @@ We added a conventional raster figure in @fig:single-example (Line `Figure\s+\d+
 
 ![A single-figure example showing a synthetic performance trend across evaluation steps.](examples/images/single-figure-example.png){#fig:single-example width=85%}
 
-![An SVG-based multi-panel layout whose child panels are referenced by relative image paths inside the SVG file.](figures/subfigure-svg-layout-example.svg){#fig:subfigure-svg-example width=90%}
+![An SVG-based multi-panel layout whose child panels are referenced by relative image paths inside the SVG file.](examples/images/subfigure-svg-layout-example.svg){#fig:subfigure-svg-example width=90%}
 :::
 
 <br>

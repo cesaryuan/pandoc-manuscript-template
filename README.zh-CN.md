@@ -117,7 +117,7 @@ uv tool uninstall pandoc-manuscript-template
 uv tool install papper
 ```
 
-`pmt` 和 `pandoc-manuscript` 命令仍作为兼容别名提供。已有论文项目继续使用 `.pmt` 工作目录和 `PMT_*` 配置。
+`pmt` 命令仍作为兼容别名提供。已有论文项目继续使用 `.pmt` 工作目录和 `PMT_*` 配置。
 
 ## 典型工作流
 

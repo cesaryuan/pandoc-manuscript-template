@@ -249,7 +249,6 @@ jobs:
           $wheel = (Get-ChildItem dist/*.whl | Select-Object -First 1).FullName
           uv run --isolated --no-project --with $wheel papper --help
           uv run --isolated --no-project --with $wheel pmt --help
-          uv run --isolated --no-project --with $wheel pandoc-manuscript --help
           uv run --isolated --no-project --with $wheel python -c "from pandoc_manuscript.mathtype.ole_parts import check_mathtype_availability; assert check_mathtype_availability('rust').usable"
           uv run --isolated --no-project --with $wheel python -c "from pandoc_manuscript.mathtype.native import latex_to_equation, render_latex_to_wmf; assert latex_to_equation('x_1')['ole']; assert render_latex_to_wmf('x_1')['wmf']"
           if ($LASTEXITCODE -ne 0) { throw 'Packaged native library conversion failed' }

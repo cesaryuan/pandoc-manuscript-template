@@ -140,7 +140,7 @@ uv tool uninstall pandoc-manuscript-template
 uv tool install papper
 ```
 
-The `pmt` and `pandoc-manuscript` commands remain available as compatibility aliases. Existing manuscript projects keep their `.pmt` working directory and `PMT_*` settings.
+The `pmt` command remains available as a compatibility alias. Existing manuscript projects keep their `.pmt` working directory and `PMT_*` settings.
 
 ## Typical Workflow
 

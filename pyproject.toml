@@ -57,9 +57,8 @@ replace = "name = \"papper\"\nversion = \"{new_version}\""
 
 [project.scripts]
 papper = "pandoc_manuscript.cli:main"
-# Retain the existing commands so installed projects and user scripts keep working.
+# Keep pmt as a compatibility alias for existing user scripts.
 pmt = "pandoc_manuscript.cli:main"
-pandoc-manuscript = "pandoc_manuscript.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/cesaryuan/pandoc-manuscript-template"

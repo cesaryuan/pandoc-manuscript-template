@@ -29,6 +29,13 @@ $endfor$
 $if(math)$
   $math$
 $endif$
+<script>
+window.MathJax = {
+  output: {
+    fontPath: "https://cdn.jsdmirror.com/npm/@mathjax/%%FONT%%-font@%%VERSION%%"
+  }
+};
+</script>
 </head>
 <body>
 $for(include-before)$

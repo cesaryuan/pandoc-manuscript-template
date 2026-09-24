@@ -6,6 +6,7 @@ standalone: true
 data-dir: ${.}/
 # Keep the result as one portable HTML file for direct browser viewing.
 embed-resources: false
+template: ${.}/templates/default.html
 math-method:
   method: mathjax
   url: "https://cdn.jsdmirror.com/npm/mathjax@4/tex-chtml.js"

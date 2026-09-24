@@ -33,7 +33,7 @@ html[lang="zh-cn"] h6 {
 }
 body {
   margin: 0 auto;
-  max-width: $if(maxwidth)$$maxwidth$$else$36em$endif$;
+  max-width: $if(maxwidth)$$maxwidth$$else$40em$endif$;
   padding-left: $if(margin-left)$$margin-left$$else$50px$endif$;
   padding-right: $if(margin-right)$$margin-right$$else$50px$endif$;
   padding-top: $if(margin-top)$$margin-top$$else$50px$endif$;
@@ -70,6 +70,22 @@ body {
 }
 p {
   margin: 1em 0;
+  text-align: justify;
+}
+/* Keep the generated author block compact and centered like the DOCX title area. */
+.papper-authors {
+  text-align: center;
+}
+.papper-authors p {
+  text-align: center;
+}
+.papper-authors .affiliation {
+  margin: 0.15em 0;
+  line-height: 1.2;
+}
+.papper-authors .corresponding-author {
+  margin-top: 0.45em;
+  line-height: 1.3;
 }
 a {
   color: $if(linkcolor)$$linkcolor$$else$#1a1a1a$endif$;
@@ -126,7 +142,7 @@ blockquote {
 $if(abstract)$
 div.abstract {
   margin: 2em 2em 2em 2em;
-  text-align: left;
+  text-align: justify;
   font-size: 12pt;
   line-height: 1.5;
 }

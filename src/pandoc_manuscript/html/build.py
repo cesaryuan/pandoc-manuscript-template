@@ -17,6 +17,7 @@ def build_html() -> None:
         ensure_output_parent,
         load_build_metadata,
         manuscript_output_file,
+        prepare_pandoc_language,
         resource_path,
         run_pandoc,
     )
@@ -25,7 +26,9 @@ def build_html() -> None:
     log_info("\n[HTML] Building HTML...\n")
     html_file = manuscript_output_file(SETTINGS.html_dir, "html")
     ensure_output_parent(html_file)
-    effective = load_build_metadata()
+    effective, chinese_mode = prepare_pandoc_language(load_build_metadata())
+    if chinese_mode:
+        log_info("[HTML] Chinese language metadata enabled")
     source_dir = Path(SETTINGS.manuscript_file).resolve().parent
     resource_path_option = os.pathsep.join((str(source_dir), str(Path.cwd())))
     run_pandoc(

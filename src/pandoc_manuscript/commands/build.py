@@ -590,30 +590,27 @@ def is_chinese_language(language: object) -> bool:
     return normalized in {"zh", "zhcn"} or normalized.startswith("zh-")
 
 
-def prepare_docx_language(
+def prepare_pandoc_language(
     effective: EffectiveMetadata,
     lang_override: str | None = None,
+    *,
+    remove_lang: bool = False,
 ) -> tuple[EffectiveMetadata, bool]:
-    """Apply a one-build language mode and remove `lang` before Pandoc reads metadata."""
+    """Apply language-specific Pandoc metadata shared by DOCX and HTML builds."""
     if lang_override is not None:
         normalized_override = lang_override.strip().replace("_", "-").casefold()
         if normalized_override not in {"zh-cn", "zhcn"}:
-            raise ValueError("Only `--lang zh-cn` and `--lang zhcn` are currently supported for DOCX builds.")
+            raise ValueError("Only `--lang zh-cn` and `--lang zhcn` are currently supported for builds.")
         selected_language = normalized_override
     else:
         selected_language = effective.pandoc_metadata.get("lang")
 
     pandoc_metadata = dict(effective.pandoc_metadata)
-    pandoc_metadata.pop("lang", None)
-    pmt_settings = effective.pmt_settings.model_copy(deep=True)
+    if remove_lang:
+        pandoc_metadata.pop("lang", None)
+
     chinese_mode = is_chinese_language(selected_language)
     if chinese_mode:
-        # Older project templates stored '连续' explicitly; treat that stock value as a default.
-        if (
-            "docx_show_line_numbers" not in pmt_settings.model_fields_set
-            or pmt_settings.docx_show_line_numbers == "连续"
-        ):
-            pmt_settings.docx_show_line_numbers = False
         pandoc_metadata["chapters"] = True
         pandoc_metadata["chaptersDepth"] = 1
         pandoc_metadata["chapDelim"] = "-"
@@ -625,6 +622,36 @@ def prepare_docx_language(
         pandoc_metadata["secPrefix"] = "节"
         pandoc_metadata["eqnPrefix"] = "式"
         pandoc_metadata["reference-section-title"] = "参考文献"
+
+    return (
+        EffectiveMetadata(
+            pmt_settings=effective.pmt_settings,
+            pandoc_metadata=pandoc_metadata,
+            has_yaml_header=effective.has_yaml_header,
+        ),
+        chinese_mode,
+    )
+
+
+def prepare_docx_language(
+    effective: EffectiveMetadata,
+    lang_override: str | None = None,
+) -> tuple[EffectiveMetadata, bool]:
+    """Apply a one-build language mode and remove `lang` before Pandoc reads metadata."""
+    effective, chinese_mode = prepare_pandoc_language(
+        effective,
+        lang_override,
+        remove_lang=True,
+    )
+    pandoc_metadata = effective.pandoc_metadata
+    pmt_settings = effective.pmt_settings.model_copy(deep=True)
+    if chinese_mode:
+        # Older project templates stored '连续' explicitly; treat that stock value as a default.
+        if (
+            "docx_show_line_numbers" not in pmt_settings.model_fields_set
+            or pmt_settings.docx_show_line_numbers == "连续"
+        ):
+            pmt_settings.docx_show_line_numbers = False
         pmt_settings.docx_style = merge_metadata(
             pmt_settings.docx_style or {},
             CHINESE_DOCX_STYLES,
@@ -638,6 +665,7 @@ def prepare_docx_language(
         ),
         chinese_mode,
     )
+
 
 def build_docx(
     effective: EffectiveMetadata,

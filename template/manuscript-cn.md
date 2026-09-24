@@ -20,13 +20,9 @@ abstract: |
 
 keywords: [关键词一, 关键词二, 关键词三, 关键词四, 关键词五]
 
+lang: zh-CN
 # 参考文献配置
 bibliography: examples/references/sample-references.bib
-figureTitle: "图 "
-tableTitle: "表 "
-figPrefix: "图"
-tblPrefix: "表"
-titleDelim: " "
 ---
 
 # 引言 {#sec:introduction}

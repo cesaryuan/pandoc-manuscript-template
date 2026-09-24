@@ -67,7 +67,7 @@ def iter_project_template_entries(lang: str | None = None) -> Iterable[tuple[str
         (".vscode", ".vscode"),
         ("examples", "examples"),
         (".gitignore", ".gitignore"),
-        ("AGENTS.md", "AGENTS.md"),
+        # ("AGENTS.md", "AGENTS.md"),
         ("CLAUDE.md", "CLAUDE.md"),
         (manuscript_source, "manuscript.md"),
         (reply_source, "reply_to_reviewers.md"),

@@ -11,7 +11,7 @@ from .postprocess import postprocess_html
 # HTML keeps display equations as native MathML blocks instead of DOCX-style
 # equation layout tables and inline equation-number workarounds.
 HTML_EQUATION_METADATA = {
-    "equationNumberTeX": r"\tag",
+    "equationNumberTeX": "\\\\tag",
     "eqnIndexTemplate": "$$i$$",
     "eqnBlockInlineMath": False,
     "tableEqns": False,

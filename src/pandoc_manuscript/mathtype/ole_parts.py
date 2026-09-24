@@ -68,6 +68,32 @@ class FormulaPreviewError(FormulaConversionError):
     """Signal a failed latex2wmf preview so the build can retain the original formula."""
 
 
+@dataclass
+class AutoConversionState:
+    """Track auto-mode set-data failures across formulas in one build."""
+
+    set_data_failure_streak: int = 0
+    set_data_disabled: bool = False
+
+    def record_set_data_success(self) -> None:
+        """Reset the consecutive failure counter after a successful set-data conversion."""
+        self.set_data_failure_streak = 0
+
+    def record_set_data_failure(self, exc: BaseException) -> None:
+        """Disable set-data after three consecutive helper fallback failures."""
+        if exception_contains_set_data_marker(exc):
+            self.set_data_failure_streak += 1
+        else:
+            self.set_data_failure_streak = 0
+        if self.set_data_failure_streak >= 3 and not self.set_data_disabled:
+            self.set_data_disabled = True
+            log_warning(
+                "[mathtype] set-data failed with the Exception.ToString fallback "
+                "for three consecutive equations in auto mode; using Rust for the "
+                "remaining equations"
+            )
+
+
 def source_tree_path(path: str | Path) -> Path | None:
     """Resolve a repository path only when papper is running from a source checkout."""
     path = Path(path)
@@ -396,7 +422,7 @@ def resolve_auto_conversion_methods() -> tuple[MathTypeSingleConversionMethod, .
     # Only try COM-backed methods when the lightweight preflight confirms that
     # MathType and the helper are available; otherwise auto must remain portable.
     if check_mathtype_availability("set-data").usable:
-        return ("set-data", "rust-sdk", "rust")
+        return ("set-data", "rust")
     return ("rust",)
 
 
@@ -858,10 +884,15 @@ def generate_cached_equation_parts_auto(
     svg_backend: MathTypeSvgBackend = DEFAULT_MATHTYPE_SVG_BACKEND,
     math_style: MathTypeMathStyle = "display",
     math_font: str = "XITS Math",
+    state: AutoConversionState | None = None,
 ) -> tuple[int, int]:
     """Try the resolved auto backends in order until one succeeds."""
+    state = state or AutoConversionState()
     misses = 0
-    for position, method in enumerate(methods):
+    available_methods = tuple(
+        method for method in methods if not (state.set_data_disabled and method == "set-data")
+    )
+    for position, method in enumerate(available_methods):
         try:
             hit = generate_cached_equation_parts_for_method(
                 index,
@@ -882,21 +913,27 @@ def generate_cached_equation_parts_auto(
                 math_style,
                 math_font,
             )
+            if method == "set-data":
+                state.record_set_data_success()
             return int(hit), misses + int(not hit)
         except (RuntimeError, FileNotFoundError) as exc:
             misses += 1
-            if position + 1 == len(methods):
+            if method == "set-data":
+                state.record_set_data_failure(exc)
+            if position + 1 == len(available_methods):
                 if isinstance(exc, FormulaConversionError):
                     raise
                 raise RuntimeError(
-                    f"All MathType auto backends failed for equation {index}: {', '.join(methods)}"
+                    f"All MathType auto backends failed for equation {index}: {', '.join(available_methods)}"
                 ) from exc
             log_warning(
                 f"[mathtype] auto backend {method} failed for equation {index}; "
-                f"trying {methods[position + 1]}"
+                f"trying {available_methods[position + 1]}"
             )
 
-    raise RuntimeError(f"No MathType auto backend is available for equation {index}")
+    raise RuntimeError(
+        f"No MathType auto backend is available for equation {index}: {', '.join(methods)}"
+    )
 
 
 def warn_if_conversion_outputs_differ(
@@ -1287,7 +1324,7 @@ def generate_equation_parts(
     cache_hits = 0
     cache_misses = 0
     needs_helper = conversion_method in {"rust-sdk", "set-data", "both"} or any(
-        method in {"set-data", "rust-sdk"} for method in auto_methods
+        method == "set-data" for method in auto_methods
     )
     helper_digest = (
         file_sha256(HELPER_EXE)
@@ -1298,6 +1335,7 @@ def generate_equation_parts(
     rust_exe_digest = native_library_digest_for_method(conversion_method)
     set_data_failure_streak = 0
     set_data_disabled = False
+    auto_state = AutoConversionState()
     if needs_variable_sizes and prefs_template is None:
         log_warning(
             "[mathtype] warning: MathType preference template not found; "
@@ -1442,6 +1480,7 @@ def generate_equation_parts(
                     svg_backend,
                     math_style,
                     math_font,
+                    state=auto_state,
                 )
                 cache_hits += hits
                 cache_misses += misses

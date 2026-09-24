@@ -305,17 +305,18 @@ When using a custom family name, install it in every build environment.
 Changing the family or font file contents invalidates the formula preview cache.
 This controls Typst SVG/WMF previews, not editable MathType OLE font preferences.
 It has no effect on RaTeX or native MathType previews (`set-data` / `rust-sdk`).
-`auto` applies it only when using `rust`; `both` prefers the native MathType result
-and uses the Rust result if native conversion fails.
+`auto` tries native MathType `set-data` first and falls back directly to `rust`;
+`both` compares both backends, prefers the native MathType result, and uses the Rust
+result if native conversion fails.
 
 If the `mathtype-rust` native library reports a formula conversion error, the build warns with the
 exit code and LaTeX input and continues. The affected formula retains its original
-Word equation (OMML); other formulas are converted normally. In `both` mode,
-conversion continues with the `set-data` result if available. `both` mode does not
-run a separate startup probe; it tries `set-data` as each
-formula is converted. If three consecutive formulas fail with the helper message
+Word equation (OMML); other formulas are converted normally. In `both` and `auto`
+modes, conversion tries `set-data` as each formula is converted when that backend
+is available. These modes do not run a separate startup probe for the per-formula
+failure policy. If three consecutive formulas fail with the helper message
 `由于 Exception.ToString() 失败，因此无法打印异常字符串`, PMT treats set-data as
 unavailable on that computer for the remainder of the current build and uses Rust
 for subsequent formulas. A successful set-data conversion or a different failure
-resets the consecutive counter. If both backends fail for a formula, its original
-Word equation is retained. Failed conversions are not cached.
+resets the consecutive counter. If all selected backends fail for a formula, its
+original Word equation is retained. Failed conversions are not cached.

@@ -469,10 +469,7 @@
     </layout>
   </citation>
   <bibliography entry-spacing="0" et-al-min="4" et-al-use-first="3" second-field-align="flush">
-    <layout locale="en">
-      <text variable="citation-number" prefix="[" suffix="]"/>
-      <text macro="entry-layout" suffix="."/>
-    </layout>
+    <!-- Pandoc citeproc accepts one layout; the removed English layout was identical. -->
     <layout>
       <text variable="citation-number" prefix="[" suffix="]"/>
       <text macro="entry-layout" suffix="."/>

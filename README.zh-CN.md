@@ -139,9 +139,15 @@ papper build docx --lang zh-cn
 # 显式构建另一个 Markdown 文件
 papper build docx paper.md -o build/paper.docx
 
+# 构建一个资源内嵌的独立 HTML 文件
+papper build html -o build/paper.html
+
 # 构建审稿回复
 papper build-reply reply.md --reply-manuscript manuscript.md -o output/docx/reply.docx
 ```
+
+HTML 构建会执行 HTML 后处理，包括作者信息、中文嵌套编号，以及
+`!<!`/`!^!` 表格单元格合并标记。
 
 中文 DOCX 默认使用内置的《GB/T 7714—2015（顺序编码，双语，姓名不大写，无 URL、DOI）》CSL。稿件 metadata 或 `style.yml` 中显式设置的 `csl` 优先。
 
@@ -193,6 +199,7 @@ papper init my-paper
 papper setup
 papper doctor
 papper build docx
+papper build html
 papper build latex
 papper build json
 papper build-reply reply.md -o output/docx/reply.docx

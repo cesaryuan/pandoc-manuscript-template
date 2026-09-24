@@ -36,10 +36,10 @@ Papper is not just a generic Pandoc wrapper. It is a manuscript workflow with op
 - **DOCX-first workflow**: the primary target is a polished Word manuscript, not DOCX as an afterthought.
 - **AI-friendly authoring**: Markdown is easier for LLMs to generate and easier for humans to review in Git.
 - **One-command project bootstrap**: `papper init` creates a reusable paper workspace with manuscript files, style metadata, references, and agent guidance.
-- **Submission-oriented post-processing**: Papper applies DOCX-specific cleanup and formatting after Pandoc runs.
+- **Submission-oriented post-processing**: Papper applies format-specific cleanup and formatting after Pandoc runs.
 - **Reviewer reply support**: build response letters as DOCX or TXT, while resolving manuscript references and citations.
 - **Managed Pandoc tools**: if `pandoc` or `pandoc-crossref` are missing, Papper can install project-local copies under `.pmt/tools`.
-- **Optional LaTeX and JSON output**: keep a Markdown-centered workflow without giving up other export targets.
+- **Optional HTML, LaTeX, and JSON output**: keep a Markdown-centered workflow without giving up other export targets.
 
 ## What You Get
 
@@ -164,9 +164,15 @@ papper build docx --lang zh-cn
 # Build another Markdown file explicitly
 papper build docx paper.md -o build/paper.docx
 
+# Build one standalone HTML file with embedded resources
+papper build html -o build/paper.html
+
 # Build a reviewer reply
 papper build-reply reply.md --reply-manuscript manuscript.md -o output/docx/reply.docx
 ```
+
+HTML builds use the HTML post-processing pipeline for author information,
+Chinese nested numbering, and `!<!`/`!^!` table-cell merge markers.
 
 Chinese DOCX builds use the bundled GB/T 7714—2015 bilingual numeric CSL by default. An explicit `csl` in manuscript metadata or `style.yml` overrides it.
 
@@ -222,6 +228,7 @@ papper init [directory]
 papper setup
 papper doctor
 papper build docx
+papper build html
 papper build latex
 papper build json
 papper build-reply reply.md -o output/docx/reply.docx

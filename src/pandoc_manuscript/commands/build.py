@@ -39,6 +39,7 @@ from ..docx.svg_filters import (
     should_embed_docx_svg_images,
 )
 from ..docx import svg_filters as svg_filter_helpers
+from ..html.build import build_html
 from .setup import ensure_pandoc_tools, pandoc_command, pandoc_tools_env
 from .common import VerboseCommandSettings, project_directory, run_streaming_command
 
@@ -51,7 +52,7 @@ DEFAULT_OUTPUT_DIR = "output"
 DEFAULT_DOCX_CSL = "pandoc/csl/elsevier-vancouver.csl"
 DEFAULT_CHINESE_DOCX_CSL = "pandoc/csl/GB-T-7714—2015（顺序编码，双语，姓名不大写，无URL、DOI）.csl"
 PMT_CITATION_NUMBER_RANGE_DELIMITER_ENV = "PMT_CITATION_NUMBER_RANGE_DELIMITER"
-BuildTarget = Literal["docx", "latex", "json"]
+BuildTarget = Literal["docx", "latex", "html", "json"]
 BUILD_CLI_CONFIG = SettingsConfigDict(
     cli_kebab_case=True,
     cli_implicit_flags=True,
@@ -75,6 +76,7 @@ class BuildSettings(BaseSettings):
     output_dir: str = DEFAULT_OUTPUT_DIR
     docx_dir: str = "output/docx"
     latex_dir: str = "output/latex"
+    html_dir: str = "output/html"
     json_dir: str = "output/json"
     output_file: str | None = None
     enable_docx_postprocess: bool = True
@@ -103,7 +105,7 @@ class BuildCommandSettings(VerboseCommandSettings):
     output_file: str | None = Field(
         default=None,
         validation_alias=AliasChoices("o", "output-file"),
-        description="Exact output file path for DOCX, LaTeX, and JSON builds.",
+        description="Exact output file path for DOCX, LaTeX, HTML, and JSON builds.",
     )
     mathtype: bool | None = Field(
         default=None,
@@ -238,7 +240,7 @@ def configure_manuscript(markdown_path: str | Path, derive_project_name: bool = 
 
 
 def configure_output_dir(output_dir: str | Path) -> None:
-    """Configure the base output directory and derived DOCX/LaTeX directories."""
+    """Configure the base output directory and derived build target directories."""
     path = Path(output_dir)
     if path.exists() and not path.is_dir():
         raise ValueError(f"Output path exists but is not a directory: {path}")
@@ -246,6 +248,7 @@ def configure_output_dir(output_dir: str | Path) -> None:
     SETTINGS.output_dir = to_pandoc_path(path)
     SETTINGS.docx_dir = to_pandoc_path(path / 'docx')
     SETTINGS.latex_dir = to_pandoc_path(path / 'latex')
+    SETTINGS.html_dir = to_pandoc_path(path / 'html')
     SETTINGS.json_dir = to_pandoc_path(path / 'json')
 
 
@@ -788,10 +791,10 @@ def run_build_command(
 ) -> int:
     """Run the selected manuscript build target with direct settings values."""
     configure_output_file(None)
-    if target not in {"docx", "latex", "json"}:
+    if target not in {"docx", "latex", "html", "json"}:
         raise ValueError(f"Unsupported build target: {target}")
-    if output_file and target not in {"docx", "latex", "json"}:
-        raise ValueError("--output-file is only supported by the docx, latex, and json targets.")
+    if output_file and target not in {"docx", "latex", "html", "json"}:
+        raise ValueError("--output-file is only supported by the docx, latex, html, and json targets.")
     if output_file:
         configure_output_file(output_file)
 
@@ -818,6 +821,8 @@ def run_build_command(
             build_docx(effective=effective, warn_hat_order=warn_hat_order, lang=lang)
         elif target == "latex":
             build_latex()
+        elif target == "html":
+            build_html()
         else:
             build_json()
         return 0

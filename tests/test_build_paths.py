@@ -251,4 +251,4 @@ def test_mathtype_helper_paths_live_under_mathtype_package() -> None:
 
 def test_build_target_excludes_clean_commands() -> None:
     """Keep clean and distclean outside the manuscript build target union."""
-    assert set(get_args(build.BuildTarget)) == {"docx", "latex", "json"}
+    assert set(get_args(build.BuildTarget)) == {"docx", "latex", "html", "json"}

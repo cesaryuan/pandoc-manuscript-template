@@ -1,0 +1,14 @@
+# Pandoc HTML output configuration
+# Usage: pandoc --defaults pandoc-html.yml
+
+verbosity: WARNING
+standalone: true
+# Keep the result as one portable HTML file for direct browser viewing.
+embed-resources: true
+html-math-method: mathml
+
+# Filters are applied in order so cross-references and citations are resolved
+# before Pandoc writes the standalone HTML document.
+filters:
+  - pandoc-crossref
+  - citeproc

@@ -154,6 +154,9 @@ papper doctor
 # Build the main manuscript
 papper build docx
 
+# Build a Chinese-primary DOCX with chapter-numbered figures and tables
+papper build docx --lang zh-cn
+
 # Build another Markdown file explicitly
 papper build docx paper.md -o build/paper.docx
 

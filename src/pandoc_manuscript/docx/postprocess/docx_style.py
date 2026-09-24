@@ -13,6 +13,8 @@ Supported metadata:
     docxStyle:
       '正文文本':
         fontSize: 小五
+        fontFamily: 宋体
+        bold: false
         fontColor: '#000000'
         lineSpacing: 1.5
         alignment: justify
@@ -313,6 +315,19 @@ def normalize_paragraph_style_settings(
     after_value = first_present(spacing, ("after", "spaceAfter", "space-after", "space_after"))
     font_size_value = first_present(raw_settings, ("fontSize", "font-size", "font_size"))
     font_size_value = font_size_value if font_size_value is not None else first_present(font, ("size", "fontSize", "font-size"))
+    font_family_value = first_present(
+        raw_settings,
+        ("fontFamily", "font-family", "font_family", "fontName", "font-name", "font_name"),
+    )
+    font_family_value = font_family_value if font_family_value is not None else first_present(
+        font,
+        ("family", "name", "fontFamily", "font-family", "fontName", "font-name"),
+    )
+    bold_value = first_present(raw_settings, ("bold", "fontBold", "font-bold", "font_bold"))
+    bold_value = bold_value if bold_value is not None else first_present(
+        font,
+        ("bold", "fontBold", "font-bold", "font_bold"),
+    )
     font_color_value = first_present(raw_settings, ("fontColor", "font-color", "font_color", "color"))
     font_color_value = font_color_value if font_color_value is not None else first_present(font, ("color", "fontColor", "font-color"))
     line_spacing_value = first_present(raw_settings, ("lineSpacing", "line-spacing", "line_spacing"))
@@ -337,6 +352,17 @@ def normalize_paragraph_style_settings(
         if font_size_pt <= 0:
             raise ValueError(f"{field_prefix}.fontSize must be greater than 0")
         normalized["font_size_pt"] = font_size_pt
+    if font_family_value is not None:
+        if not isinstance(font_family_value, str) or not font_family_value.strip():
+            raise ValueError(f"{field_prefix}.fontFamily must be a non-empty font name")
+        normalized["font_family"] = font_family_value.strip()
+    if bold_value is not None:
+        if isinstance(bold_value, bool):
+            normalized["bold"] = bold_value
+        elif isinstance(bold_value, str) and bold_value.strip().casefold() in {"true", "false"}:
+            normalized["bold"] = bold_value.strip().casefold() == "true"
+        else:
+            raise ValueError(f"{field_prefix}.bold must be true or false")
     if font_color_value is not None:
         normalized["font_color_rgb"] = parse_font_color(font_color_value, f"{field_prefix}.fontColor")
     if line_spacing_value is not None:
@@ -451,6 +477,16 @@ def apply_paragraph_style_settings(doc: DocumentObject, settings: dict[str, Any]
 
     if "font_size_pt" in settings:
         style.font.size = Pt(settings["font_size_pt"])
+    if "font_family" in settings:
+        style.font.name = settings["font_family"]
+        r_fonts = style.element.get_or_add_rPr().get_or_add_rFonts()
+        for script in ("ascii", "hAnsi", "eastAsia", "cs"):
+            r_fonts.set(qn(f"w:{script}"), settings["font_family"])
+        for theme in ("asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme"):
+            r_fonts.attrib.pop(qn(f"w:{theme}"), None)
+    if "bold" in settings:
+        style.font.bold = settings["bold"]
+        style.element.get_or_add_rPr().get_or_add_bCs().val = settings["bold"]
     if "font_color_rgb" in settings:
         red, green, blue = settings["font_color_rgb"]
         style.font.color.rgb = RGBColor(red, green, blue)
@@ -492,6 +528,10 @@ def format_applied_style_summary(applied: dict[str, Any]) -> str:
     if "font_color_rgb" in applied:
         red, green, blue = applied["font_color_rgb"]
         details.append(f"font color #{red:02X}{green:02X}{blue:02X}")
+    if "font_family" in applied:
+        details.append(f"font family {applied['font_family']}")
+    if "bold" in applied:
+        details.append(f"bold {str(applied['bold']).lower()}")
     if "line_spacing_display" in applied:
         details.append(f"line spacing {applied['line_spacing_display']}")
     if "alignment_display" in applied:

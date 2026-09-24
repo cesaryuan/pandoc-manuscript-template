@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import tempfile
 from typing import Any, Literal
 
 import yaml
@@ -474,6 +475,57 @@ def write_pandoc_metadata(metadata: dict[str, Any], output_path: str | Path) -> 
         encoding="utf-8",
     )
     return path
+
+
+def write_markdown_without_lang(markdown_path: str | Path) -> Path | None:
+    """Write a temporary source copy without its Pandoc `lang` metadata, if present."""
+    source = Path(markdown_path).resolve()
+    content = source.read_text(encoding="utf-8")
+    match = re.match(
+        r"\A(?P<opening>---[ \t]*\r?\n)(?P<header>.*?)(?P<closing>\r?\n---[ \t]*)(?P<newline>\r?\n|$)",
+        content,
+        re.DOTALL,
+    )
+    if match is None:
+        return None
+
+    metadata = yaml.safe_load(match.group("header")) or {}
+    if not isinstance(metadata, dict):
+        raise ValueError(f"YAML front matter must be a mapping: {source}")
+    if "lang" not in metadata:
+        return None
+
+    # Preserve the rest of the YAML header byte-for-byte so temporary Pandoc
+    # input does not reserialize Markdown-rich values or change YAML quoting.
+    node = yaml.compose(match.group("header"))
+    if not isinstance(node, yaml.MappingNode):
+        raise ValueError(f"YAML front matter must be a mapping: {source}")
+    header_lines = match.group("header").splitlines(keepends=True)
+    for key, value in node.value:
+        if isinstance(key, yaml.ScalarNode) and key.value == "lang":
+            start_line = key.start_mark.line
+            end_line = max(start_line + 1, value.end_mark.line + (value.end_mark.column > 0))
+            del header_lines[start_line:end_line]
+            break
+    header = "".join(header_lines).rstrip("\r\n")
+    sanitized = (
+        match.group("opening")
+        + header
+        + match.group("closing")
+        + match.group("newline")
+        + content[match.end():]
+    )
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        newline="",
+        prefix=f".{source.stem}.pmt-no-lang-",
+        suffix=source.suffix,
+        dir=source.parent,
+        delete=False,
+    ) as temporary:
+        temporary.write(sanitized)
+    return Path(temporary.name)
 
 
 def load_effective_metadata(

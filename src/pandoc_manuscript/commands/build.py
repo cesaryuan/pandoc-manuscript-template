@@ -9,11 +9,18 @@ from pathlib import Path
 from typing import Any, Literal, Tuple
 
 from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings, CliPositionalArg, CliSuppress, SettingsConfigDict
+from pydantic_settings import BaseSettings, CliPositionalArg, CliSuppress, PydanticBaseSettingsSource, SettingsConfigDict
 
 from ..runtime.logging import log_error, log_info, log_success, log_warning, log_debug
 from ..mathtype.preflight import warn_mathtype_hat_style_order
-from ..runtime.metadata import EffectiveMetadata, PmtSettings, load_effective_metadata, write_pandoc_metadata
+from ..runtime.metadata import (
+    EffectiveMetadata,
+    PmtSettings,
+    load_effective_metadata,
+    merge_metadata,
+    write_markdown_without_lang,
+    write_pandoc_metadata,
+)
 from ..mathtype.convert_marked_docx import convert_marked_docx
 from ..mathtype.ole_parts import check_mathtype_availability, normalize_conversion_method
 from ..runtime.paths import (
@@ -101,11 +108,27 @@ class BuildCommandSettings(VerboseCommandSettings):
         default=None,
         description=PmtSettings.model_fields["mathtype"].description,
     )
+    lang: str | None = Field(
+        default=None,
+        description="One-build language mode for DOCX (currently zh-cn).",
+    )
     project_dir: Path = Field(default=Path("."), description="Manuscript project directory.")
     reference_doc: CliSuppress[str | None] = Field(
         default=None,
         description="Override the bundled DOCX reference document.",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Use parsed CLI values only, so ambient LANG cannot override manuscript metadata."""
+        return (init_settings,)
 
     def run(self) -> int:
         """Run the selected build target."""
@@ -122,6 +145,7 @@ class BuildCommandSettings(VerboseCommandSettings):
                     output_file=self.output_file,
                     reference_doc=self.reference_doc,
                     mathtype=self.mathtype,
+                    lang=self.lang,
                 )
             )
 
@@ -452,6 +476,7 @@ def run_pandoc(
     extra_env: dict[str, str] | None = None,
     sync_docx_layout: bool = False,
     use_mathtype: bool = False,
+    input_file: str | Path | None = None,
 ) -> None:
     """Run Pandoc with original defaults so ${.} resolves beside that file."""
     extra_args = extra_args or []
@@ -468,7 +493,7 @@ def run_pandoc(
         '--output',
         to_pandoc_path(output_file),
         *extra_args,
-        SETTINGS.manuscript_file,
+        to_pandoc_path(Path(input_file)) if input_file is not None else SETTINGS.manuscript_file,
     ]
     filter_env = pandoc_filter_env(effective.pmt_settings)
     run_command(
@@ -541,13 +566,76 @@ def csl_args(pandoc_metadata: dict[str, Any]) -> list[str]:
         return ['--csl', str(csl)]
     return ['--csl', to_pandoc_path(default_docx_csl())]
 
+
+CHINESE_DOCX_STYLES = {
+    "标题": {"fontFamily": "黑体", "bold": False},
+    "副标题": {"fontFamily": "黑体", "bold": False},
+    "标题 1": {"fontFamily": "黑体", "bold": False},
+    "标题 2": {"fontFamily": "黑体", "bold": False},
+    "标题 3": {"fontFamily": "黑体", "bold": False},
+}
+
+
+def is_chinese_language(language: object) -> bool:
+    """Return whether a Pandoc language tag identifies Chinese text."""
+    if not isinstance(language, str):
+        return False
+    normalized = language.strip().replace("_", "-").casefold()
+    return normalized == "zh" or normalized.startswith("zh-")
+
+
+def prepare_docx_language(
+    effective: EffectiveMetadata,
+    lang_override: str | None = None,
+) -> tuple[EffectiveMetadata, bool]:
+    """Apply a one-build language mode and remove `lang` before Pandoc reads metadata."""
+    if lang_override is not None:
+        normalized_override = lang_override.strip().replace("_", "-").casefold()
+        if normalized_override != "zh-cn":
+            raise ValueError("Only `--lang zh-cn` is currently supported for DOCX builds.")
+        selected_language = normalized_override
+    else:
+        selected_language = effective.pandoc_metadata.get("lang")
+
+    pandoc_metadata = dict(effective.pandoc_metadata)
+    pandoc_metadata.pop("lang", None)
+    pmt_settings = effective.pmt_settings.model_copy(deep=True)
+    chinese_mode = is_chinese_language(selected_language)
+    if chinese_mode:
+        pandoc_metadata["chapters"] = True
+        pandoc_metadata["chaptersDepth"] = 1
+        pandoc_metadata["chapDelim"] = "-"
+        pmt_settings.docx_style = merge_metadata(
+            pmt_settings.docx_style or {},
+            CHINESE_DOCX_STYLES,
+        )
+
+    return (
+        EffectiveMetadata(
+            pmt_settings=pmt_settings,
+            pandoc_metadata=pandoc_metadata,
+            has_yaml_header=effective.has_yaml_header,
+        ),
+        chinese_mode,
+    )
+
 def build_docx(
     effective: EffectiveMetadata,
     *,
     warn_hat_order: bool = True,
+    lang: str | None = None,
 ) -> None:
     """Generate DOCX file with optional post-processing."""
     log_debug("[DOCX] Building DOCX...\n")
+
+    metadata_language = effective.pandoc_metadata.get("lang")
+    effective, chinese_mode = prepare_docx_language(effective, lang)
+    if lang is not None:
+        log_debug(f"[DEBUG] Command-line DOCX language mode: {lang}")
+    elif metadata_language is not None:
+        log_debug(f"[DEBUG] DOCX language mode from Pandoc metadata: {metadata_language}")
+    if chinese_mode:
+        log_info("[INFO] Chinese DOCX mode enabled: chapter-numbered figures/tables and non-bold heading styles")
 
     docx_file = manuscript_output_file(SETTINGS.docx_dir, "docx")
     ensure_output_parent(docx_file)
@@ -592,15 +680,21 @@ def build_docx(
         pandoc_env["PMT_ENABLE_MATHTYPE_MARKERS"] = "true"
 
     # Run pandoc
-    run_pandoc(
-        resource_path('pandoc/pandoc-docx.yml'),
-        pandoc_output,
-        effective,
-        extra_args=extra_args,
-        extra_env=pandoc_env,
-        sync_docx_layout=True,
-        use_mathtype=use_mathtype,
-    )
+    sanitized_input = write_markdown_without_lang(SETTINGS.manuscript_file)
+    try:
+        run_pandoc(
+            resource_path('pandoc/pandoc-docx.yml'),
+            pandoc_output,
+            effective,
+            extra_args=extra_args,
+            extra_env=pandoc_env,
+            sync_docx_layout=True,
+            use_mathtype=use_mathtype,
+            input_file=sanitized_input,
+        )
+    finally:
+        if sanitized_input is not None:
+            sanitized_input.unlink(missing_ok=True)
 
     # Post-process DOCX if enabled
     if SETTINGS.enable_docx_postprocess:
@@ -671,6 +765,7 @@ def run_build_command(
     reference_doc: str | None = None,
     warn_hat_order: bool = True,
     mathtype: bool | None = None,
+    lang: str | None = None,
 ) -> int:
     """Run the selected manuscript build target with direct settings values."""
     configure_output_file(None)
@@ -689,6 +784,8 @@ def run_build_command(
         raise ValueError("--reference-doc is only supported by the docx target.")
     if mathtype is not None and target != "docx":
         raise ValueError("--mathtype/--no-mathtype is only supported by the docx target.")
+    if lang is not None and target != "docx":
+        raise ValueError("--lang is only supported by the docx target.")
     configure_reference_doc(reference_doc)
 
     configure_manuscript(manuscript_arg or SETTINGS.manuscript_file, derive_project_name=bool(manuscript_arg))
@@ -699,7 +796,7 @@ def run_build_command(
             if mathtype is not None:
                 effective.pmt_settings.mathtype = mathtype
                 log_debug(f"[DEBUG] Command-line MathType setting: mathtype: {str(mathtype).lower()}")
-            build_docx(effective=effective, warn_hat_order=warn_hat_order)
+            build_docx(effective=effective, warn_hat_order=warn_hat_order, lang=lang)
         elif target == "latex":
             build_latex()
         else:

@@ -131,6 +131,9 @@ papper doctor
 # 构建主稿
 papper build docx
 
+# 构建中文主稿，图表按章节编号
+papper build docx --lang zh-cn
+
 # 显式构建另一个 Markdown 文件
 papper build docx paper.md -o build/paper.docx
 

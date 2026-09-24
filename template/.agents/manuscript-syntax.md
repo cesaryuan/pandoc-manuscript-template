@@ -616,10 +616,20 @@ For a one-off DOCX build, the command line can override the top-level
 ```powershell
 papper build docx --mathtype
 papper build docx --no-mathtype
+papper build docx --lang zh-cn
 ```
 
 The command-line value has higher priority than `style.yml`. These flags apply
 only to `papper build docx`.
+
+`--lang zh-cn` marks this DOCX build as Chinese-primary. It enables chapter
+numbering for cross-referenced items (`图 3-1`, `表 3-1`) and sets the `标题`,
+`副标题`, and `标题 1`–`标题 3` DOCX styles to 黑体 without bold. If the command
+line option is omitted, `pandocMetadata.lang` from the manuscript or style file
+selects the language mode. Papper removes `lang` from the metadata passed to
+Pandoc and, when it appears in the manuscript header, uses a temporary cleaned
+Markdown copy to avoid Pandoc localization warnings; the original Markdown is
+unchanged. `--lang` currently accepts `zh-cn` and applies only to DOCX builds.
 
 Common Chinese built-in names such as `标题 1`, `正文文本`, and `正文` are automatically mapped to the corresponding Word built-in style names like `Heading 1`, `Body Text`, and `Normal`. Custom styles still need to use their exact DOCX style names.
 
@@ -636,6 +646,8 @@ Use point values for paragraph spacing, such as `6pt`. The first-line indent is 
 
 Common style fields under `docxStyle` include:
 
+- `fontFamily`: font family such as `黑体` or `宋体`
+- `bold`: `true` or `false`
 - `fontSize`: font size such as `10.5pt` or Chinese Word sizes like `小五` and `四号`
 - `fontColor`: font color such as `#000000` or `rgb(0, 0, 0)`
 - `lineSpacing`: paragraph line spacing such as `1.5` or `18pt`

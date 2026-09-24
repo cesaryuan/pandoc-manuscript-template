@@ -671,6 +671,10 @@ def build_docx(
         warn_mathtype_hat_style_order(Path(SETTINGS.manuscript_file))
     pandoc_output = docx_file
     pandoc_env = {}
+    if chinese_mode:
+        # The language metadata is removed from the temporary DOCX input, so
+        # pass the selected language mode explicitly to the shared AST filter.
+        pandoc_env["PMT_CHINESE_MODE"] = "true"
     extra_args.extend(docx_reference_doc_args(pmt_settings))
     extra_args.extend(docx_metadata_filter_args())
 
@@ -728,7 +732,6 @@ def build_docx(
             str(postprocess_target),
             pmt_settings=pmt_settings,
             pandoc_metadata=effective.pandoc_metadata,
-            chinese_mode=chinese_mode,
         ):
             raise RuntimeError("DOCX post-processing failed")
 

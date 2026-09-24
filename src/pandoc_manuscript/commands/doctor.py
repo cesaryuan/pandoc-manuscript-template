@@ -69,9 +69,26 @@ class DoctorSettings(VerboseCommandSettings):
                 ("papper package build module", True, "pandoc_manuscript.commands.build"),
                 ("papper pandoc defaults", (root / "pandoc" / "pandoc-docx.yml").exists(), str(root / "pandoc")),
                 (
+                    "papper HTML defaults",
+                    (root / "pandoc" / "pandoc-html.yml").exists(),
+                    str(root / "pandoc" / "pandoc-html.yml"),
+                ),
+                (
                     "papper DOCX metadata filter",
                     (root / "pandoc" / "filters" / "docx_metadata.lua").exists(),
                     str(root / "pandoc" / "filters" / "docx_metadata.lua"),
+                ),
+                (
+                    "papper shared AST filters",
+                    all(
+                        (root / "pandoc" / "filters" / name).exists()
+                        for name in (
+                            "normalize_chinese_numbering.lua",
+                            "merge_table_cells.lua",
+                            "inline_math_spacing.lua",
+                        )
+                    ),
+                    str(root / "pandoc" / "filters"),
                 ),
                 ("project directory", project_dir.exists(), str(project_dir)),
                 ("project manuscript.md", (project_dir / "manuscript.md").exists(), str(project_dir / "manuscript.md")),

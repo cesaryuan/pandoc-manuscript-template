@@ -37,7 +37,6 @@ except ImportError:
 # Import processing modules
 try:
     from .common import print_error, print_debug_success, print_warning
-    from .merge_table_cells import merge_table_cells
     from .process_equation_metadata import process_equation_metadata
     from .process_table_metadata import process_table_metadata
     from .autofit_tables import autofit_tables
@@ -47,17 +46,14 @@ try:
     from .clear_subfigure_table_format import clear_subfigure_table_format
     from .format_equation_layout_tables import format_equation_layout_tables
     from .docx_style import apply_docx_style_settings, format_applied_style_summary
-    from .inline_math_spacing import add_space_after_standalone_inline_math
     from .line_numbers import apply_line_number_settings
     from .page_numbers import apply_page_number_settings
     from .where_paragraph_style import process_where_paragraph_styles
     from .reply_blue_italic_style import apply_reply_blue_italic_style
-    from .chinese_numbering import normalize_chinese_numbering
 except ImportError as e:
     print(f"Error: Failed to import processing modules: {e}")
     print("Make sure the pandoc_manuscript package is installed with its postprocess modules:")
     print("  - metadata.py")
-    print("  - merge_table_cells.py")
     print("  - process_equation_metadata.py")
     print("  - process_table_metadata.py")
     print("  - autofit_tables.py")
@@ -68,7 +64,6 @@ except ImportError as e:
     print("  - clear_subfigure_table_format.py")
     print("  - format_equation_layout_tables.py")
     print("  - docx_style.py")
-    print("  - inline_math_spacing.py")
     print("  - line_numbers.py")
     print("  - page_numbers.py")
     print("  - where_paragraph_style.py")
@@ -97,7 +92,6 @@ def postprocess_docx(
     *,
     pmt_settings: PmtSettings | None = None,
     pandoc_metadata: dict[str, Any] | None = None,
-    chinese_mode: bool = False,
     skip_author_info: bool = False,
     reply_style_formatting: bool = False,
 ) -> bool:
@@ -108,7 +102,6 @@ def postprocess_docx(
         docx_path: Path to the DOCX file to process
         pmt_settings: Typed Papper-owned DOCX and build settings
         pandoc_metadata: Manuscript metadata such as authors and affiliations
-        chinese_mode: Normalize Chinese heading and section-reference numbering
         skip_author_info: Skip author insertion for non-manuscript outputs
         reply_style_formatting: Apply reply-only blue formatting
 
@@ -164,16 +157,6 @@ def postprocess_docx(
             for applied in result["applied"]:
                 print_debug_success(format_applied_style_summary(applied))
 
-        def normalize_chinese_numbering_step() -> None:
-            """Normalize crossref's hyphenated nested numbers for Chinese DOCX output."""
-            if not chinese_mode:
-                return
-            result = normalize_chinese_numbering(doc)
-            print_debug_success(
-                f"Chinese numbering: headings={result['headings']}, "
-                f"section references={result['section_references']}"
-            )
-
         def apply_line_number_step() -> None:
             """Apply merged YAML line-number metadata to all DOCX sections."""
             result = apply_line_number_settings(doc, pmt_settings)
@@ -192,11 +175,6 @@ def postprocess_docx(
                 "Page numbers: "
                 + ", ".join(f"{key}={str(value).lower()}" for key, value in result.items())
             )
-
-        def merge_table_cells_step() -> None:
-            """Merge table cells marked with left/up merge placeholders."""
-            left_merges, up_merges = merge_table_cells(doc)
-            print_debug_success(f"Left merges: {left_merges}, Up merges: {up_merges}")
 
         def process_table_metadata_step() -> None:
             """Apply Pandoc table attributes and report the applied setting count."""
@@ -254,11 +232,6 @@ def postprocess_docx(
                 return
             print_debug_success(f"Styled {where_count} paragraph(s) as 'Where Paragraph'")
 
-        def add_inline_math_spacing_step() -> None:
-            """Add a trailing space to standalone inline math paragraphs for Word rendering."""
-            fixed_count = add_space_after_standalone_inline_math(doc)
-            print_debug_success(f"Fixed {fixed_count} standalone inline math paragraph(s)")
-
         def apply_reply_blue_italic_style_step() -> None:
             """Apply reply-only blue formatting in one post-processing step."""
             stats = apply_reply_blue_italic_style(doc)
@@ -273,10 +246,8 @@ def postprocess_docx(
         pipeline_steps: list[tuple[str, Callable[[], None]]] = [
             # Metadata-driven document-wide settings must run before table-specific cleanup.
             ("Applying DOCX style metadata", apply_docx_style_step),
-            ("Normalizing Chinese heading numbering", normalize_chinese_numbering_step),
             ("Applying line-number metadata", apply_line_number_step),
             ("Applying page-number metadata", apply_page_number_step),
-            ("Merging table cells", merge_table_cells_step),
             ("Clearing subfigure table formatting", clear_subfigure_table_format_step),
             ("Converting table text style", convert_table_text_style_step),
             ("Applying post-table paragraph style", apply_para_after_table_style_step),
@@ -286,7 +257,6 @@ def postprocess_docx(
             ("Formatting equation layout tables", format_equation_layout_tables_step),
             ("Applying tab-layout equation paragraph style", apply_para_equation_style_step),
             ("Applying where paragraph style", apply_where_paragraph_style_step),
-            ("Adding spaces after standalone inline math", add_inline_math_spacing_step),
         ]
         if reply_style_formatting:
             pipeline_steps.append(("Applying reply-only blue formatting", apply_reply_blue_italic_style_step))
@@ -326,7 +296,6 @@ Processing steps:
   - Apply DOCX paragraph styles from Papper settings (if configured)
   - Apply line numbers from Papper settings (if configured)
   - Apply page numbers from Papper settings (if configured)
-  - Merge table cells based on markers (!<! and !^!)
   - Clear formatting for tables above 'Image Caption' paragraphs
   - Convert table text style from 'Compact' to 'Table Text'
   - Apply 'Para After Table' style to body paragraphs after tables
@@ -335,7 +304,6 @@ Processing steps:
   - Format equation layout tables
   - Apply 'Para Equation' to tab-layout equations (0.5 line after, single spacing)
   - Apply 'Where Paragraph' style after equation paragraphs
-  - Add trailing spaces after standalone inline math
   - Optionally apply reply-only blue formatting
 
 This script applies all post-processing steps in sequence.

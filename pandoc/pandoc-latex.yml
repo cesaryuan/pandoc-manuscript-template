@@ -11,6 +11,8 @@ number-sections: true
 # Filters are applied in order
 filters:
   - pandoc-crossref  # Must come before citeproc for cross-references
+  - ${.}/filters/normalize_chinese_numbering.lua
+  - ${.}/filters/merge_table_cells.lua
   - ${.}/filters/emf_to_pdf.py    # Converts EMF images to PDF for LaTeX
   - ${.}/filters/resource_move.py # Copies resources to output directory
   - ${.}/filters/table_convert.py # Converts tables to LaTeX format

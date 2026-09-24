@@ -146,8 +146,12 @@ papper build html -o build/paper.html
 papper build-reply reply.md --reply-manuscript manuscript.md -o output/docx/reply.docx
 ```
 
-HTML 构建会执行 HTML 后处理，包括作者信息、中文嵌套编号，以及
-`!<!`/`!^!` 表格单元格合并标记。
+HTML 构建使用通用 Pandoc filter 处理中文嵌套编号和
+`!<!`/`!^!` 表格单元格合并，再通过 HTML 后处理插入作者信息。DOCX
+还使用通用 AST filter 处理独立行内公式的尾部空格。
+三线表外观来自 Pandoc 内置的 standalone HTML CSS。直接运行 Pandoc
+时需要加 `-s`/`--standalone` 才会把这段 CSS 写入文件；不加时只会输出
+HTML 片段。
 
 中文 DOCX 默认使用内置的《GB/T 7714—2015（顺序编码，双语，姓名不大写，无 URL、DOI）》CSL。稿件 metadata 或 `style.yml` 中显式设置的 `csl` 优先。
 

@@ -15,7 +15,6 @@ def build_html() -> None:
     from ..commands.build import (
         SETTINGS,
         ensure_output_parent,
-        is_chinese_language,
         load_build_metadata,
         manuscript_output_file,
         resource_path,
@@ -38,6 +37,5 @@ def build_html() -> None:
     postprocess_html(
         html_file,
         pandoc_metadata=effective.pandoc_metadata,
-        chinese_mode=is_chinese_language(effective.pandoc_metadata.get("lang")),
     )
     log_success(f"\n[OK] HTML created: {html_file}")

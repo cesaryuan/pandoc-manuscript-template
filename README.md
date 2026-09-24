@@ -171,8 +171,13 @@ papper build html -o build/paper.html
 papper build-reply reply.md --reply-manuscript manuscript.md -o output/docx/reply.docx
 ```
 
-HTML builds use the HTML post-processing pipeline for author information,
-Chinese nested numbering, and `!<!`/`!^!` table-cell merge markers.
+HTML builds use the shared Pandoc filters for Chinese nested numbering and
+`!<!`/`!^!` table-cell merge markers, plus HTML post-processing for author
+information. DOCX also uses the shared AST filter for standalone inline-math
+spacing before Word conversion.
+The three-line table appearance comes from Pandoc's built-in standalone HTML
+CSS. A direct Pandoc command needs `-s`/`--standalone` to include that CSS;
+without it, Pandoc writes only an HTML fragment.
 
 Chinese DOCX builds use the bundled GB/T 7714—2015 bilingual numeric CSL by default. An explicit `csl` in manuscript metadata or `style.yml` overrides it.
 

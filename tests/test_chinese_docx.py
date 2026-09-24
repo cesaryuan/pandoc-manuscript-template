@@ -62,7 +62,6 @@ def test_chinese_docx_build_numbers_figures_tables_and_formats_headings(
         "---\n"
         + (f"lang: {metadata_lang}\n" if metadata_lang is not None else "")
         + "title: 中文标题\n"
-        "figureTitle: 图\ntableTitle: 表\ntitleDelim: ' '\n"
         "references:\n"
         "  - id: csl-sample\n"
         "    type: article-journal\n"

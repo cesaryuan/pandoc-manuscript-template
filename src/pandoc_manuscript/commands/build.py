@@ -614,6 +614,11 @@ def prepare_docx_language(
         pandoc_metadata["chapters"] = True
         pandoc_metadata["chaptersDepth"] = 1
         pandoc_metadata["chapDelim"] = "-"
+        pandoc_metadata["figureTitle"] = "图 "
+        pandoc_metadata["tableTitle"] = "表 "
+        pandoc_metadata["figPrefix"] = "图"
+        pandoc_metadata["tblPrefix"] = "表"
+        pandoc_metadata["titleDelim"] = " "
         pandoc_metadata["secPrefix"] = "节"
         pandoc_metadata["eqnPrefix"] = "式"
         pandoc_metadata["reference-section-title"] = "参考文献"

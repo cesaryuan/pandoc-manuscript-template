@@ -50,12 +50,17 @@ def test_crossref_asset_selection_uses_platform_preferences(monkeypatch) -> None
 
 
 def test_pandoc_tools_env_prepends_managed_bin(monkeypatch, tmp_path) -> None:
-    """Expose .pmt/tools/bin to Pandoc so managed filters are discoverable."""
+    """Expose managed tools and the active Windows Python to Pandoc."""
     monkeypatch.chdir(tmp_path)
 
     env = tools.pandoc_tools_env({"PATH": "base"})
 
-    assert env["PATH"].split(tools.os.pathsep)[0] == str((tmp_path / PMT_TOOLS_BIN_DIR).resolve())
+    path_entries = env["PATH"].split(tools.os.pathsep)
+    if tools.os.name == "nt":
+        assert path_entries[0] == str(Path(tools.sys.executable).parent)
+        assert path_entries[1] == str((tmp_path / PMT_TOOLS_BIN_DIR).resolve())
+    else:
+        assert path_entries[0] == str((tmp_path / PMT_TOOLS_BIN_DIR).resolve())
     assert env["PATH"].endswith("base")
 
 

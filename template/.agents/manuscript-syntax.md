@@ -626,12 +626,16 @@ only to `papper build docx`.
 numbering for cross-referenced items (`图 3-1`, `表 3-1`) and sets the `标题`,
 `副标题`, and `标题 1`–`标题 3` DOCX styles to 黑体 for Chinese text and Times New
 Roman for Western text, without bold. Headings keep dotted numbers such as
-`3.1`. If the command
+`3.1`; section and equation references use `节` and `式`. The DOCX post-processing
+step changes nested heading numbers and `节 3-1` references to dotted notation
+without changing the figure/table numbering. If the command
 line option is omitted, `pandocMetadata.lang` from the manuscript or style file
 selects the language mode. Papper removes `lang` from the metadata passed to
 Pandoc and, when it appears in the manuscript header, uses a temporary cleaned
 Markdown copy to avoid Pandoc localization warnings; the original Markdown is
 unchanged. The `build docx` `--lang` option currently accepts `zh-cn` or `zhcn`.
+Chinese DOCX builds use the bundled GB/T 7714—2015 bilingual numeric CSL by
+default. An explicit `csl` in manuscript metadata or `style.yml` takes priority.
 
 To initialize a project with the translated Chinese manuscript and reviewer
 reply starters, use:

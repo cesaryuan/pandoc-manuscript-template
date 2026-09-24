@@ -76,6 +76,8 @@ replacement, so an interrupted build can be rerun. Invalid cached archives are
 discarded and downloaded again once; unusable managed executables are reinstalled.
 Bundled Python filters, including the compatibility `to_mathbfit` filter, run with
 Papper's Python interpreter and its installed dependencies.
+On Windows, Papper puts that interpreter first on Pandoc's `PATH` and runs the
+Python filters directly, including for manuscript projects on UNC network paths.
 
 Tool downloads automatically use `HTTPS_PROXY` (or `https_proxy`) when set,
 otherwise the configured Windows/macOS system HTTP/HTTPS proxy, and otherwise
@@ -156,7 +158,7 @@ papper doctor
 # Build the main manuscript
 papper build docx
 
-# Build a Chinese-primary DOCX with chapter-numbered figures and tables
+# Build a Chinese-primary DOCX with localized cross-references and chapter-numbered figures/tables
 papper build docx --lang zh-cn
 
 # Build another Markdown file explicitly
@@ -165,6 +167,8 @@ papper build docx paper.md -o build/paper.docx
 # Build a reviewer reply
 papper build-reply reply.md --reply-manuscript manuscript.md -o output/docx/reply.docx
 ```
+
+Chinese DOCX builds use the bundled GB/T 7714—2015 bilingual numeric CSL by default. An explicit `csl` in manuscript metadata or `style.yml` overrides it.
 
 ## Standout Features
 

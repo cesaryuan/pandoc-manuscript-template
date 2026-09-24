@@ -214,15 +214,18 @@ def test_svg_to_png_size_controls_are_mutually_exclusive(monkeypatch, metadata: 
         PmtSettings.model_validate(metadata)
 
 
-def test_python_filter_wrapper_uses_pmt_work_dir(monkeypatch, tmp_path) -> None:
-    """Place generated Pandoc filter launchers under the papper work directory."""
+def test_python_filter_launcher_path(monkeypatch, tmp_path) -> None:
+    """Use the source filter directly on Windows and a generated launcher elsewhere."""
     filter_path = tmp_path / "filter.py"
     filter_path.write_text("print('ok')\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     wrapper = build.python_filter_wrapper(filter_path, "sample_filter")
 
-    assert wrapper.parts[: len(PMT_WORK_DIR.parts)] == PMT_WORK_DIR.parts
+    if os.name == "nt":
+        assert wrapper == filter_path.resolve()
+    else:
+        assert wrapper.parts[: len(PMT_WORK_DIR.parts)] == PMT_WORK_DIR.parts
 
 
 def test_reply_line_source_cache_uses_pmt_cache() -> None:

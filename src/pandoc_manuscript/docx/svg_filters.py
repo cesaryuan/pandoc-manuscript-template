@@ -54,25 +54,20 @@ def should_embed_docx_svg_images(settings: PmtSettings) -> bool:
 
 
 def python_filter_wrapper(filter_path: Path, name: str) -> Path:
-    """Create a Pandoc filter wrapper that runs with pmt's Python interpreter.
+    """Return a Pandoc filter launcher that uses pmt's Python interpreter.
 
     Pandoc executes JSON filters as external programs. Installed package data
     filters may otherwise run under a system Python that cannot import pmt's
     dependencies, which caused the SVG filter to miss panflute in uv tool installs.
     """
+    filter_path = filter_path.resolve()
+    if os.name == "nt":
+        # Pandoc runs .py filters with python from PATH on Windows. Avoiding a
+        # cmd wrapper also preserves UNC working directories for the filter.
+        return filter_path
+
     wrapper_dir = PMT_FILTER_WORK_DIR
     wrapper_dir.mkdir(parents=True, exist_ok=True)
-    filter_path = filter_path.resolve()
-
-    if os.name == "nt":
-        wrapper_path = wrapper_dir / f"{name}.cmd"
-        wrapper_path.write_text(
-            f'@echo off\r\n"{sys.executable}" "{filter_path}" %*\r\n',
-            encoding="utf-8",
-            newline="",
-        )
-        return wrapper_path
-
     wrapper_path = wrapper_dir / name
     wrapper_path.write_text(
         f"#!{sys.executable}\n"

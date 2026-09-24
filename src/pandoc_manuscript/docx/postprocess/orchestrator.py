@@ -52,6 +52,7 @@ try:
     from .page_numbers import apply_page_number_settings
     from .where_paragraph_style import process_where_paragraph_styles
     from .reply_blue_italic_style import apply_reply_blue_italic_style
+    from .chinese_numbering import normalize_chinese_numbering
 except ImportError as e:
     print(f"Error: Failed to import processing modules: {e}")
     print("Make sure the pandoc_manuscript package is installed with its postprocess modules:")
@@ -96,6 +97,7 @@ def postprocess_docx(
     *,
     pmt_settings: PmtSettings | None = None,
     pandoc_metadata: dict[str, Any] | None = None,
+    chinese_mode: bool = False,
     skip_author_info: bool = False,
     reply_style_formatting: bool = False,
 ) -> bool:
@@ -106,6 +108,7 @@ def postprocess_docx(
         docx_path: Path to the DOCX file to process
         pmt_settings: Typed Papper-owned DOCX and build settings
         pandoc_metadata: Manuscript metadata such as authors and affiliations
+        chinese_mode: Normalize Chinese heading and section-reference numbering
         skip_author_info: Skip author insertion for non-manuscript outputs
         reply_style_formatting: Apply reply-only blue formatting
 
@@ -160,6 +163,16 @@ def postprocess_docx(
                 return
             for applied in result["applied"]:
                 print_debug_success(format_applied_style_summary(applied))
+
+        def normalize_chinese_numbering_step() -> None:
+            """Normalize crossref's hyphenated nested numbers for Chinese DOCX output."""
+            if not chinese_mode:
+                return
+            result = normalize_chinese_numbering(doc)
+            print_debug_success(
+                f"Chinese numbering: headings={result['headings']}, "
+                f"section references={result['section_references']}"
+            )
 
         def apply_line_number_step() -> None:
             """Apply merged YAML line-number metadata to all DOCX sections."""
@@ -260,6 +273,7 @@ def postprocess_docx(
         pipeline_steps: list[tuple[str, Callable[[], None]]] = [
             # Metadata-driven document-wide settings must run before table-specific cleanup.
             ("Applying DOCX style metadata", apply_docx_style_step),
+            ("Normalizing Chinese heading numbering", normalize_chinese_numbering_step),
             ("Applying line-number metadata", apply_line_number_step),
             ("Applying page-number metadata", apply_page_number_step),
             ("Merging table cells", merge_table_cells_step),

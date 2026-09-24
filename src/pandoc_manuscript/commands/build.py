@@ -49,6 +49,7 @@ from .common import VerboseCommandSettings, project_directory, run_streaming_com
 
 DEFAULT_OUTPUT_DIR = "output"
 DEFAULT_DOCX_CSL = "pandoc/csl/elsevier-vancouver.csl"
+DEFAULT_CHINESE_DOCX_CSL = "pandoc/csl/GB-T-7714—2015（顺序编码，双语，姓名不大写，无URL、DOI）.csl"
 PMT_CITATION_NUMBER_RANGE_DELIMITER_ENV = "PMT_CITATION_NUMBER_RANGE_DELIMITER"
 BuildTarget = Literal["docx", "latex", "json"]
 BUILD_CLI_CONFIG = SettingsConfigDict(
@@ -477,6 +478,7 @@ def run_pandoc(
     sync_docx_layout: bool = False,
     use_mathtype: bool = False,
     input_file: str | Path | None = None,
+    default_csl: Path | None = None,
 ) -> None:
     """Run Pandoc with original defaults so ${.} resolves beside that file."""
     extra_args = extra_args or []
@@ -489,7 +491,7 @@ def run_pandoc(
             sync_docx_layout=sync_docx_layout,
             use_mathtype=use_mathtype,
         ),
-        *csl_args(effective.pandoc_metadata),
+        *csl_args(effective.pandoc_metadata, default_csl=default_csl),
         '--output',
         to_pandoc_path(output_file),
         *extra_args,
@@ -553,7 +555,7 @@ def style_metadata_args(
     return ["--metadata-file", to_pandoc_path(metadata_file)]
 
 
-def csl_args(pandoc_metadata: dict[str, Any]) -> list[str]:
+def csl_args(pandoc_metadata: dict[str, Any], *, default_csl: Path | None = None) -> list[str]:
     """Return the effective --csl argument for the selected Pandoc defaults file.
 
     Pandoc 3.10 gives a defaults-file `csl` higher precedence than later
@@ -564,7 +566,7 @@ def csl_args(pandoc_metadata: dict[str, Any]) -> list[str]:
     csl = pandoc_metadata.get("csl")
     if csl:
         return ['--csl', str(csl)]
-    return ['--csl', to_pandoc_path(default_docx_csl())]
+    return ['--csl', to_pandoc_path(default_csl or default_docx_csl())]
 
 
 CHINESE_HEADING_FONT = {"western": "Times New Roman", "chinese": "黑体"}
@@ -606,9 +608,8 @@ def prepare_docx_language(
         pandoc_metadata["chapters"] = True
         pandoc_metadata["chaptersDepth"] = 1
         pandoc_metadata["chapDelim"] = "-"
-        if pandoc_metadata.get("numberSections") is True:
-            # Crossref reuses chapDelim in heading numbers; Pandoc must number DOCX headings instead.
-            pandoc_metadata["numberSections"] = False
+        pandoc_metadata["secPrefix"] = "节"
+        pandoc_metadata["eqnPrefix"] = "式"
         pmt_settings.docx_style = merge_metadata(
             pmt_settings.docx_style or {},
             CHINESE_DOCX_STYLES,
@@ -633,7 +634,6 @@ def build_docx(
     log_debug("[DOCX] Building DOCX...\n")
 
     metadata_language = effective.pandoc_metadata.get("lang")
-    number_sections = effective.pandoc_metadata.get("numberSections") is True
     effective, chinese_mode = prepare_docx_language(effective, lang)
     if lang is not None:
         log_debug(f"[DEBUG] Command-line DOCX language mode: {lang}")
@@ -646,8 +646,6 @@ def build_docx(
     ensure_output_parent(docx_file)
     ensure_docx_target_writable(docx_file)
     extra_args = []
-    if chinese_mode and number_sections:
-        extra_args.append("--number-sections")
     pmt_settings = effective.pmt_settings
     conversion_method = normalize_conversion_method(pmt_settings.mathtype_conversion_method)
     use_mathtype = resolve_mathtype_build_enabled(
@@ -698,6 +696,7 @@ def build_docx(
             sync_docx_layout=True,
             use_mathtype=use_mathtype,
             input_file=sanitized_input,
+            default_csl=resource_path(DEFAULT_CHINESE_DOCX_CSL) if chinese_mode else None,
         )
     finally:
         if sanitized_input is not None:
@@ -714,6 +713,7 @@ def build_docx(
             str(postprocess_target),
             pmt_settings=pmt_settings,
             pandoc_metadata=effective.pandoc_metadata,
+            chinese_mode=chinese_mode,
         ):
             raise RuntimeError("DOCX post-processing failed")
 

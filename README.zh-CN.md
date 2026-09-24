@@ -133,7 +133,7 @@ papper doctor
 # 构建主稿
 papper build docx
 
-# 构建中文主稿，图表按章节编号
+# 构建中文主稿，交叉引用本地化，图表按章节编号
 papper build docx --lang zh-cn
 
 # 显式构建另一个 Markdown 文件
@@ -142,6 +142,8 @@ papper build docx paper.md -o build/paper.docx
 # 构建审稿回复
 papper build-reply reply.md --reply-manuscript manuscript.md -o output/docx/reply.docx
 ```
+
+中文 DOCX 默认使用内置的《GB/T 7714—2015（顺序编码，双语，姓名不大写，无 URL、DOI）》CSL。稿件 metadata 或 `style.yml` 中显式设置的 `csl` 优先。
 
 ## 这个项目最吸引人的地方
 

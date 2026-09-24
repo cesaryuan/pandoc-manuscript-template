@@ -500,4 +500,8 @@ def pandoc_tools_env(extra_env: dict[str, str] | None = None) -> dict[str, str]:
     existing_path = env.get("PATH", "")
     if bin_path not in existing_path.split(os.pathsep):
         env["PATH"] = bin_path + (os.pathsep + existing_path if existing_path else "")
+    if os.name == "nt":
+        # Pandoc resolves .py JSON filters through python on PATH on Windows.
+        python_dir = str(Path(sys.executable).parent)
+        env["PATH"] = python_dir + os.pathsep + env["PATH"]
     return env

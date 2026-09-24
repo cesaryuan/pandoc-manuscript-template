@@ -101,6 +101,6 @@ pandocMetadata:
   reference-section-title: References
   link-citations: true
   # 引文样式语言（CSL）文件
-  # 默认：Vancouver 样式（数字引文）
+  # 默认：一般 DOCX 使用 Vancouver；中文 DOCX 使用内置 GB/T 7714—2015（顺序编码，双语）
   # 可从 https://www.zotero.org/styles 下载 CSL 文件
   # csl: path/to/your.csl

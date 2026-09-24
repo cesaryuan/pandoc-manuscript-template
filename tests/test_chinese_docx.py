@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -61,8 +62,22 @@ def test_chinese_docx_build_numbers_figures_tables_and_formats_headings(
         "---\n"
         + (f"lang: {metadata_lang}\n" if metadata_lang is not None else "")
         + "title: 中文标题\n"
-        "figureTitle: 图\ntableTitle: 表\ntitleDelim: ' '\n---\n\n"
-        "# 第一章\n\n# 第二章\n\n# 第三章\n\n## 第一节\n\n"
+        "figureTitle: 图\ntableTitle: 表\ntitleDelim: ' '\n"
+        "references:\n"
+        "  - id: csl-sample\n"
+        "    type: article-journal\n"
+        "    author:\n"
+        "      - family: Wang\n"
+        "        given: Wei\n"
+        "    title: CSL Sample Article\n"
+        "    container-title: Journal of Example Research\n"
+        "    issued: {date-parts: [[2024]]}\n"
+        "    volume: 5\n"
+        "    page: 1-10\n"
+        "    DOI: 10.1234/pmt-csl-sample\n"
+        "---\n\n"
+        "# 第一章\n\n# 第二章\n\n# 第三章\n\n## 第一节 {#sec:section}\n\n"
+        "参见 [@sec:section] 和 [@csl-sample]。\n\n"
         "![测试图](figure.png){#fig:one}\n\n"
         "| 列一 | 列二 |\n| --- | --- |\n| 值一 | 值二 |\n\n: 测试表 {#tbl:one}\n"
     )
@@ -83,7 +98,10 @@ def test_chinese_docx_build_numbers_figures_tables_and_formats_headings(
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
     assert "图 3-1" in text
     assert "表 3-1" in text
-    assert any(paragraph.text.startswith("3.1\t") for paragraph in doc.paragraphs)
+    assert any(paragraph.text.startswith(("3.1\t", "3.1 ")) for paragraph in doc.paragraphs)
+    assert re.search(r"节\s+3\.1", text)
+    assert "CSL Sample Article" in text
+    assert "10.1234/pmt-csl-sample" not in text
     for name in ("Title", "Subtitle", "Heading 1", "Heading 2", "Heading 3"):
         style = doc.styles[name]
         assert style.font.bold is False, name
@@ -123,3 +141,27 @@ def test_docx_style_font_and_bold_work_without_language_mode(
     assert style.element.rPr.rFonts.get(qn("w:ascii")) == western
     assert style.element.rPr.rFonts.get(qn("w:hAnsi")) == western
     assert style.element.rPr.rFonts.get(qn("w:eastAsia")) == chinese
+
+
+def test_explicit_csl_overrides_chinese_docx_default(tmp_path: Path) -> None:
+    """Keep a manuscript CSL override when Chinese DOCX mode selects its default."""
+    if not shutil.which("pandoc") or not shutil.which("pandoc-crossref"):
+        pytest.skip("Pandoc and pandoc-crossref are required for the DOCX contract")
+    csl = Path(__file__).resolve().parents[1] / "pandoc" / "csl" / "elsevier-vancouver.csl"
+    (tmp_path / "paper.md").write_text(
+        "---\n"
+        f"csl: '{csl.as_posix()}'\n"
+        "references:\n"
+        "  - id: sample\n"
+        "    type: article-journal\n"
+        "    title: CSL Override Article\n"
+        "    issued: {date-parts: [[2024]]}\n"
+        "    DOI: 10.1234/pmt-csl-override\n"
+        "---\n\nCite [@sample].\n",
+        encoding="utf-8",
+    )
+
+    _, output = run_docx_build(tmp_path, ["--lang", "zhcn"])
+
+    text = "\n".join(paragraph.text for paragraph in Document(output).paragraphs)
+    assert "10.1234/pmt-csl-override" in text

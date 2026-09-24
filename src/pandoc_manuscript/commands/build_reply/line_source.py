@@ -87,6 +87,50 @@ def line_source_pdf_backend() -> str:
     return "word-com" if sys.platform == "win32" else "soffice"
 
 
+def word_com_registration_status() -> bool | None:
+    """Return whether Windows has a registered Microsoft Word COM ProgID."""
+    if sys.platform != "win32":
+        return True
+
+    try:
+        import winreg
+    except ImportError:
+        # A simulated or restricted Python runtime cannot inspect Windows' registry.
+        return None
+
+    flags = [getattr(winreg, "KEY_WOW64_64KEY", 0), 0]
+    seen_flags: set[int] = set()
+    for flag in flags:
+        if flag in seen_flags:
+            continue
+        seen_flags.add(flag)
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_CLASSES_ROOT,
+                "Word.Application",
+                0,
+                winreg.KEY_READ | flag,
+            ):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def ensure_word_for_line_source(line_source: Path) -> None:
+    """Explain the Windows Word requirement before converting non-PDF line sources."""
+    if sys.platform != "win32" or line_source.suffix.lower() == ".pdf":
+        return
+    if word_com_registration_status() is not False:
+        return
+    raise RuntimeError(
+        "Microsoft Word is required on Windows to resolve reply line numbers from "
+        f"{line_source.suffix.lower() or 'this'} line sources, but Word was not detected. "
+        "Please install Microsoft Word and retry `pmt build-reply`, or provide a PDF "
+        "with `--manuscript-line-source`."
+    )
+
+
 def cached_line_source_path(kind: str, key: str, suffix: str) -> Path:
     """Return a persistent line-source cache path for a computed key."""
     return LINE_SOURCE_CACHE_DIR / kind / f"{key}{suffix}"
@@ -135,6 +179,7 @@ def prepare_cached_docx_line_source_pdf(source_docx: Path) -> Path:
     if copy_from_cache(cached_pdf, target_pdf, "line-source PDF"):
         return target_pdf
 
+    ensure_word_for_line_source(source_docx)
     if sys.platform == "win32":
         export_docx_to_pdf_with_word(source_docx, target_pdf)
     else:

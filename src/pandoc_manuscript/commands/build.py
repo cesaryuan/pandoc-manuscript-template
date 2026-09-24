@@ -647,7 +647,7 @@ def build_docx(
     elif metadata_language is not None:
         log_debug(f"[DEBUG] DOCX language mode from Pandoc metadata: {metadata_language}")
     if chinese_mode:
-        log_info("[INFO] Chinese DOCX mode enabled: chapter-numbered figures/tables and non-bold heading styles")
+        log_debug("[DEBUG] Chinese DOCX mode enabled: chapter-numbered figures/tables and non-bold heading styles")
 
     docx_file = manuscript_output_file(SETTINGS.docx_dir, "docx")
     ensure_output_parent(docx_file)

@@ -389,6 +389,18 @@ def test_prepare_line_source_pdf_builds_markdown_before_pdf(tmp_path, monkeypatc
     ]
 
 
+def test_prepare_line_source_pdf_reports_missing_word_on_windows(tmp_path, monkeypatch) -> None:
+    """Give Windows users an install instruction before Word COM conversion fails."""
+    source_docx = tmp_path / "manuscript.docx"
+    write_test_docx(source_docx)
+
+    monkeypatch.setattr(reply_line_source.sys, "platform", "win32")
+    monkeypatch.setattr(reply_line_source, "word_com_registration_status", lambda: False)
+
+    with pytest.raises(RuntimeError, match=r"Microsoft Word.*Please install Microsoft Word"):
+        reply_build.prepare_line_source_pdf(source_docx)
+
+
 def test_build_reply_docx_uses_svg_filters(tmp_path, monkeypatch) -> None:
     """Apply reply SVG embedding and rasterization filters during Pandoc DOCX build."""
     reply = tmp_path / "reply.md"

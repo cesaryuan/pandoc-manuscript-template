@@ -65,7 +65,7 @@ Papper 不只是一个通用的 Pandoc 封装器。它是一个面向真实投�
 
 1. `uv`
 2. `pandoc` 3.0+ 和 `pandoc-crossref`
-3. 可选：Microsoft Word 或 `soffice`，用于某些行号来源工作流
+3. 行号来源工作流在 Windows 上需要安装 Microsoft Word；其他平台可以使用 `soffice`
 4. 可选：MathType，用于需要 MathType 公式的 DOCX 输出
 
 如果 `pandoc` 或 `pandoc-crossref` 不在 `PATH` 中，Papper 可以把受管工具下载到项目内的 `.pmt/tools`。

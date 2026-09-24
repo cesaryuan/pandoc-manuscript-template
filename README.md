@@ -65,7 +65,7 @@ Install these tools first:
 
 1. `uv` for running the CLI and Python environment
 2. `pandoc` 3.0+ and `pandoc-crossref`
-3. Optional: Microsoft Word or `soffice` for line-number source workflows
+3. For line-number source workflows, Windows requires Microsoft Word; other platforms can use `soffice`.
 4. Optional: MathType on Windows only if you select `rust-sdk`, `set-data`, `auto`, or `both`; the default `rust` path is self-contained
 
 Papper requires Pandoc 3.8 or newer. Older or unusable `pandoc` executables on `PATH`

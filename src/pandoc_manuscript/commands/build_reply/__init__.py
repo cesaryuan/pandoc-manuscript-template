@@ -14,12 +14,14 @@ from .line_source import (
     extract_pdf_numbered_lines,
     extract_pdf_numbered_lines_by_layout,
     extract_pdf_numbered_lines_by_text_order,
+    ensure_word_for_line_source,
     keep_increasing_line_numbers,
     line_number_for_offset,
     normalized_pdf_line_text,
     pdf_metadata_source,
     prepare_line_source_pdf,
     resolve_line_regexes,
+    word_com_registration_status,
 )
 from .output import (
     REPLY_PROBE_DIR,
@@ -87,6 +89,7 @@ __all__ = [
     "extract_pdf_numbered_lines_by_layout",
     "extract_pdf_numbered_lines_by_text_order",
     "extract_probe_map",
+    "ensure_word_for_line_source",
     "keep_increasing_line_numbers",
     "line_number_for_offset",
     "line_source",
@@ -112,4 +115,5 @@ __all__ = [
     "svg_embed_images_filter_env",
     "svg_to_png_filter_env",
     "write_reply_style_metadata_file",
+    "word_com_registration_status",
 ]

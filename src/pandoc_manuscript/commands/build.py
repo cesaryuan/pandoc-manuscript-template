@@ -573,8 +573,8 @@ CHINESE_HEADING_FONT = {"western": "Times New Roman", "chinese": "黑体"}
 CHINESE_DOCX_STYLES = {
     "标题": {"fontFamily": CHINESE_HEADING_FONT, "bold": False},
     "副标题": {"fontFamily": CHINESE_HEADING_FONT, "bold": False},
-    "标题 1": {"fontFamily": CHINESE_HEADING_FONT, "bold": False},
-    "标题 2": {"fontFamily": CHINESE_HEADING_FONT, "bold": False},
+    "标题 1": {"fontFamily": CHINESE_HEADING_FONT, "fontSize": "小三", "bold": False},
+    "标题 2": {"fontFamily": CHINESE_HEADING_FONT, "fontSize": "四号", "bold": False},
     "标题 3": {"fontFamily": CHINESE_HEADING_FONT, "bold": False},
 }
 
@@ -605,11 +605,18 @@ def prepare_docx_language(
     pmt_settings = effective.pmt_settings.model_copy(deep=True)
     chinese_mode = is_chinese_language(selected_language)
     if chinese_mode:
+        # Older project templates stored '连续' explicitly; treat that stock value as a default.
+        if (
+            "docx_show_line_numbers" not in pmt_settings.model_fields_set
+            or pmt_settings.docx_show_line_numbers == "连续"
+        ):
+            pmt_settings.docx_show_line_numbers = False
         pandoc_metadata["chapters"] = True
         pandoc_metadata["chaptersDepth"] = 1
         pandoc_metadata["chapDelim"] = "-"
         pandoc_metadata["secPrefix"] = "节"
         pandoc_metadata["eqnPrefix"] = "式"
+        pandoc_metadata["reference-section-title"] = "参考文献"
         pmt_settings.docx_style = merge_metadata(
             pmt_settings.docx_style or {},
             CHINESE_DOCX_STYLES,

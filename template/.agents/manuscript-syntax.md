@@ -628,7 +628,10 @@ numbering for cross-referenced items (`图 3-1`, `表 3-1`) and sets the `标题
 Roman for Western text, without bold. Headings keep dotted numbers such as
 `3.1`; section and equation references use `节` and `式`. The DOCX post-processing
 step changes nested heading numbers and `节 3-1` references to dotted notation
-without changing the figure/table numbering. If the command
+without changing the figure/table numbering. `标题 1` uses 小三 (15 pt), and
+`标题 2` uses 四号 (14 pt). Chinese DOCX builds hide line numbers by default;
+set `docxShowLineNumbers: true` in `style.yml` to show continuous line numbers.
+If the command
 line option is omitted, `pandocMetadata.lang` from the manuscript or style file
 selects the language mode. Papper removes `lang` from the metadata passed to
 Pandoc and, when it appears in the manuscript header, uses a temporary cleaned
@@ -636,6 +639,7 @@ Markdown copy to avoid Pandoc localization warnings; the original Markdown is
 unchanged. The `build docx` `--lang` option currently accepts `zh-cn` or `zhcn`.
 Chinese DOCX builds use the bundled GB/T 7714—2015 bilingual numeric CSL by
 default. An explicit `csl` in manuscript metadata or `style.yml` takes priority.
+The bibliography heading is `参考文献`.
 
 To initialize a project with the translated Chinese manuscript and reviewer
 reply starters, use:

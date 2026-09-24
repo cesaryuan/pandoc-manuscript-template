@@ -84,7 +84,7 @@ def test_chinese_docx_build_numbers_figures_tables_and_formats_headings(
     manuscript.write_text(original, encoding="utf-8")
     if style_lang is not None:
         (tmp_path / "style.yml").write_text(
-            f"pandocMetadata:\n  lang: {style_lang}\n",
+            f"docxShowLineNumbers: 连续\npandocMetadata:\n  lang: {style_lang}\n",
             encoding="utf-8",
         )
 
@@ -102,6 +102,10 @@ def test_chinese_docx_build_numbers_figures_tables_and_formats_headings(
     assert re.search(r"节\s+3\.1", text)
     assert "CSL Sample Article" in text
     assert "10.1234/pmt-csl-sample" not in text
+    assert "参考文献" in text
+    assert all(section._sectPr.find(qn("w:lnNumType")) is None for section in doc.sections)
+    assert doc.styles["Heading 1"].font.size.pt == 15
+    assert doc.styles["Heading 2"].font.size.pt == 14
     for name in ("Title", "Subtitle", "Heading 1", "Heading 2", "Heading 3"):
         style = doc.styles[name]
         assert style.font.bold is False, name
@@ -136,11 +140,13 @@ def test_docx_style_font_and_bold_work_without_language_mode(
 
     _, output = run_docx_build(tmp_path, [])
 
-    style = Document(output).styles["Heading 1"]
+    doc = Document(output)
+    style = doc.styles["Heading 1"]
     assert style.font.bold is False
     assert style.element.rPr.rFonts.get(qn("w:ascii")) == western
     assert style.element.rPr.rFonts.get(qn("w:hAnsi")) == western
     assert style.element.rPr.rFonts.get(qn("w:eastAsia")) == chinese
+    assert all(section._sectPr.find(qn("w:lnNumType")) is not None for section in doc.sections)
 
 
 def test_explicit_csl_overrides_chinese_docx_default(tmp_path: Path) -> None:
@@ -165,3 +171,19 @@ def test_explicit_csl_overrides_chinese_docx_default(tmp_path: Path) -> None:
 
     text = "\n".join(paragraph.text for paragraph in Document(output).paragraphs)
     assert "10.1234/pmt-csl-override" in text
+
+
+def test_chinese_docx_can_explicitly_enable_line_numbers(tmp_path: Path) -> None:
+    """Allow an explicit line-number setting to override the Chinese default."""
+    if not shutil.which("pandoc") or not shutil.which("pandoc-crossref"):
+        pytest.skip("Pandoc and pandoc-crossref are required for the DOCX contract")
+    (tmp_path / "paper.md").write_text("# 标题\n\n正文。\n", encoding="utf-8")
+    (tmp_path / "style.yml").write_text(
+        "docxShowLineNumbers: true\npandocMetadata:\n  lang: zh-CN\n",
+        encoding="utf-8",
+    )
+
+    _, output = run_docx_build(tmp_path, [])
+
+    doc = Document(output)
+    assert all(section._sectPr.find(qn("w:lnNumType")) is not None for section in doc.sections)

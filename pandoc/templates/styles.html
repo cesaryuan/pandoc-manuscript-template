@@ -3,17 +3,33 @@
 */
 $if(document-css)$
 html {
-$if(mainfont)$
-  font-family: $mainfont$;
-$endif$
-$if(fontsize)$
-  font-size: $fontsize$;
-$endif$
-$if(linestretch)$
-  line-height: $linestretch$;
-$endif$
+  /* Keep the standalone HTML baseline close to the DOCX reference document. */
+  font-family: $if(mainfont)$$mainfont$$else$"Times New Roman", Times, serif$endif$;
+  font-size: $if(fontsize)$$fontsize$$else$12pt$endif$;
+  line-height: $if(linestretch)$$linestretch$$else$1.5$endif$;
   color: $if(fontcolor)$$fontcolor$$else$#1a1a1a$endif$;
   background-color: $if(backgroundcolor)$$backgroundcolor$$else$#fdfdfd$endif$;
+}
+/* The Chinese DOCX mode uses Times New Roman for Latin text, 宋体 for body
+   Chinese text, and 黑体 for headings. Font fallback applies per character. */
+html[lang="zh-CN"],
+html[lang="zh-cn"] {
+  font-family: $if(mainfont)$$mainfont$$else$"Times New Roman", "宋体", SimSun, serif$endif$;
+}
+html[lang="zh-CN"] h1,
+html[lang="zh-CN"] h2,
+html[lang="zh-CN"] h3,
+html[lang="zh-CN"] h4,
+html[lang="zh-CN"] h5,
+html[lang="zh-CN"] h6,
+html[lang="zh-cn"] h1,
+html[lang="zh-cn"] h2,
+html[lang="zh-cn"] h3,
+html[lang="zh-cn"] h4,
+html[lang="zh-cn"] h5,
+html[lang="zh-cn"] h6 {
+  font-family: $if(mainfont)$$mainfont$$else$"Times New Roman", "黑体", SimHei, sans-serif$endif$;
+  font-weight: normal;
 }
 body {
   margin: 0 auto;
@@ -71,8 +87,24 @@ svg {
 h1, h2, h3, h4, h5, h6 {
   margin-top: 1.4em;
 }
+h1 {
+  font-size: 15pt;
+}
+h2 {
+  font-size: 14pt;
+}
+h3, h4, h5, h6 {
+  font-size: 12pt;
+}
+h1.title {
+  font-size: 16pt;
+  font-weight: normal;
+}
+p.subtitle {
+  font-size: 14pt;
+  font-weight: normal;
+}
 h5, h6 {
-  font-size: 1em;
   font-style: italic;
 }
 h6 {

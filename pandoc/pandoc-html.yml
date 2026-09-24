@@ -3,6 +3,7 @@
 
 verbosity: WARNING
 standalone: true
+data-dir: ${.}/
 # Keep the result as one portable HTML file for direct browser viewing.
 embed-resources: true
 html-math-method: mathml

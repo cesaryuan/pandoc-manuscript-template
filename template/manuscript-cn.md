@@ -1,5 +1,4 @@
 ---
-lang: zh-CN
 title: "论文标题：一项综合研究"
 authors:
   - name: 第一作者

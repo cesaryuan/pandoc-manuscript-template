@@ -635,7 +635,7 @@ def test_extract_pdf_numbered_lines_uses_layout_for_libreoffice(tmp_path, monkey
         ],
         {"producer": "LibreOffice 25.2"},
     )
-    monkeypatch.setitem(sys.modules, "fitz", SimpleNamespace(open=lambda _: document))
+    monkeypatch.setitem(sys.modules, "pymupdf", SimpleNamespace(open=lambda _: document))
 
     assert reply_build.extract_pdf_numbered_lines(pdf) == [
         (10, 1, "Body text A"),
@@ -663,7 +663,7 @@ def test_extract_pdf_numbered_lines_prefers_layout_for_word(tmp_path, monkeypatc
         ],
         {"producer": "Microsoft® Word for Microsoft 365"},
     )
-    monkeypatch.setitem(sys.modules, "fitz", SimpleNamespace(open=lambda _: document))
+    monkeypatch.setitem(sys.modules, "pymupdf", SimpleNamespace(open=lambda _: document))
 
     assert reply_build.extract_pdf_numbered_lines(pdf) == [(10, 1, "Layout body")]
 
@@ -681,7 +681,7 @@ def test_extract_pdf_numbered_lines_falls_back_for_word_when_layout_empty(tmp_pa
         ],
         {"producer": "Microsoft® Word for Microsoft 365"},
     )
-    monkeypatch.setitem(sys.modules, "fitz", SimpleNamespace(open=lambda _: document))
+    monkeypatch.setitem(sys.modules, "pymupdf", SimpleNamespace(open=lambda _: document))
 
     assert reply_build.extract_pdf_numbered_lines(pdf) == [(99, 1, "Text-order body")]
 
@@ -699,7 +699,7 @@ def test_extract_pdf_numbered_lines_never_falls_back_for_libreoffice(tmp_path, m
         ],
         {"producer": "LibreOffice 25.2"},
     )
-    monkeypatch.setitem(sys.modules, "fitz", SimpleNamespace(open=lambda _: document))
+    monkeypatch.setitem(sys.modules, "pymupdf", SimpleNamespace(open=lambda _: document))
 
     assert reply_build.extract_pdf_numbered_lines(pdf) == []
 
@@ -729,12 +729,12 @@ def assert_extracted_line_anchors(numbered_lines: list[tuple[int, int, str]]) ->
 
 def test_template_manuscript_pdf_line_extractors_agree_on_line_regex_anchors() -> None:
     """Use the generated template PDF to verify both line-number extraction methods."""
-    fitz = pytest.importorskip("fitz")
+    pymupdf = pytest.importorskip("pymupdf")
     pdf = template_manuscript_pdf_path()
     if not pdf.exists():
         pytest.skip(f"Build template/manuscript.md PDF first: {pdf}")
 
-    with fitz.open(pdf) as document:
+    with pymupdf.open(pdf) as document:
         layout_lines = reply_build.extract_pdf_numbered_lines_by_layout(document)
         text_order_lines = reply_build.extract_pdf_numbered_lines_by_text_order(document)
 
@@ -744,7 +744,7 @@ def test_template_manuscript_pdf_line_extractors_agree_on_line_regex_anchors() -
 
 def test_resolve_line_regexes_with_generated_template_manuscript_pdf(monkeypatch) -> None:
     """Resolve representative Line regexes against the generated template/manuscript.md PDF."""
-    pytest.importorskip("fitz")
+    pytest.importorskip("pymupdf")
     line_source = template_manuscript_pdf_path()
     if not line_source.exists():
         pytest.skip(f"Build template/manuscript.md PDF first: {line_source}")

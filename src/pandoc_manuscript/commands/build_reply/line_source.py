@@ -451,14 +451,14 @@ def prepare_line_source_pdf(line_source: Path) -> Path:
 def extract_pdf_numbered_lines(pdf: Path) -> list[tuple[int, int, str]]:
     """Extract manuscript line numbers and their corresponding text from a PDF."""
     try:
-        import fitz
+        import pymupdf
     except ImportError as exc:
         raise RuntimeError("PyMuPDF is required to resolve reply line regexes.") from exc
 
     if not pdf.exists():
         raise FileNotFoundError(f"Manuscript PDF not found for line resolution: {pdf}")
 
-    with fitz.open(pdf) as document:
+    with pymupdf.open(pdf) as document:
         if is_libreoffice_pdf(document.metadata):
             numbered_lines = extract_pdf_numbered_lines_by_layout(document)
             log_debug(

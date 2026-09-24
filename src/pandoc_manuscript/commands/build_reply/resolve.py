@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ...docx.equation_layout import derive_docx_equation_layout, sync_eqn_block_template_with_page_margins
-from ...runtime.logging import log_debug, log_info, log_warning
+from ...runtime.logging import log_debug, log_warning
 from ...runtime.metadata import EffectiveMetadata, PmtSettings, load_effective_metadata, write_pandoc_metadata
 from ...runtime.paths import PMT_REPLY_PROBE_DIR
 from ..common import suppress_known_external_warnings
@@ -103,8 +103,8 @@ def write_reply_style_metadata_file(
     )
     if tab_stops is not None:
         center_tab, right_tab = tab_stops
-        log_info(
-            "[INFO] Synced reply eqnBlockTemplate tab stops from docxPageMargins: "
+        log_debug(
+            "[DEBUG] Synced reply eqnBlockTemplate tab stops from docxPageMargins: "
             f"center={center_tab}, right={right_tab}"
         )
     flattened_style = write_pandoc_metadata(

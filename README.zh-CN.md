@@ -149,6 +149,8 @@ papper build-reply reply.md --reply-manuscript manuscript.md -o output/docx/repl
 HTML 构建使用通用 Pandoc filter 处理中文嵌套编号和
 `!<!`/`!^!` 表格单元格合并，再通过 HTML 后处理插入作者信息。DOCX
 还使用通用 AST filter 处理独立行内公式的尾部空格。
+HTML 构建会强制使用适合独立 HTML 的原生行间公式设置：编号使用
+`\tag` 和 `$$i$$`，关闭块公式转行内公式，并关闭公式表格布局。
 三线表外观来自 Pandoc 内置的 standalone HTML CSS。直接运行 Pandoc
 时需要加 `-s`/`--standalone` 才会把这段 CSS 写入文件；不加时只会输出
 HTML 片段。

@@ -8,6 +8,16 @@ from pathlib import Path
 from .postprocess import postprocess_html
 
 
+# HTML keeps display equations as native MathML blocks instead of DOCX-style
+# equation layout tables and inline equation-number workarounds.
+HTML_EQUATION_METADATA = {
+    "equationNumberTeX": r"\tag",
+    "eqnIndexTemplate": "$$i$$",
+    "eqnBlockInlineMath": False,
+    "tableEqns": False,
+}
+
+
 def build_html() -> None:
     """Generate and post-process one standalone HTML manuscript file."""
     # Import the shared build primitives lazily to keep HTML implementation
@@ -27,6 +37,7 @@ def build_html() -> None:
     html_file = manuscript_output_file(SETTINGS.html_dir, "html")
     ensure_output_parent(html_file)
     effective, chinese_mode = prepare_pandoc_language(load_build_metadata())
+    effective.pandoc_metadata.update(HTML_EQUATION_METADATA)
     if chinese_mode:
         log_info("[HTML] Chinese language metadata enabled")
     source_dir = Path(SETTINGS.manuscript_file).resolve().parent

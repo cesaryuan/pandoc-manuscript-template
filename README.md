@@ -175,6 +175,9 @@ HTML builds use the shared Pandoc filters for Chinese nested numbering and
 `!<!`/`!^!` table-cell merge markers, plus HTML post-processing for author
 information. DOCX also uses the shared AST filter for standalone inline-math
 spacing before Word conversion.
+HTML builds force native display-equation settings (`\tag`, `$$i$$`, no
+inline block math, and no equation tables) so equations remain suitable for
+the standalone HTML output.
 The three-line table appearance comes from Pandoc's built-in standalone HTML
 CSS. A direct Pandoc command needs `-s`/`--standalone` to include that CSS;
 without it, Pandoc writes only an HTML fragment.

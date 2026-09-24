@@ -59,6 +59,7 @@ def iter_project_template_entries() -> Iterable[tuple[str, str]]:
     """Yield source and destination pairs copied by `papper init` into a new paper project."""
     yield from (
         (".agents", ".agents"),
+        (".vscode", ".vscode"),
         ("examples", "examples"),
         (".gitignore", ".gitignore"),
         ("AGENTS.md", "AGENTS.md"),

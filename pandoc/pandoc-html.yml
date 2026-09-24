@@ -5,7 +5,7 @@ verbosity: WARNING
 standalone: true
 data-dir: ${.}/
 # Keep the result as one portable HTML file for direct browser viewing.
-embed-resources: true
+embed-resources: false
 html-math-method: mathml
 
 # Filters are applied in order so cross-references and citations are resolved

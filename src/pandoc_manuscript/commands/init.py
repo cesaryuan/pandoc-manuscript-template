@@ -6,7 +6,12 @@ import shutil
 from pathlib import Path
 
 from pydantic import Field
-from pydantic_settings import CliPositionalArg, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    CliPositionalArg,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 from ..runtime.resources import iter_project_template_entries, project_template_root
 from ..runtime.paths import PMT_DIR
@@ -121,17 +126,43 @@ class InitSettings(VerboseCommandSettings):
         description="Merge packaged agent guidance into existing AGENTS.md and .agents entries.",
     )
     setup: bool = Field(default=False, description="Download project-local Pandoc tools after init.")
+    lang: str | None = Field(
+        default=None,
+        description="Template language. Use zh-cn for Chinese manuscript and reviewer-reply templates.",
+    )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Use parsed CLI values only so ambient LANG does not select templates."""
+        return (init_settings,)
+
+    def normalized_lang(self) -> str | None:
+        """Return the supported normalized init language or reject an unknown value."""
+        if self.lang is None:
+            return None
+        normalized = self.lang.strip().replace("_", "-").casefold()
+        if normalized != "zh-cn":
+            raise ValueError("Only `--lang zh-cn` is currently supported by `papper init`.")
+        return normalized
 
     def run(self) -> int:
         """Create a new manuscript project from the packaged template files."""
         root = project_template_root()
         target = Path(self.directory).resolve()
+        lang = self.normalized_lang()
 
         if self.force and self.merge:
             raise RuntimeError("Use only one of --force or --merge for `papper init`.")
 
         target.mkdir(parents=True, exist_ok=True)
-        template_entries = list(iter_project_template_entries())
+        template_entries = list(iter_project_template_entries(lang))
         existing_entries = {
             destination_name
             for _, destination_name in template_entries
@@ -176,6 +207,8 @@ class InitSettings(VerboseCommandSettings):
         # conventionally keep figures under images/ from the beginning.
         (target / "images").mkdir(exist_ok=True)
 
+        if lang == "zh-cn":
+            log("[INFO] Selected Chinese manuscript and reviewer-reply templates.")
         log(f"[OK] Created manuscript project: {target}")
         if self.setup:
             with project_directory(target):

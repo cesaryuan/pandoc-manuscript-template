@@ -106,6 +106,8 @@ papper doctor
 papper build docx
 ```
 
+For a Chinese manuscript and reviewer-reply starter, use `papper init my-paper --lang zh-cn`.
+
 To initialize the manuscript project in the current directory, omit the target directory:
 
 ```bash
@@ -305,10 +307,11 @@ and uses the Rust result if native conversion fails.
 If the `mathtype-rust` native library reports a formula conversion error, the build warns with the
 exit code and LaTeX input and continues. The affected formula retains its original
 Word equation (OMML); other formulas are converted normally. In `both` mode,
-conversion continues with the `set-data` result if available. Before converting in
-`both` mode, Papper probes `set-data` with an uncached `x+1` formula (30-second timeout,
-up to two attempts). If both attempts fail, every formula in that build uses Rust;
-the next build probes again. If the probe succeeds but an individual `set-data`
-conversion fails or produces invalid output, that formula uses the Rust result.
-If both backends fail for a formula, its original Word equation is retained.
-Failed conversions are not cached.
+conversion continues with the `set-data` result if available. `both` mode does not
+run a separate startup probe; it tries `set-data` as each
+formula is converted. If three consecutive formulas fail with the helper message
+`由于 Exception.ToString() 失败，因此无法打印异常字符串`, PMT treats set-data as
+unavailable on that computer for the remainder of the current build and uses Rust
+for subsequent formulas. A successful set-data conversion or a different failure
+resets the consecutive counter. If both backends fail for a formula, its original
+Word equation is retained. Failed conversions are not cached.

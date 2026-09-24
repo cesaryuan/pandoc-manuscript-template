@@ -9,7 +9,6 @@ import re
 import shutil
 import struct
 import subprocess
-import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,6 +57,7 @@ MathTypeSvgBackend = Literal["ratex", "typst"]
 MathTypeMathStyle = Literal["inline", "display"]
 DEFAULT_MATHTYPE_CONVERSION_METHOD: MathTypeConversionMethod = "auto"
 DEFAULT_MATHTYPE_SVG_BACKEND: MathTypeSvgBackend = "typst"
+SET_DATA_FAILURE_MARKER = "由于 Exception.ToString() 失败，因此无法打印异常字符串"
 
 
 class FormulaConversionError(RuntimeError):
@@ -457,7 +457,12 @@ def run(
         else:
             log_info(stderr.strip())
     if check and result.returncode != 0:
-        raise RuntimeError(f"command failed: {' '.join(command)}")
+        details = "; ".join(
+            part for part in (f"stdout: {stdout.strip()}" if stdout.strip() else "", f"stderr: {stderr.strip()}" if stderr.strip() else "")
+            if part
+        )
+        suffix = f"; {details}" if details else ""
+        raise RuntimeError(f"command failed: {' '.join(command)}{suffix}")
     return subprocess.CompletedProcess(command, result.returncode, stdout=stdout, stderr=stderr)
 
 
@@ -1224,25 +1229,36 @@ def validate_generated_equation(ole_path: Path, wmf_path: Path, metadata_path: P
         raise ValueError(f"generated equation metadata is not an object: {metadata_path}")
 
 
-def preflight_set_data(output_dir: Path, prefs_file: Path | None) -> bool:
-    """Try a simple uncached formula twice before disabling COM for this build."""
-    for attempt in range(1, 3):
-        try:
-            # Separate directories prevent a partial first attempt from passing the retry.
-            with tempfile.TemporaryDirectory(prefix="set-data-probe-", dir=output_dir) as directory:
-                root = Path(directory)
-                input_path = root / "probe.tex"
-                ole_path, wmf_path, metadata_path = root / "probe.ole.bin", root / "probe.wmf", root / "probe.json"
-                write_latex_input(input_path, "x+1")
-                make_ole_wmf_metadata_with_mathtype_set_data(
-                    input_path, ole_path, wmf_path, metadata_path, prefs_file=prefs_file, timeout=30,
-                )
-                validate_generated_equation(ole_path, wmf_path, metadata_path)
+def exception_contains_set_data_marker(exc: BaseException) -> bool:
+    """Return whether an exception chain contains the helper's diagnostic fallback text."""
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if SET_DATA_FAILURE_MARKER in str(current):
             return True
-        except Exception as exc:
-            log_warning(f"[mathtype] set-data preflight {attempt}/2 failed: {exc}")
-    log_warning("[mathtype] set-data is unavailable; using Rust for all equations in this build")
+        current = current.__cause__ or current.__context__
     return False
+
+
+def promote_rust_outputs(
+    rust_ole_path: Path,
+    rust_wmf_path: Path,
+    rust_metadata_path: Path,
+    ole_path: Path,
+    wmf_path: Path,
+    metadata_path: Path,
+) -> None:
+    """Copy a validated Rust sidecar into the primary paths used by DOCX assembly."""
+    validate_generated_equation(rust_ole_path, rust_wmf_path, rust_metadata_path)
+    for source, target in (
+        (rust_ole_path, ole_path),
+        (rust_wmf_path, wmf_path),
+        (rust_metadata_path, metadata_path),
+    ):
+        target.unlink(missing_ok=True)
+        if source.exists():
+            shutil.copy2(source, target)
 
 
 def generate_equation_parts(
@@ -1266,8 +1282,6 @@ def generate_equation_parts(
     output_dir.mkdir(parents=True, exist_ok=True)
     equations: list[GeneratedEquation | None] = []
     prefs_template = MATHTYPE_DEFAULT_PREFS_TEMPLATE if MATHTYPE_DEFAULT_PREFS_TEMPLATE.exists() else None
-    if conversion_method == "both" and requests and not preflight_set_data(output_dir, prefs_template):
-        conversion_method = "rust"
     prefs_cache: dict[float, Path] = {}
     needs_variable_sizes = any(request.font_size_pt is not None for request in requests)
     cache_hits = 0
@@ -1282,6 +1296,8 @@ def generate_equation_parts(
     )
     rust_source_digest = native_source_digest_for_method(conversion_method)
     rust_exe_digest = native_library_digest_for_method(conversion_method)
+    set_data_failure_streak = 0
+    set_data_disabled = False
     if needs_variable_sizes and prefs_template is None:
         log_warning(
             "[mathtype] warning: MathType preference template not found; "
@@ -1340,46 +1356,73 @@ def generate_equation_parts(
                     # Continue with set-data even when Rust could not produce an OLE object.
                     rust_hit = False
                     rust_error = exc
-                try:
-                    set_data_hit = generate_cached_equation_parts_for_method(
-                        index,
-                        latex,
-                        font_size_key,
-                        prefs_digest,
-                        helper_digest,
-                        rust_source_digest,
-                        rust_exe_digest,
-                        input_path,
+                if set_data_disabled:
+                    if rust_error is not None:
+                        raise FormulaConversionError(f"Rust failed for equation {index} after disabling set-data") from rust_error
+                    promote_rust_outputs(
+                        rust_ole_path,
+                        rust_wmf_path,
+                        rust_metadata_path,
                         ole_path,
                         wmf_path,
                         metadata_path,
-                        mtef_path,
-                        prefs_path,
-                        "set-data",
-                        svg_backend,
-                        math_style,
-                        math_font,
                     )
-                    validate_generated_equation(ole_path, wmf_path, metadata_path)
-                except Exception as exc:
-                    log_warning(f"[mathtype] set-data failed for equation {index}: {exc}; trying Rust output")
-                    if rust_error is not None:
-                        log_warning(f"[mathtype] both backends failed for equation {index}; retaining original Word formula")
-                        raise FormulaConversionError(f"Both backends failed for equation {index}") from exc
-                    validate_generated_equation(rust_ole_path, rust_wmf_path, rust_metadata_path)
-                    # Copy only a successful Rust result, replacing any partial COM output.
-                    for source, target in ((rust_ole_path, ole_path), (rust_wmf_path, wmf_path), (rust_metadata_path, metadata_path)):
-                        target.unlink(missing_ok=True)
-                        if source.exists():
-                            shutil.copy2(source, target)
                     cache_hits += int(rust_hit)
-                    cache_misses += int(not rust_hit) + 1
+                    cache_misses += int(not rust_hit)
                 else:
-                    cache_hits += int(rust_hit) + int(set_data_hit)
-                    cache_misses += int(not rust_hit) + int(not set_data_hit)
-                    # Preview-only failures still leave a valid OLE for comparison.
-                    if rust_ole_path.exists():
-                        warn_if_conversion_outputs_differ(index, latex, rust_ole_path, ole_path)
+                    try:
+                        set_data_hit = generate_cached_equation_parts_for_method(
+                            index,
+                            latex,
+                            font_size_key,
+                            prefs_digest,
+                            helper_digest,
+                            rust_source_digest,
+                            rust_exe_digest,
+                            input_path,
+                            ole_path,
+                            wmf_path,
+                            metadata_path,
+                            mtef_path,
+                            prefs_path,
+                            "set-data",
+                            svg_backend,
+                            math_style,
+                            math_font,
+                        )
+                        validate_generated_equation(ole_path, wmf_path, metadata_path)
+                    except Exception as exc:
+                        if exception_contains_set_data_marker(exc):
+                            set_data_failure_streak += 1
+                        else:
+                            set_data_failure_streak = 0
+                        if set_data_failure_streak >= 3:
+                            set_data_disabled = True
+                            log_warning(
+                                "[mathtype] set-data failed with the Exception.ToString fallback "
+                                "for three consecutive equations; using Rust for the remaining equations"
+                            )
+                        log_warning(f"[mathtype] set-data failed for equation {index}: {exc}; trying Rust output")
+                        if rust_error is not None:
+                            log_warning(f"[mathtype] both backends failed for equation {index}; retaining original Word formula")
+                            raise FormulaConversionError(f"Both backends failed for equation {index}") from exc
+                        promote_rust_outputs(
+                            rust_ole_path,
+                            rust_wmf_path,
+                            rust_metadata_path,
+                            ole_path,
+                            wmf_path,
+                            metadata_path,
+                        )
+                        cache_hits += int(rust_hit)
+                        cache_misses += int(not rust_hit) + 1
+                    else:
+                        set_data_failure_streak = 0
+                        cache_hits += int(rust_hit) + int(set_data_hit)
+                        cache_misses += int(not rust_hit) + int(not set_data_hit)
+                        # Preview-only failures still leave a valid OLE for comparison.
+                        if rust_ole_path.exists():
+                            warn_if_conversion_outputs_differ(index, latex, rust_ole_path, ole_path)
             elif conversion_method == "auto":
                 hits, misses = generate_cached_equation_parts_auto(
                     index,

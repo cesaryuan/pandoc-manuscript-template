@@ -55,8 +55,13 @@ def project_template_root() -> Path:
     raise RuntimeError("Could not locate packaged manuscript project template resources.")
 
 
-def iter_project_template_entries() -> Iterable[tuple[str, str]]:
-    """Yield source and destination pairs copied by `papper init` into a new paper project."""
+def iter_project_template_entries(lang: str | None = None) -> Iterable[tuple[str, str]]:
+    """Yield source and destination pairs for the selected `papper init` language."""
+    normalized_lang = (lang or "").strip().replace("_", "-").casefold()
+    manuscript_source = "manuscript-cn.md" if normalized_lang == "zh-cn" else "manuscript.md"
+    reply_source = (
+        "reply_to_reviewers-cn.md" if normalized_lang == "zh-cn" else "reply_to_reviewers.md"
+    )
     yield from (
         (".agents", ".agents"),
         (".vscode", ".vscode"),
@@ -64,6 +69,7 @@ def iter_project_template_entries() -> Iterable[tuple[str, str]]:
         (".gitignore", ".gitignore"),
         ("AGENTS.md", "AGENTS.md"),
         ("CLAUDE.md", "CLAUDE.md"),
-        ("reply_to_reviewers.md", "reply_to_reviewers.md"),
+        (manuscript_source, "manuscript.md"),
+        (reply_source, "reply_to_reviewers.md"),
         ("style.yml", "style.yml"),
     )

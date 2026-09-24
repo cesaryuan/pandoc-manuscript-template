@@ -624,12 +624,21 @@ only to `papper build docx`.
 
 `--lang zh-cn` marks this DOCX build as Chinese-primary. It enables chapter
 numbering for cross-referenced items (`图 3-1`, `表 3-1`) and sets the `标题`,
-`副标题`, and `标题 1`–`标题 3` DOCX styles to 黑体 without bold. If the command
+`副标题`, and `标题 1`–`标题 3` DOCX styles to 黑体 for Chinese text and Times New
+Roman for Western text, without bold. Headings keep dotted numbers such as
+`3.1`. If the command
 line option is omitted, `pandocMetadata.lang` from the manuscript or style file
 selects the language mode. Papper removes `lang` from the metadata passed to
 Pandoc and, when it appears in the manuscript header, uses a temporary cleaned
 Markdown copy to avoid Pandoc localization warnings; the original Markdown is
-unchanged. `--lang` currently accepts `zh-cn` and applies only to DOCX builds.
+unchanged. The `build docx` `--lang` option currently accepts `zh-cn` or `zhcn`.
+
+To initialize a project with the translated Chinese manuscript and reviewer
+reply starters, use:
+
+```powershell
+papper init my-paper --lang zh-cn
+```
 
 Common Chinese built-in names such as `标题 1`, `正文文本`, and `正文` are automatically mapped to the corresponding Word built-in style names like `Heading 1`, `Body Text`, and `Normal`. Custom styles still need to use their exact DOCX style names.
 
@@ -646,7 +655,7 @@ Use point values for paragraph spacing, such as `6pt`. The first-line indent is 
 
 Common style fields under `docxStyle` include:
 
-- `fontFamily`: font family such as `黑体` or `宋体`
+- `fontFamily`: a font name string applies to both Western and Chinese text; a mapping sets either or both independently, such as `{western: "Times New Roman", chinese: "黑体"}`
 - `bold`: `true` or `false`
 - `fontSize`: font size such as `10.5pt` or Chinese Word sizes like `小五` and `四号`
 - `fontColor`: font color such as `#000000` or `rgb(0, 0, 0)`

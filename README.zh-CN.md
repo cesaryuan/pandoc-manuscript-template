@@ -89,6 +89,8 @@ papper doctor
 papper build docx
 ```
 
+如需中文主稿和审稿回复模板，使用 `papper init my-paper --lang zh-cn`。
+
 生成结果：
 
 ```text

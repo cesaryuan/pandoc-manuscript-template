@@ -1,6 +1,8 @@
 from pathlib import Path
 import sys
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from pandoc_manuscript import cli
@@ -27,6 +29,38 @@ def test_init_without_directory_uses_current_directory(tmp_path, monkeypatch) ->
     assert cli.main(["init"]) == 0
 
     assert (tmp_path / "manuscript.md").is_file()
+    assert (tmp_path / "reply_to_reviewers.md").is_file()
+    assert "# Introduction" in (tmp_path / "manuscript.md").read_text(encoding="utf-8")
+
+
+def test_init_zh_cn_uses_translated_manuscript_and_reply_templates(tmp_path) -> None:
+    """Select the Chinese source templates while keeping standard destination names."""
+    target = tmp_path / "paper"
+
+    InitSettings(directory=str(target), lang="zh-cn").run()
+
+    manuscript = (target / "manuscript.md").read_text(encoding="utf-8")
+    reply = (target / "reply_to_reviewers.md").read_text(encoding="utf-8")
+    assert "lang: zh-CN" in manuscript
+    assert "# 引言" in manuscript
+    assert "# 对审稿意见的回复" in reply
+    assert "# Introduction" not in manuscript
+    assert "# Reply to comments of reviewers" not in reply
+
+
+def test_init_cli_accepts_lang_zh_cn(tmp_path, monkeypatch) -> None:
+    """Expose zh-cn template selection through the public init CLI parser."""
+    target = tmp_path / "paper"
+    monkeypatch.setattr(cli, "notify_and_schedule_update_check", lambda version: None)
+
+    assert cli.main(["init", str(target), "--lang", "zh-cn"]) == 0
+    assert "# 引言" in (target / "manuscript.md").read_text(encoding="utf-8")
+
+
+def test_init_rejects_unsupported_language(tmp_path) -> None:
+    """Keep the init language contract explicit until more localized templates exist."""
+    with pytest.raises(ValueError, match="Only `--lang zh-cn`"):
+        InitSettings(directory=str(tmp_path / "paper"), lang="en-US").run()
 
 
 def test_init_merge_agents_directory_keeps_existing_files(tmp_path) -> None:

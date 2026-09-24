@@ -435,8 +435,6 @@ def test_generate_equation_parts_both_uses_independent_backend_caches(monkeypatc
     """Generate both backends with separate cache methods and keep set-data output."""
     calls = []
     warnings = []
-    monkeypatch.setattr(ole_parts, "preflight_set_data", lambda *args: True)
-
     monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
     monkeypatch.setattr(ole_parts, "iter_equation_requests_with_progress", lambda requests: enumerate(requests, start=1))
     monkeypatch.setattr(ole_parts, "mathtype_ole_mtef_sha256", lambda path: f"mtef:{Path(path).name}")
@@ -478,54 +476,10 @@ def test_generate_equation_parts_both_rejects_non_windows(monkeypatch, tmp_path)
         ole_parts.generate_equation_parts([], tmp_path, conversion_method="both")
 
 
-@pytest.mark.parametrize("probe_failures", [0, 1, 2])
-def test_both_preflight_retries_and_disables_set_data(monkeypatch, tmp_path, probe_failures) -> None:
-    """Retry a cold COM failure once and bypass COM formulas after two failed probes."""
-    probe_calls = []
-    formula_calls = []
-    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
-    monkeypatch.setattr(ole_parts, "native_source_digest_for_method", lambda method: None)
-    monkeypatch.setattr(ole_parts, "native_library_digest_for_method", lambda method: None)
-    monkeypatch.setattr(ole_parts, "inspect_ole", lambda path: FakeCompound())
-    monkeypatch.setattr(ole_parts, "mathtype_ole_mtef_sha256", lambda path: "same")
-    monkeypatch.setattr(ole_parts, "restore_cached_equation", lambda *args: False)
-    monkeypatch.setattr(ole_parts, "store_cached_equation", lambda *args: None)
-
-    def probe(input_path, ole_path, wmf_path, metadata_path, **kwargs):
-        """Fail the requested uncached probes, then provide valid simple-formula parts."""
-        probe_calls.append(input_path.read_text(encoding="utf-8"))
-        if len(probe_calls) <= probe_failures:
-            ole_path.write_bytes(b"partial")
-            raise RuntimeError("COM activation failed")
-        ole_path.write_bytes(b"probe")
-        wmf_path.write_bytes(minimal_wmf())
-        metadata_path.write_text("{}", encoding="utf-8")
-
-    def generate(index, input_path, ole_path, wmf_path, metadata_path, mtef_path, **kwargs):
-        """Record the selected formula backend and emit distinguishable results."""
-        method = kwargs["conversion_method"]
-        formula_calls.append(method)
-        ole_path.write_bytes(method.encode())
-        wmf_path.write_bytes(minimal_wmf())
-        metadata_path.write_text("{}", encoding="utf-8")
-
-    monkeypatch.setattr(ole_parts, "make_ole_wmf_metadata_with_mathtype_set_data", probe)
-    monkeypatch.setattr(ole_parts, "generate_uncached_equation_parts", generate)
-    equations = ole_parts.generate_equation_parts(
-        [ole_parts.EquationRequest("a"), ole_parts.EquationRequest("b")], tmp_path, "both",
-    )
-    assert len(probe_calls) == min(probe_failures + 1, 2)
-    assert all("x+1" in formula for formula in probe_calls)
-    assert formula_calls == (["rust", "rust"] if probe_failures == 2 else ["rust", "set-data"] * 2)
-    assert [equation.ole_path.read_bytes() for equation in equations] == [b"rust" if probe_failures == 2 else b"set-data"] * 2
-    assert not list(tmp_path.glob("set-data-probe-*"))
-
-
 @pytest.mark.parametrize("failure", ["exception", "invalid-preview", "invalid-metadata", "both-fail"])
 def test_both_uses_rust_when_set_data_fails(monkeypatch, tmp_path, failure) -> None:
     """Fallback must replace partial COM output and preserve later formula alignment."""
     monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
-    monkeypatch.setattr(ole_parts, "preflight_set_data", lambda *args: True)
     monkeypatch.setattr(ole_parts, "native_source_digest_for_method", lambda method: None)
     monkeypatch.setattr(ole_parts, "native_library_digest_for_method", lambda method: None)
     monkeypatch.setattr(ole_parts, "inspect_ole", lambda path: FakeCompound())
@@ -561,6 +515,47 @@ def test_both_uses_rust_when_set_data_fails(monkeypatch, tmp_path, failure) -> N
         assert '"rust"' in equations[0].metadata_path.read_text(encoding="utf-8")
     assert equations[1].ole_path.read_bytes() == b"set-data:2"
     assert b"set-data:1" not in cached
+
+
+def test_both_disables_set_data_after_three_marked_failures(monkeypatch, tmp_path) -> None:
+    """Disable only the unstable set-data backend after three matching failures."""
+    calls = []
+    monkeypatch.setattr(ole_parts.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(ole_parts, "native_source_digest_for_method", lambda method: None)
+    monkeypatch.setattr(ole_parts, "native_library_digest_for_method", lambda method: None)
+    monkeypatch.setattr(ole_parts, "restore_cached_equation", lambda *args: False)
+    monkeypatch.setattr(ole_parts, "store_cached_equation", lambda *args: None)
+    monkeypatch.setattr(ole_parts, "mathtype_ole_mtef_sha256", lambda path: "same")
+    monkeypatch.setattr(ole_parts, "inspect_ole", lambda path: FakeCompound())
+
+    def generate(index, input_path, ole_path, wmf_path, metadata_path, mtef_path, **kwargs):
+        """Fail the first three set-data conversions with the helper fallback text."""
+        method = kwargs["conversion_method"]
+        calls.append((index, method))
+        ole_path.write_bytes(f"{method}:{index}".encode())
+        wmf_path.write_bytes(minimal_wmf())
+        metadata_path.write_text("{}", encoding="utf-8")
+        if method == "set-data" and index <= 3:
+            raise RuntimeError(ole_parts.SET_DATA_FAILURE_MARKER)
+
+    monkeypatch.setattr(ole_parts, "generate_uncached_equation_parts", generate)
+    equations = ole_parts.generate_equation_parts(
+        [ole_parts.EquationRequest(str(index)) for index in range(1, 5)], tmp_path, "both",
+    )
+
+    assert [method for _, method in calls] == ["rust", "set-data", "rust", "set-data", "rust", "set-data", "rust"]
+    assert [equation.ole_path.read_bytes() for equation in equations] == [b"rust:1", b"rust:2", b"rust:3", b"rust:4"]
+
+
+def test_exception_marker_is_detected_from_exception_chain() -> None:
+    """Recognize the helper fallback text even when wrapped by another exception."""
+    try:
+        try:
+            raise RuntimeError(ole_parts.SET_DATA_FAILURE_MARKER)
+        except RuntimeError as exc:
+            raise ValueError("wrapped helper failure") from exc
+    except ValueError as exc:
+        assert ole_parts.exception_contains_set_data_marker(exc)
 
 
 def test_both_availability_accepts_rust_without_com(monkeypatch) -> None:

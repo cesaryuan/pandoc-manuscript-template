@@ -43,6 +43,7 @@ def run_docx_build(project: Path, cli_args: list[str]) -> tuple[str, Path]:
         ("zh-CN", None, []),
         (None, "zh-CN", []),
         ("en-US", None, ["--lang", "zh-cn"]),
+        ("en-US", None, ["--lang", "zhcn"]),
     ],
 )
 def test_chinese_docx_build_numbers_figures_tables_and_formats_headings(
@@ -61,7 +62,7 @@ def test_chinese_docx_build_numbers_figures_tables_and_formats_headings(
         + (f"lang: {metadata_lang}\n" if metadata_lang is not None else "")
         + "title: 中文标题\n"
         "figureTitle: 图\ntableTitle: 表\ntitleDelim: ' '\n---\n\n"
-        "# 第一章\n\n# 第二章\n\n# 第三章\n\n"
+        "# 第一章\n\n# 第二章\n\n# 第三章\n\n## 第一节\n\n"
         "![测试图](figure.png){#fig:one}\n\n"
         "| 列一 | 列二 |\n| --- | --- |\n| 值一 | 值二 |\n\n: 测试表 {#tbl:one}\n"
     )
@@ -82,23 +83,36 @@ def test_chinese_docx_build_numbers_figures_tables_and_formats_headings(
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
     assert "图 3-1" in text
     assert "表 3-1" in text
+    assert any(paragraph.text.startswith("3.1\t") for paragraph in doc.paragraphs)
     for name in ("Title", "Subtitle", "Heading 1", "Heading 2", "Heading 3"):
         style = doc.styles[name]
         assert style.font.bold is False, name
         assert style.element.rPr.bCs.val is False, name
         fonts = style.element.rPr.rFonts
         assert fonts.get(qn("w:eastAsia")) == "黑体", name
-        assert fonts.get(qn("w:ascii")) == "黑体", name
+        assert fonts.get(qn("w:ascii")) == "Times New Roman", name
         assert fonts.get(qn("w:eastAsiaTheme")) is None, name
 
 
-def test_docx_style_font_and_bold_work_without_language_mode(tmp_path: Path) -> None:
-    """Apply explicitly configured font and weight even for a non-Chinese build."""
+@pytest.mark.parametrize(
+    ("font_family", "western", "chinese"),
+    [
+        ("黑体", "黑体", "黑体"),
+        ('{western: "Times New Roman", chinese: "宋体"}', "Times New Roman", "宋体"),
+    ],
+)
+def test_docx_style_font_and_bold_work_without_language_mode(
+    tmp_path: Path,
+    font_family: str,
+    western: str,
+    chinese: str,
+) -> None:
+    """Apply string or script-specific fonts in an ordinary DOCX build."""
     if not shutil.which("pandoc") or not shutil.which("pandoc-crossref"):
         pytest.skip("Pandoc and pandoc-crossref are required for the DOCX contract")
     (tmp_path / "paper.md").write_text("# Heading\n\nBody.\n", encoding="utf-8")
     (tmp_path / "style.yml").write_text(
-        "docxStyle:\n  标题 1: {fontFamily: 黑体, bold: false}\n",
+        f"docxStyle:\n  标题 1: {{fontFamily: {font_family}, bold: false}}\n",
         encoding="utf-8",
     )
 
@@ -106,4 +120,6 @@ def test_docx_style_font_and_bold_work_without_language_mode(tmp_path: Path) -> 
 
     style = Document(output).styles["Heading 1"]
     assert style.font.bold is False
-    assert style.element.rPr.rFonts.get(qn("w:eastAsia")) == "黑体"
+    assert style.element.rPr.rFonts.get(qn("w:ascii")) == western
+    assert style.element.rPr.rFonts.get(qn("w:hAnsi")) == western
+    assert style.element.rPr.rFonts.get(qn("w:eastAsia")) == chinese

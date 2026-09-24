@@ -110,7 +110,7 @@ class BuildCommandSettings(VerboseCommandSettings):
     )
     lang: str | None = Field(
         default=None,
-        description="One-build language mode for DOCX (currently zh-cn).",
+        description="One-build language mode for DOCX (zh-cn or zhcn).",
     )
     project_dir: Path = Field(default=Path("."), description="Manuscript project directory.")
     reference_doc: CliSuppress[str | None] = Field(
@@ -567,12 +567,13 @@ def csl_args(pandoc_metadata: dict[str, Any]) -> list[str]:
     return ['--csl', to_pandoc_path(default_docx_csl())]
 
 
+CHINESE_HEADING_FONT = {"western": "Times New Roman", "chinese": "黑体"}
 CHINESE_DOCX_STYLES = {
-    "标题": {"fontFamily": "黑体", "bold": False},
-    "副标题": {"fontFamily": "黑体", "bold": False},
-    "标题 1": {"fontFamily": "黑体", "bold": False},
-    "标题 2": {"fontFamily": "黑体", "bold": False},
-    "标题 3": {"fontFamily": "黑体", "bold": False},
+    "标题": {"fontFamily": CHINESE_HEADING_FONT, "bold": False},
+    "副标题": {"fontFamily": CHINESE_HEADING_FONT, "bold": False},
+    "标题 1": {"fontFamily": CHINESE_HEADING_FONT, "bold": False},
+    "标题 2": {"fontFamily": CHINESE_HEADING_FONT, "bold": False},
+    "标题 3": {"fontFamily": CHINESE_HEADING_FONT, "bold": False},
 }
 
 
@@ -581,7 +582,7 @@ def is_chinese_language(language: object) -> bool:
     if not isinstance(language, str):
         return False
     normalized = language.strip().replace("_", "-").casefold()
-    return normalized == "zh" or normalized.startswith("zh-")
+    return normalized in {"zh", "zhcn"} or normalized.startswith("zh-")
 
 
 def prepare_docx_language(
@@ -591,8 +592,8 @@ def prepare_docx_language(
     """Apply a one-build language mode and remove `lang` before Pandoc reads metadata."""
     if lang_override is not None:
         normalized_override = lang_override.strip().replace("_", "-").casefold()
-        if normalized_override != "zh-cn":
-            raise ValueError("Only `--lang zh-cn` is currently supported for DOCX builds.")
+        if normalized_override not in {"zh-cn", "zhcn"}:
+            raise ValueError("Only `--lang zh-cn` and `--lang zhcn` are currently supported for DOCX builds.")
         selected_language = normalized_override
     else:
         selected_language = effective.pandoc_metadata.get("lang")
@@ -605,6 +606,9 @@ def prepare_docx_language(
         pandoc_metadata["chapters"] = True
         pandoc_metadata["chaptersDepth"] = 1
         pandoc_metadata["chapDelim"] = "-"
+        if pandoc_metadata.get("numberSections") is True:
+            # Crossref reuses chapDelim in heading numbers; Pandoc must number DOCX headings instead.
+            pandoc_metadata["numberSections"] = False
         pmt_settings.docx_style = merge_metadata(
             pmt_settings.docx_style or {},
             CHINESE_DOCX_STYLES,
@@ -629,6 +633,7 @@ def build_docx(
     log_debug("[DOCX] Building DOCX...\n")
 
     metadata_language = effective.pandoc_metadata.get("lang")
+    number_sections = effective.pandoc_metadata.get("numberSections") is True
     effective, chinese_mode = prepare_docx_language(effective, lang)
     if lang is not None:
         log_debug(f"[DEBUG] Command-line DOCX language mode: {lang}")
@@ -641,6 +646,8 @@ def build_docx(
     ensure_output_parent(docx_file)
     ensure_docx_target_writable(docx_file)
     extra_args = []
+    if chinese_mode and number_sections:
+        extra_args.append("--number-sections")
     pmt_settings = effective.pmt_settings
     conversion_method = normalize_conversion_method(pmt_settings.mathtype_conversion_method)
     use_mathtype = resolve_mathtype_build_enabled(

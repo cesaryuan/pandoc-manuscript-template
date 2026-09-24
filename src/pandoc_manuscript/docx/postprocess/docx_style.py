@@ -13,7 +13,7 @@ Supported metadata:
     docxStyle:
       '正文文本':
         fontSize: 小五
-        fontFamily: 宋体
+        fontFamily: 宋体  # or {western: "Times New Roman", chinese: "宋体"}
         bold: false
         fontColor: '#000000'
         lineSpacing: 1.5
@@ -288,6 +288,28 @@ def parse_alignment(value: Any, field_name: str):
     return ALIGNMENT_VALUES[normalized], normalized
 
 
+def parse_font_family(value: Any, field_name: str) -> dict[str, str]:
+    """Parse one font family into separate Western and Chinese font names."""
+    if isinstance(value, str):
+        family = value.strip()
+        if not family:
+            raise ValueError(f"{field_name} must be a non-empty font name")
+        return {"western": family, "chinese": family}
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be a font name or a mapping")
+
+    parsed: dict[str, str] = {}
+    for target, raw_family in value.items():
+        if target not in {"western", "chinese"}:
+            raise ValueError(f"{field_name} keys must be western or chinese")
+        if not isinstance(raw_family, str) or not raw_family.strip():
+            raise ValueError(f"{field_name}.{target} must be a non-empty font name")
+        parsed[target] = raw_family.strip()
+    if not parsed:
+        raise ValueError(f"{field_name} must set western or chinese")
+    return parsed
+
+
 def normalize_paragraph_style_settings(
     raw_settings: dict[str, Any],
     field_prefix: str,
@@ -353,9 +375,7 @@ def normalize_paragraph_style_settings(
             raise ValueError(f"{field_prefix}.fontSize must be greater than 0")
         normalized["font_size_pt"] = font_size_pt
     if font_family_value is not None:
-        if not isinstance(font_family_value, str) or not font_family_value.strip():
-            raise ValueError(f"{field_prefix}.fontFamily must be a non-empty font name")
-        normalized["font_family"] = font_family_value.strip()
+        normalized["font_family"] = parse_font_family(font_family_value, f"{field_prefix}.fontFamily")
     if bold_value is not None:
         if isinstance(bold_value, bool):
             normalized["bold"] = bold_value
@@ -478,12 +498,17 @@ def apply_paragraph_style_settings(doc: DocumentObject, settings: dict[str, Any]
     if "font_size_pt" in settings:
         style.font.size = Pt(settings["font_size_pt"])
     if "font_family" in settings:
-        style.font.name = settings["font_family"]
+        font_family = settings["font_family"]
         r_fonts = style.element.get_or_add_rPr().get_or_add_rFonts()
-        for script in ("ascii", "hAnsi", "eastAsia", "cs"):
-            r_fonts.set(qn(f"w:{script}"), settings["font_family"])
-        for theme in ("asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme"):
-            r_fonts.attrib.pop(qn(f"w:{theme}"), None)
+        if "western" in font_family:
+            style.font.name = font_family["western"]
+            for script in ("ascii", "hAnsi"):
+                r_fonts.set(qn(f"w:{script}"), font_family["western"])
+            for theme in ("asciiTheme", "hAnsiTheme"):
+                r_fonts.attrib.pop(qn(f"w:{theme}"), None)
+        if "chinese" in font_family:
+            r_fonts.set(qn("w:eastAsia"), font_family["chinese"])
+            r_fonts.attrib.pop(qn("w:eastAsiaTheme"), None)
     if "bold" in settings:
         style.font.bold = settings["bold"]
         style.element.get_or_add_rPr().get_or_add_bCs().val = settings["bold"]
@@ -529,7 +554,8 @@ def format_applied_style_summary(applied: dict[str, Any]) -> str:
         red, green, blue = applied["font_color_rgb"]
         details.append(f"font color #{red:02X}{green:02X}{blue:02X}")
     if "font_family" in applied:
-        details.append(f"font family {applied['font_family']}")
+        families = applied["font_family"]
+        details.append("font family " + ", ".join(f"{key}={value}" for key, value in families.items()))
     if "bold" in applied:
         details.append(f"bold {str(applied['bold']).lower()}")
     if "line_spacing_display" in applied:

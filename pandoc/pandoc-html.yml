@@ -6,7 +6,9 @@ standalone: true
 data-dir: ${.}/
 # Keep the result as one portable HTML file for direct browser viewing.
 embed-resources: false
-html-math-method: mathml
+math-method:
+  method: mathjax
+  url: "https://cdn.jsdmirror.com/npm/mathjax@4/tex-chtml.js"
 
 # Filters are applied in order so cross-references and citations are resolved
 # before Pandoc writes the standalone HTML document.

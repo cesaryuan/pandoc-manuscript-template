@@ -250,6 +250,49 @@ Add `--verbose` to any command, for example `papper build docx --verbose`, to sh
 detailed debug logs such as complete external command lines. Normal output keeps
 the main build stages, warnings, and results concise.
 
+To start or reuse a local Pandoc HTTP server for an editor or extension while
+building HTML, use:
+
+```bash
+papper build html --start-server
+```
+
+The command checks `http://127.0.0.1:3030/version`, reuses a responsive PMT
+server, or starts the project-bound PMT runtime. An explicit generic server can
+still be selected with `PMT_PANDOC_SERVER_COMMAND`. The endpoint is printed in the build log and
+supports the official `/`, `/batch`, and `/version` API. State is recorded in
+`.pmt/pandoc-server.json` and output in `.pmt/pandoc-server.log`.
+
+The server is an integration service for repeated Markdown conversions. It
+loads the current project's PMT defaults and metadata, and uses the same
+`pandoc-crossref` and Lua filter chain as the normal HTML build. The normal PMT
+HTML build still runs its existing CLI path, so `--start-server` does not
+change cross-reference or resource behavior. Set a generic server command
+explicitly only when needed:
+
+```powershell
+$env:PMT_PANDOC_SERVER_COMMAND = 'C:\path\to\pandoc-server.exe'
+papper build html --start-server --server-port 3030
+```
+
+The repository includes a minimal executable wrapper under
+`scripts/pandoc-server`. With GHC/Cabal and the matching Pandoc 3.11 package
+available, build it into the project-managed tool directory with:
+
+```powershell
+Push-Location .\scripts\pandoc-server
+cabal install . --installdir ..\..\.pmt\tools\bin --overwrite-policy=always
+Pop-Location
+```
+
+The PMT wrapper exposes a deliberately smaller API than the generic Pandoc
+server. Use `GET /version` for health and `POST /convert` with
+`{"path":"manuscript.md"}` for one result (the path defaults to
+`manuscript.md` when omitted), or `POST /batch` with an array of
+`{"path": ...}` objects. Paths are resolved inside the project that started
+the server. The response contains the generated HTML, after the same PMT HTML
+post-processing used by `papper build html`.
+
 ## Maintainer releases and native build caches
 
 Release with `uvx bump-my-version bump patch` followed by

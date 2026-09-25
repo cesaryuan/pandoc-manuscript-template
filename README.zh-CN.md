@@ -215,6 +215,43 @@ papper distclean
 
 完整 CLI 请查看 `papper --help`。
 
+如果需要同时为编辑器或其他扩展启动（或复用）本机 Pandoc HTTP 服务，可以执行：
+
+```bash
+papper build html --start-server
+```
+
+命令会先请求 `http://127.0.0.1:3030/version`；已有可用的 PMT 服务时直接复用，否则
+启动项目绑定的 PMT runtime。需要使用其他通用 server 时才设置
+`PMT_PANDOC_SERVER_COMMAND`。服务地址会打印到构建日志，支持 `/`、`/batch`、
+`/version` 接口。
+进程状态保存在 `.pmt/pandoc-server.json`，服务输出保存在 `.pmt/pandoc-server.log`。
+
+这个服务用于高频 Markdown 转换。它会读取当前项目的 PMT defaults 和 metadata，使用
+与正常 HTML 构建相同的 `pandoc-crossref` 与 Lua filter 链。Papper 自己的首次 HTML
+构建仍使用现有 CLI 流程，因此不会因为启动服务而改变交叉引用或本地资源行为。若
+确实需要使用其他通用 server，可以显式指定：
+
+```powershell
+$env:PMT_PANDOC_SERVER_COMMAND = 'C:\path\to\pandoc-server.exe'
+papper build html --start-server --server-port 3030
+```
+
+仓库在 `scripts/pandoc-server` 中提供了最小的可执行入口。安装了 GHC/Cabal 且有
+匹配 Pandoc 3.11 的 Haskell 包时，可以将它构建到项目管理的工具目录：
+
+```powershell
+Push-Location .\scripts\pandoc-server
+cabal install . --installdir ..\..\.pmt\tools\bin --overwrite-policy=always
+Pop-Location
+```
+
+Papper 包装后的服务不会要求扩展重复传 Pandoc 参数。使用 `GET /version` 检查服务，
+使用 `POST /convert` 并提交 `{"path":"manuscript.md"}` 转换单个文件（省略 path 时默认
+使用 `manuscript.md`）；也可以向
+`POST /batch` 提交多个 `{"path": ...}`。路径只能位于启动服务的项目目录内。返回的
+HTML 会继续经过与 `papper build html` 相同的 PMT HTML 后处理。
+
 ## 致谢
 
 - [Pandoc](https://pandoc.org/)

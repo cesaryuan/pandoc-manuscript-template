@@ -40,6 +40,7 @@ from ..docx.svg_filters import (
 )
 from ..docx import svg_filters as svg_filter_helpers
 from ..html.build import build_html
+from .pandoc_server import DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT
 from .setup import ensure_pandoc_tools, pandoc_command, pandoc_tools_env
 from .common import VerboseCommandSettings, project_directory, run_streaming_command
 
@@ -120,6 +121,16 @@ class BuildCommandSettings(VerboseCommandSettings):
         default=None,
         description="Override the bundled DOCX reference document.",
     )
+    start_server: bool = Field(
+        default=False,
+        description="Start or reuse a local Pandoc HTTP server before an HTML build.",
+    )
+    server_host: str = Field(default=DEFAULT_SERVER_HOST, description="Local Pandoc server bind host.")
+    server_port: int = Field(default=DEFAULT_SERVER_PORT, description="Local Pandoc server HTTP port.")
+    server_command: str | None = Field(
+        default=None,
+        description="Pandoc server command; defaults to PMT_PANDOC_SERVER_COMMAND or PATH lookup.",
+    )
 
     @classmethod
     def settings_customise_sources(
@@ -149,6 +160,10 @@ class BuildCommandSettings(VerboseCommandSettings):
                     reference_doc=self.reference_doc,
                     mathtype=self.mathtype,
                     lang=self.lang,
+                    start_server=self.start_server,
+                    server_host=self.server_host,
+                    server_port=self.server_port,
+                    server_command=self.server_command,
                 )
             )
 
@@ -819,6 +834,10 @@ def run_build_command(
     warn_hat_order: bool = True,
     mathtype: bool | None = None,
     lang: str | None = None,
+    start_server: bool = False,
+    server_host: str = DEFAULT_SERVER_HOST,
+    server_port: int = DEFAULT_SERVER_PORT,
+    server_command: str | None = None,
 ) -> int:
     """Run the selected manuscript build target with direct settings values."""
     configure_output_file(None)
@@ -839,6 +858,8 @@ def run_build_command(
         raise ValueError("--mathtype/--no-mathtype is only supported by the docx target.")
     if lang is not None and target != "docx":
         raise ValueError("--lang is only supported by the docx target.")
+    if start_server and target != "html":
+        raise ValueError("--start-server is only supported by the html target.")
     configure_reference_doc(reference_doc)
 
     configure_manuscript(manuscript_arg or SETTINGS.manuscript_file, derive_project_name=bool(manuscript_arg))
@@ -853,7 +874,12 @@ def run_build_command(
         elif target == "latex":
             build_latex()
         elif target == "html":
-            build_html()
+            build_html(
+                start_server=start_server,
+                server_host=server_host,
+                server_port=server_port,
+                server_command=server_command,
+            )
         else:
             build_json()
         return 0

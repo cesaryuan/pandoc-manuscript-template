@@ -15,6 +15,6 @@ math-method:
 # before Pandoc writes the standalone HTML document.
 filters:
   - pandoc-crossref
-  - ${.}/filters/normalize_chinese_numbering.lua
-  - ${.}/filters/merge_table_cells.lua
+  - ${.}/filters/shared/normalize_chinese_numbering.lua
+  - ${.}/filters/shared/merge_table_cells.lua
   - citeproc

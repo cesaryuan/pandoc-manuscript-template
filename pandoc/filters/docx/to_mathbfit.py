@@ -14,7 +14,7 @@ Replaced commands:
 - \\mathbfup → \\mathbfit
 
 Usage:
-    pandoc input.md --filter pandoc/filters/to_mathbfit.py -o output.docx
+    pandoc input.md --filter pandoc/filters/docx/to_mathbfit.py -o output.docx
 """
 
 import re

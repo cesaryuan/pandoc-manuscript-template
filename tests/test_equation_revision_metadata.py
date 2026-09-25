@@ -19,7 +19,7 @@ def test_equation_revision_attr_filter_wraps_display_equation_and_keeps_label() 
     if pandoc is None:
         pytest.skip("pandoc is not installed")
 
-    filter_path = Path(__file__).resolve().parents[1] / "pandoc" / "filters" / "equation_revision_attr.lua"
+    filter_path = Path(__file__).resolve().parents[1] / "pandoc" / "filters" / "docx" / "equation_revision_attr.lua"
     markdown = """\
 $$
 a+b
@@ -44,7 +44,7 @@ def test_docx_metadata_filter_emits_equation_revision_marker(tmp_path) -> None:
     if pandoc is None:
         pytest.skip("pandoc is not installed")
 
-    filter_path = Path(__file__).resolve().parents[1] / "pandoc" / "filters" / "docx_metadata.lua"
+    filter_path = Path(__file__).resolve().parents[1] / "pandoc" / "filters" / "docx" / "docx_metadata.lua"
     output_path = tmp_path / "equation-metadata.docx"
     markdown = """\
 ::: {revision=true}
@@ -74,7 +74,7 @@ def test_mathtype_marker_filter_preserves_inline_and_display_context(tmp_path, m
     if pandoc is None:
         pytest.skip("pandoc is not installed")
 
-    filter_path = Path(__file__).resolve().parents[1] / "pandoc" / "filters" / "mathtype_markers.lua"
+    filter_path = Path(__file__).resolve().parents[1] / "pandoc" / "filters" / "docx" / "mathtype_markers.lua"
     output_path = tmp_path / "mathtype-markers.docx"
     markdown = """\
 ---

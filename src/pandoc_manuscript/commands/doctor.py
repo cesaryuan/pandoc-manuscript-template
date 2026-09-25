@@ -75,20 +75,24 @@ class DoctorSettings(VerboseCommandSettings):
                 ),
                 (
                     "papper DOCX metadata filter",
-                    (root / "pandoc" / "filters" / "docx_metadata.lua").exists(),
-                    str(root / "pandoc" / "filters" / "docx_metadata.lua"),
+                    (root / "pandoc" / "filters" / "docx" / "docx_metadata.lua").exists(),
+                    str(root / "pandoc" / "filters" / "docx" / "docx_metadata.lua"),
                 ),
                 (
                     "papper shared AST filters",
                     all(
                         (root / "pandoc" / "filters" / name).exists()
                         for name in (
-                            "normalize_chinese_numbering.lua",
-                            "merge_table_cells.lua",
-                            "inline_math_spacing.lua",
+                            "shared/normalize_chinese_numbering.lua",
+                            "shared/merge_table_cells.lua",
                         )
                     ),
                     str(root / "pandoc" / "filters"),
+                ),
+                (
+                    "papper DOCX AST filters",
+                    (root / "pandoc" / "filters" / "docx" / "inline_math_spacing.lua").exists(),
+                    str(root / "pandoc" / "filters" / "docx"),
                 ),
                 ("project directory", project_dir.exists(), str(project_dir)),
                 ("project manuscript.md", (project_dir / "manuscript.md").exists(), str(project_dir / "manuscript.md")),

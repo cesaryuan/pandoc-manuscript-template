@@ -66,7 +66,7 @@ def mathtype_marked_docx_path(output: Path) -> Path:
 
 def docx_metadata_filter_args() -> list[str]:
     """Return Pandoc args for hidden DOCX metadata markers used by reply builds."""
-    filter_path = template_root() / "pandoc" / "filters" / "docx_metadata.lua"
+    filter_path = template_root() / "pandoc" / "filters" / "docx" / "docx_metadata.lua"
     if not filter_path.exists():
         raise FileNotFoundError(f"DOCX metadata Pandoc filter not found: {filter_path}")
     return ["--lua-filter", reply_resolve.to_pandoc_path(filter_path)]

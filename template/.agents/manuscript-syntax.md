@@ -491,10 +491,13 @@ In this example, "Group A" will span two rows (merging with the cell below conta
 
 All tables are automatically fitted to window width and centered. This can be overridden using the `autofit` or `alignment` table attributes.
 
-**Post-processing modules location**: `src/pandoc_manuscript/postprocess/`
+**Post-processing modules location**: `src/pandoc_manuscript/docx/postprocess/`
 - `process_table_metadata.py` - Applies metadata collected from Pandoc table attributes
-- `merge_table_cells.py` - Merges cells based on markers
 - `autofit_tables.py` - Auto-fits tables to window
+
+The shared Pandoc AST filter for the `!<!` and `!^!` markers is
+`pandoc/filters/shared/merge_table_cells.lua`; it runs before DOCX, HTML, and
+LaTeX writers.
 
 These modules run automatically during `papper build docx` and `papper build-reply` when DOCX post-processing is enabled.
 

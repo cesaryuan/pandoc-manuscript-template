@@ -1,6 +1,6 @@
 
 """
-Pandoc filter to add ../ prefix to all file paths in the document.
+Pandoc filter to move all images, bibliography files, CSL files and other resource files to the target directory.
 
 This filter processes:
 - Image paths in markdown images
@@ -9,45 +9,25 @@ This filter processes:
 - Any other file references
 
 Usage:
-    pandoc input.md --filter pandoc/path_prefix_filter.py -o output.pdf
+    pandoc input.md --filter pandoc/filters/latex/resource_move.py -o output.pdf
 """
 
-import re
+import shutil
 import os
 from typing import Any, Union
 import panflute as pf
 
-
-def add_prefix_to_path(path: str, prefix: str = "../") -> str:
-    """
-    Add prefix to a path if it's not already absolute or a URL.
-    
-    Args:
-        path: The original path
-        prefix: The prefix to add (default: "../")
-    
-    Returns:
-        The path with prefix added, or original path if it's absolute/URL
-    """
-    if not path:
-        return path
-    
-    # Don't modify absolute paths or URLs
-    if (path.startswith('/') or 
-        path.startswith('http://') or 
-        path.startswith('https://') or
-        path.startswith('file://') or
-        os.path.isabs(path)):
-        return path
-    
-    # Don't add prefix if it's already there
-    if path.startswith(prefix):
-        return path
-    
-    return prefix + path
+TARGET_DIR = "output/latex/"  # Generic output directory for LaTeX resources
+def move_resource(path: str):
+    if not os.path.exists(path):
+        print(f"Warning: File '{path}' does not exist.")
+        return None
+    os.makedirs(os.path.dirname(f"{TARGET_DIR}/{path}"), exist_ok=True)
+    shutil.copy(path, f"{TARGET_DIR}/{path}")
+    return None
 
 
-def process_metadata_value(value: Any, prefix: str = "../") -> Any:
+def process_metadata_value(value: Any) -> Any:
     """
     Process panflute metadata values that might contain file paths.
     
@@ -60,29 +40,26 @@ def process_metadata_value(value: Any, prefix: str = "../") -> Any:
     """
     # Handle MetaString
     if isinstance(value, pf.MetaString):
-        return pf.MetaString(add_prefix_to_path(value.text, prefix))
+        move_resource(value.text)
     
     # Handle MetaInlines (inline text)
     elif isinstance(value, pf.MetaInlines):
         # Extract text from inlines
         text = pf.stringify(value)
-        return pf.MetaString(add_prefix_to_path(text, prefix))
+        move_resource(text)
     
     # Handle MetaList (list of values)
     elif isinstance(value, pf.MetaList):
-        processed_items = [process_metadata_value(item, prefix) for item in value.content]
-        return pf.MetaList(*processed_items)
+        [process_metadata_value(item) for item in value.content]
     
     # Handle MetaMap (dictionary)
     elif isinstance(value, pf.MetaMap):
-        processed_dict = {k: process_metadata_value(v, prefix) for k, v in value.content.items()}
-        return pf.MetaMap(**processed_dict)
+        {process_metadata_value(v) for k, v in value.content.items()}
     
     # Return unchanged for other types
     else:
-        return value
-
-
+        None
+    
 def action(elem: pf.Element, doc: pf.Doc) -> Union[pf.Element, None]:
     """
     Panflute action function to process each element.
@@ -96,15 +73,13 @@ def action(elem: pf.Element, doc: pf.Doc) -> Union[pf.Element, None]:
     """
     # Process images
     if isinstance(elem, pf.Image):
-        elem.url = add_prefix_to_path(elem.url)
-        return elem
+        move_resource(elem.url)
     
     # Process links that might reference local files
     if isinstance(elem, pf.Link):
         # Only modify if it looks like a file path (has extension)
         if '.' in elem.url and not elem.url.startswith('http'):
-            elem.url = add_prefix_to_path(elem.url)
-        return elem
+            move_resource(elem.url)
     
     return None
 
@@ -118,11 +93,11 @@ def prepare(doc: pf.Doc) -> None:
     """
     # Process bibliography paths
     if 'bibliography' in doc.metadata:
-        doc.metadata['bibliography'] = process_metadata_value(doc.metadata['bibliography'])
+        process_metadata_value(doc.metadata['bibliography'])
     
     # Process CSL path
     if 'csl' in doc.metadata:
-        doc.metadata['csl'] = process_metadata_value(doc.metadata['csl'])
+        process_metadata_value(doc.metadata['csl'])
     
     # Process other common metadata paths
     path_metadata_keys = [
@@ -140,17 +115,7 @@ def prepare(doc: pf.Doc) -> None:
     
     for key in path_metadata_keys:
         if key in doc.metadata:
-            doc.metadata[key] = process_metadata_value(doc.metadata[key])
-
-
-def finalize(doc: pf.Doc) -> None:
-    """
-    Finalize function called after all elements are processed.
-    
-    Args:
-        doc: The document
-    """
-    pass
+            process_metadata_value(doc.metadata[key])
 
 
 def main(doc: pf.Doc | None = None):
@@ -166,7 +131,6 @@ def main(doc: pf.Doc | None = None):
     return pf.run_filter(
         action,
         prepare=prepare,
-        finalize=finalize,
         doc=doc
     )
 

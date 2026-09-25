@@ -12,16 +12,16 @@ template: ${.}/templates/default.xml
 
 # Filters are applied in order
 filters:
-  - ${.}/filters/equation_revision_attr.lua
+  - ${.}/filters/docx/equation_revision_attr.lua
   # Preserve original display/inline context before pandoc-crossref can turn
   # tab-layout display equations into InlineMath. Equation attributes must be
   # extracted first because its filter expects DisplayMath to lead the block.
-  - ${.}/filters/mathtype_markers.lua
+  - ${.}/filters/docx/mathtype_markers.lua
   - pandoc-crossref  # Must come before citeproc
-  - ${.}/filters/normalize_chinese_numbering.lua
-  - ${.}/filters/merge_table_cells.lua
-  - ${.}/filters/inline_math_spacing.lua
+  - ${.}/filters/shared/normalize_chinese_numbering.lua
+  - ${.}/filters/shared/merge_table_cells.lua
+  - ${.}/filters/docx/inline_math_spacing.lua
   - citeproc
-  - ${.}/filters/citation_number_range_delimiter.lua
-  - ${.}/filters/italic_to_emphasis_style.lua
-  - ${.}/filters/captionless_image_style.lua
+  - ${.}/filters/docx/citation_number_range_delimiter.lua
+  - ${.}/filters/docx/italic_to_emphasis_style.lua
+  - ${.}/filters/docx/captionless_image_style.lua

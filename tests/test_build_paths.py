@@ -93,7 +93,7 @@ def test_default_citation_range_delimiter_survives_pandoc_lua_filter(tmp_path: P
             "--csl",
             str(repo_root / "pandoc" / "csl" / "elsevier-vancouver.csl"),
             "--lua-filter",
-            str(repo_root / "pandoc" / "filters" / "citation_number_range_delimiter.lua"),
+            str(repo_root / "pandoc" / "filters" / "docx" / "citation_number_range_delimiter.lua"),
             "--from",
             "markdown",
             "--to",

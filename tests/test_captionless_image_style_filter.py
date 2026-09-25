@@ -28,7 +28,7 @@ def test_captionless_image_filter_applies_figure_style(tmp_path) -> None:
         pytest.skip("pandoc is not installed")
 
     repo_root = Path(__file__).resolve().parents[1]
-    filter_path = repo_root / "pandoc" / "filters" / "captionless_image_style.lua"
+    filter_path = repo_root / "pandoc" / "filters" / "docx" / "captionless_image_style.lua"
     reference_doc = repo_root / "pandoc" / "manuscript-template" / "reference-doc.docx"
     image_path = repo_root / "template" / "examples" / "images" / "single-figure-example.png"
     output_path = tmp_path / "captionless-image.docx"
@@ -64,7 +64,7 @@ def test_captionless_image_filter_ignores_inline_images(tmp_path) -> None:
         pytest.skip("pandoc is not installed")
 
     repo_root = Path(__file__).resolve().parents[1]
-    filter_path = repo_root / "pandoc" / "filters" / "captionless_image_style.lua"
+    filter_path = repo_root / "pandoc" / "filters" / "docx" / "captionless_image_style.lua"
     reference_doc = repo_root / "pandoc" / "manuscript-template" / "reference-doc.docx"
     image_path = repo_root / "template" / "examples" / "images" / "single-figure-example.png"
     output_path = tmp_path / "inline-image.docx"

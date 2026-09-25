@@ -12,7 +12,7 @@ def test_table_metadata_filter_keeps_uncaptioned_table_attributes(tmp_path) -> N
     if pandoc is None:
         pytest.skip("pandoc is not installed")
 
-    filter_path = Path(__file__).resolve().parents[1] / "pandoc" / "filters" / "docx_metadata.lua"
+    filter_path = Path(__file__).resolve().parents[1] / "pandoc" / "filters" / "docx" / "docx_metadata.lua"
     output_path = tmp_path / "table-metadata.docx"
     markdown = """\
 | **Algorithm: Demo** |

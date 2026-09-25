@@ -389,7 +389,7 @@ def docx_svg_to_png_filter_env(settings: PmtSettings, convert_all: bool | None =
 
 def docx_metadata_filter_args() -> list[str]:
     """Return Pandoc args for DOCX-only hidden metadata markers."""
-    filter_path = resource_path("pandoc/filters/docx_metadata.lua")
+    filter_path = resource_path("pandoc/filters/docx/docx_metadata.lua")
     if not filter_path.exists():
         raise FileNotFoundError(f"DOCX metadata Pandoc filter not found: {filter_path}")
     return ["--lua-filter", to_pandoc_path(filter_path)]
@@ -739,7 +739,7 @@ def build_docx(
     if should_use_mathbfit_filter():
         log_debug("[DEBUG] Using mathbfit filter (Pandoc <= 3.8.3.0)")
         extra_args.extend(['--filter', to_pandoc_path(python_filter_wrapper(
-            resource_path('pandoc/filters/to_mathbfit.py'), 'to_mathbfit_filter',
+            resource_path('pandoc/filters/docx/to_mathbfit.py'), 'to_mathbfit_filter',
         ))])
 
     if use_mathtype:

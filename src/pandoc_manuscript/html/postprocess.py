@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..runtime.logging import log_debug, log_success
+from .autofit_tables import center_html_tables
 from .common import load_html_document, save_html_document
 from .insert_author_info import insert_author_info
 
@@ -16,7 +17,7 @@ def postprocess_html(
     pandoc_metadata: dict[str, Any] | None = None,
     skip_author_info: bool = False,
 ) -> bool:
-    """Apply the remaining HTML-only author metadata post-processing step."""
+    """Apply HTML table alignment and author metadata post-processing steps."""
     path = Path(html_path)
     if not path.exists():
         log_debug(f"[HTML] Output not found, skipping post-processing: {path}")
@@ -24,6 +25,8 @@ def postprocess_html(
 
     document = load_html_document(path)
     metadata = pandoc_metadata or {}
+    table_count = center_html_tables(document)
+    log_debug(f"[HTML] Centered {table_count} table(s)")
     if skip_author_info:
         log_debug("[HTML] Skipping author information")
     else:

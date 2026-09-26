@@ -107,6 +107,21 @@ p {
   margin: 1em 0;
   text-align: justify;
 }
+/* Keep Pandoc's DOCX revision styles visible in standalone HTML output. */
+[data-custom-style="Revision Char"],
+[data-custom-style="Revision Para"] {
+  color: #ee0000;
+}
+[data-revision_rows="*"] > caption,
+[data-revision_rows="*"] > thead,
+[data-revision_rows="*"] > tbody,
+[data-revision_rows="*"] > tfoot,
+[data-revision_columns="*"] > caption,
+[data-revision_columns="*"] > thead,
+[data-revision_columns="*"] > tbody,
+[data-revision_columns="*"] > tfoot {
+  color: #ee0000;
+}
 ol,
 ul,
 li {

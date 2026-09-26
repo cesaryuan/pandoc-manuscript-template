@@ -8,6 +8,7 @@ from pathlib import Path
 from ..docx.page_margins import normalize_page_margins
 from ..runtime.metadata import EffectiveMetadata
 from .postprocess import postprocess_html
+from .styles import build_reference_style_css
 
 
 # HTML keeps display equations as native MathML blocks instead of DOCX-style
@@ -62,6 +63,21 @@ def apply_html_page_metadata(effective: EffectiveMetadata) -> None:
         metadata[f"html-page-margin-{side}"] = _css_length(length)
 
 
+def append_reference_style_block(effective: EffectiveMetadata, css: str) -> None:
+    """Append generated reference styles as a raw HTML header include."""
+    existing = effective.pandoc_metadata.get("header-includes")
+    if existing is None:
+        includes: list[object] = []
+    elif isinstance(existing, list):
+        includes = list(existing)
+    else:
+        includes = [existing]
+    # Keep user-supplied header includes after generated defaults so an explicit
+    # project-level CSS rule can still refine the reference-document styling.
+    includes.insert(0, f"<style>\n{css}\n</style>")
+    effective.pandoc_metadata["header-includes"] = includes
+
+
 def build_html(
     *,
     start_server: bool = False,
@@ -93,6 +109,13 @@ def build_html(
     ensure_output_parent(html_file)
     effective, chinese_mode = prepare_pandoc_language(load_build_metadata())
     effective.pandoc_metadata.update(HTML_EQUATION_METADATA)
+    append_reference_style_block(
+        effective,
+        build_reference_style_css(
+            resource_path("pandoc/manuscript-template/reference-doc/word/styles.xml"),
+            effective.pmt_settings,
+        ),
+    )
     apply_html_page_metadata(effective)
     log_debug(
         "[HTML] Page layout: A4 with margins "

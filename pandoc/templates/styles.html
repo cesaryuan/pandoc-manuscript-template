@@ -3,12 +3,24 @@
 */
 $if(document-css)$
 html {
-  /* Keep the standalone HTML baseline close to the DOCX reference document. */
+  /* Keep the browser canvas separate from the A4 page shown below. */
   font-family: $if(mainfont)$$mainfont$$else$"Times New Roman", Times, serif$endif$;
   font-size: $if(fontsize)$$fontsize$$else$12pt$endif$;
   line-height: $if(linestretch)$$linestretch$$else$1.5$endif$;
   color: $if(fontcolor)$$fontcolor$$else$#1a1a1a$endif$;
-  background-color: $if(backgroundcolor)$$backgroundcolor$$else$#fdfdfd$endif$;
+  background-color: $if(backgroundcolor)$$backgroundcolor$$else$#f0eff5$endif$;
+  --pmt-page-width: $if(html-page-width)$$html-page-width$$else$210mm$endif$;
+  --pmt-page-height: $if(html-page-height)$$html-page-height$$else$297mm$endif$;
+  --pmt-page-margin-top: $if(html-page-margin-top)$$html-page-margin-top$$else$1.905cm$endif$;
+  --pmt-page-margin-bottom: $if(html-page-margin-bottom)$$html-page-margin-bottom$$else$1.905cm$endif$;
+  --pmt-page-margin-left: $if(html-page-margin-left)$$html-page-margin-left$$else$1.905cm$endif$;
+  --pmt-page-margin-right: $if(html-page-margin-right)$$html-page-margin-right$$else$1.905cm$endif$;
+  --pmt-text-width: calc(
+    var(--pmt-page-width) - var(--pmt-page-margin-left) - var(--pmt-page-margin-right)
+  );
+  --pmt-text-height: calc(
+    var(--pmt-page-height) - var(--pmt-page-margin-top) - var(--pmt-page-margin-bottom)
+  );
 }
 /* The Chinese DOCX mode uses Times New Roman for Latin text, 宋体 for body
    Chinese text, and 黑体 for headings. Font fallback applies per character. */
@@ -32,21 +44,36 @@ html[lang="zh-cn"] h6 {
   font-weight: normal;
 }
 body {
-  margin: 0 auto;
-  max-width: $if(maxwidth)$$maxwidth$$else$40em$endif$;
-  padding-left: $if(margin-left)$$margin-left$$else$50px$endif$;
-  padding-right: $if(margin-right)$$margin-right$$else$50px$endif$;
-  padding-top: $if(margin-top)$$margin-top$$else$50px$endif$;
-  padding-bottom: $if(margin-bottom)$$margin-bottom$$else$50px$endif$;
+  margin: 0;
+  max-width: none;
+  min-height: 100vh;
+  padding: 2rem 0;
+  background-color: $if(backgroundcolor)$$backgroundcolor$$else$#f0eff5$endif$;
   hyphens: auto;
   overflow-wrap: break-word;
   text-rendering: optimizeLegibility;
   font-kerning: normal;
 }
+.pmt-page {
+  box-sizing: border-box;
+  width: var(--pmt-page-width);
+  min-height: var(--pmt-page-height);
+  margin: 0 auto;
+  padding: var(--pmt-page-margin-top) var(--pmt-page-margin-right)
+    var(--pmt-page-margin-bottom) var(--pmt-page-margin-left);
+  background-color: #fff;
+  box-shadow: 0 1px 8px rgba(35, 35, 45, 0.18);
+}
 @media (max-width: 600px) {
   body {
     font-size: 0.9em;
     padding: 12px;
+  }
+  .pmt-page {
+    width: 100%;
+    min-height: auto;
+    padding: 12px;
+    box-shadow: none;
   }
   h1 {
     font-size: 1.8em;
@@ -54,11 +81,19 @@ body {
 }
 @media print {
   html {
-    background-color: $if(backgroundcolor)$$backgroundcolor$$else$white$endif$;
+    background-color: white;
   }
   body {
-    background-color: transparent;
+    min-height: auto;
+    padding: 0;
+    background-color: white;
     color: black;
+  }
+  .pmt-page {
+    width: auto;
+    min-height: auto;
+    margin: 0;
+    box-shadow: none;
   }
   p, h2, h3 {
     orphans: 3;
@@ -70,6 +105,19 @@ body {
 }
 p {
   margin: 1em 0;
+  text-align: justify;
+}
+ol,
+ul,
+li {
+  text-align: justify;
+}
+/* Citeproc emits #refs/.csl-entry; keep the bibliography aligned with body text. */
+#refs,
+#refs .csl-entry,
+.references,
+.csl-bib-body,
+.csl-entry {
   text-align: justify;
 }
 /* Keep the generated author block compact and centered like the DOCX title area. */
@@ -95,6 +143,21 @@ a:visited {
 }
 img {
   max-width: 100%;
+}
+figure {
+  margin: 1em auto;
+  text-align: center;
+}
+figure img,
+p > img:only-child,
+p > a > img:only-child {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+figure figcaption,
+table caption {
+  text-align: center;
 }
 svg {
   height: auto;
@@ -193,9 +256,12 @@ table {
   margin: 1em auto;
   border-collapse: collapse;
   width: 100%;
-  overflow-x: auto;
-  display: block;
+  max-width: 100%;
   font-variant-numeric: lining-nums tabular-nums;
+  line-height: 1;
+}
+table tr {
+  line-height: 1;
 }
 table caption {
 $if(table-caption-below)$
@@ -213,9 +279,11 @@ tbody {
 th {
   border-top: 1px solid $if(fontcolor)$$fontcolor$$else$#1a1a1a$endif$;
   padding: 0.25em 0.5em 0.25em 0.5em;
+  line-height: 1;
 }
 td {
   padding: 0.125em 0.5em 0.25em 0.5em;
+  line-height: 1;
 }
 header {
   margin-bottom: 4em;
@@ -257,6 +325,11 @@ $endif$
 $if(displaymath-css)$
 .display.math{display: block; text-align: center; margin: 0.5rem auto;}
 $endif$
+/* KaTeX's bundled stylesheet enlarges formulas to 1.21em by default. */
+.math .katex,
+.katex {
+  font-size: inherit !important;
+}
 $if(highlighting-css)$
 /* CSS for syntax highlighting */
 $highlighting-css$

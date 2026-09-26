@@ -19,13 +19,17 @@ def save_html_document(document: etree._ElementTree, path: str | Path) -> None:
 
 def render_html_document(document: etree._ElementTree) -> str:
     """Serialize one processed document without an intermediate output file."""
-    return etree.tostring(
+    rendered = etree.tostring(
         document.getroot(),
         method="html",
         encoding="unicode",
         doctype="<!DOCTYPE html>",
         pretty_print=True,
     )
+    # lxml preserves CRLF from Pandoc's Windows output; normalize it before
+    # Path.write_text() performs its own platform newline conversion, otherwise
+    # each CRLF becomes CRCRLF and appears as an empty line in editors.
+    return rendered.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def direct_table_cells(row: etree._Element) -> list[etree._Element]:

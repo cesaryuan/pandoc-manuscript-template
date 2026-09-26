@@ -256,8 +256,10 @@ def _override_css(settings: PmtSettings) -> list[str]:
     selectors = {
         "normal": ".pmt-page > p",
         "正文": ".pmt-page > p",
-        "正文文本": ".pmt-page > p",
-        "bodytext": ".pmt-page > p",
+        # First Paragraph is based on Body Text in styles.xml, so a Body Text
+        # override must also win over the more specific first-paragraph rule.
+        "正文文本": ".pmt-page > p, .pmt-page > p:first-of-type",
+        "bodytext": ".pmt-page > p, .pmt-page > p:first-of-type",
         "firstparagraph": ".pmt-page > p:first-of-type",
         "首段": ".pmt-page > p:first-of-type",
         "caption": "figure figcaption, table caption",

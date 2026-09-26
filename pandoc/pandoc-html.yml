@@ -8,8 +8,11 @@ data-dir: ${.}/
 embed-resources: false
 template: ${.}/templates/default.html
 math-method:
-  method: mathjax
-  url: "https://cdn.jsdmirror.com/npm/mathjax@4/tex-chtml.js"
+  # method: mathjax
+  # url: "https://cdn.jsdmirror.com/npm/mathjax@4/tex-chtml.js"
+  method: katex
+  url: "https://cdn.jsdmirror.com/npm/katex@latest/dist/"
+
 
 # Filters are applied in order so cross-references and citations are resolved
 # before Pandoc writes the standalone HTML document.

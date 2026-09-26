@@ -291,7 +291,23 @@ server. Use `GET /version` for health and `POST /convert` with
 `manuscript.md` when omitted), or `POST /batch` with an array of
 `{"path": ...}` objects. Paths are resolved inside the project that started
 the server. The response contains the generated HTML, after the same PMT HTML
-post-processing used by `papper build html`.
+post-processing used by `papper build html`, together with stage timings and
+the HTML result-cache status.
+
+For clients that want to avoid the JSON envelope, `POST /convert/raw` returns
+the exact PMT HTML directly as `text/html`. `POST /preview` returns a faster
+HTML fragment path: it reuses a project-scoped Pandoc AST cache, disables the
+standalone template and author block, and keeps the PMT filter chain for
+cross-references and citations. The first preview for a changed manuscript
+returns immediately through the normal preview path while warming the section
+AST cache in the background; subsequent requests can reuse unchanged section
+ASTs and the rendered HTML cache. `GET /metrics` exposes the current in-memory
+cache counts.
+
+Every raw response includes `X-PMT-Cache`, `X-PMT-Mode`, and a `Server-Timing`
+header. The timing fields cover asset-cache lookup, AST construction when
+needed, Pandoc worker time, output reading, HTML post-processing, and total
+request time.
 
 ## Maintainer releases and native build caches
 

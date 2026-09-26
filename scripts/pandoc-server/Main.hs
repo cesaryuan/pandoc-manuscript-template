@@ -14,6 +14,9 @@
 module Main where
 
 import Control.Exception (SomeException, try)
+import Control.Applicative ((<|>))
+import Data.Time.Clock (diffUTCTime, getCurrentTime)
+import qualified Data.Text as T
 import Data.Aeson (FromJSON, Value, eitherDecode, encode, object, (.=))
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.ByteString.Lazy.Char8 as BL8
@@ -22,7 +25,7 @@ import System.Directory (canonicalizePath, createDirectoryIfMissing, makeAbsolut
 import System.Environment (getArgs)
 import System.FilePath (isRelative, makeRelative, normalise, takeDirectory, (</>))
 import System.IO (BufferMode (LineBuffering), hSetBuffering, stdin, stdout)
-import Text.Pandoc.App (Opt (optInputFiles, optOutputFile), convertWithOpts,
+import Text.Pandoc.App (Opt (..), convertWithOpts,
                         defaultOpts, options, parseOptionsFromArgs)
 import Text.Pandoc.Lua (getEngine)
 import Text.Pandoc.Scripting (ScriptingEngine)
@@ -37,6 +40,8 @@ instance FromJSON Config
 data Request = Request
   { input :: FilePath
   , output :: FilePath
+  , mode :: Maybe String
+  , inputFormat :: Maybe String
   } deriving (Generic, Show)
 
 instance FromJSON Request
@@ -68,18 +73,52 @@ loop engine config baseOpts = do
 
 convertRequest :: ScriptingEngine -> Config -> Opt -> Request -> IO Value
 convertRequest engine config baseOpts request = do
+  started <- getCurrentTime
   result <- try $ do
     source <- resolveProjectPath (projectDir config) (input request)
     target <- resolveProjectPath (projectDir config) (output request)
     createDirectoryIfMissing True (takeDirectory target)
-    let opts = baseOpts
-          { optInputFiles = Just [source]
-          , optOutputFile = Just target
-          }
+    let opts = requestOptions baseOpts request source target
     convertWithOpts engine opts
+  finished <- getCurrentTime
+  let elapsedMs :: Int
+      elapsedMs = round (realToFrac (diffUTCTime finished started) * 1000.0)
   case result of
-    Left err -> pure $ object ["ok" .= False, "error" .= show (err :: SomeException)]
-    Right () -> pure $ object ["ok" .= True]
+    Left err -> pure $ object
+      [ "ok" .= False
+      , "error" .= show (err :: SomeException)
+      , "elapsed_ms" .= elapsedMs
+      ]
+    Right () -> pure $ object ["ok" .= True, "elapsed_ms" .= elapsedMs]
+
+requestOptions :: Opt -> Request -> FilePath -> FilePath -> Opt
+requestOptions baseOpts request source target =
+  case mode request of
+    Just "ast" -> baseOpts
+      { optInputFiles = Just [source]
+      , optOutputFile = Just target
+      , optFrom = Just "markdown"
+      , optTo = Just "json"
+      , optStandalone = False
+      , optTemplate = Nothing
+      , optFilters = []
+      , optMetadataFiles = []
+      , optCSL = Nothing
+      , optBibliography = []
+      , optCitationAbbreviations = Nothing
+      }
+    Just "preview" -> baseOpts
+      { optInputFiles = Just [source]
+      , optOutputFile = Just target
+      , optFrom = fmap T.pack (inputFormat request) <|> optFrom baseOpts
+      , optTo = Just "html"
+      , optStandalone = False
+      , optTemplate = Nothing
+      }
+    _ -> baseOpts
+      { optInputFiles = Just [source]
+      , optOutputFile = Just target
+      }
 
 resolveProjectPath :: FilePath -> FilePath -> IO FilePath
 resolveProjectPath root raw = do

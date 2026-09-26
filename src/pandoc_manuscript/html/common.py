@@ -14,15 +14,18 @@ def load_html_document(path: str | Path) -> etree._ElementTree:
 
 def save_html_document(document: etree._ElementTree, path: str | Path) -> None:
     """Write a standalone UTF-8 HTML document with a stable HTML5 doctype."""
-    root = document.getroot()
-    rendered = etree.tostring(
-        root,
+    Path(path).write_text(render_html_document(document), encoding="utf-8")
+
+
+def render_html_document(document: etree._ElementTree) -> str:
+    """Serialize one processed document without an intermediate output file."""
+    return etree.tostring(
+        document.getroot(),
         method="html",
         encoding="unicode",
         doctype="<!DOCTYPE html>",
         pretty_print=True,
     )
-    Path(path).write_text(rendered, encoding="utf-8")
 
 
 def direct_table_cells(row: etree._Element) -> list[etree._Element]:
